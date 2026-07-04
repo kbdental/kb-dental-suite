@@ -6758,6 +6758,11 @@ function TreatmentProgress({ globalPat, setGlobalPat }) {
   const [eErrors, setEErrors] = useState({});
 
 
+  // Always fetch entries on first mount if a patient is already active (e.g.
+  // arriving here from Patient Search) — the change-detection effect below
+  // only re-fires on a genuine patient switch, so it alone would miss this.
+  useEffect(() => { if (globalPat) loadEntries(globalPat); }, []);
+
   useEffect(() => {
     if (globalPat && (!pat || pat.uhid !== globalPat.uhid)) {
       setPat(globalPat);
