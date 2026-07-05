@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -3915,6 +3915,16 @@ function TreatmentPlan({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [apiMsg, setApiMsg] = useState("");
+  const masterPricesRef = useRef({});
+  useEffect(() => {
+    api("getTreatmentsMaster").then(res => {
+      if (res.success && res.treatments) {
+        const map = {};
+        res.treatments.forEach(t => { map[t.name] = t.fee; });
+        masterPricesRef.current = map;
+      }
+    });
+  }, []);
   useEffect(() => {
     if (globalPat && (!pat || pat.uhid !== globalPat.uhid)) {
       setPat(globalPat);
@@ -3946,7 +3956,7 @@ function TreatmentPlan({
       if (cpRes.success && cpRes.carePlan && cpRes.carePlan.page4 && cpRes.carePlan.page4.rows && cpRes.carePlan.page4.rows.length) {
         let rid2 = rowId;
         setTpRows(cpRes.carePlan.page4.rows.filter(r => r.procedure).map(r => ({
-          ...mkRow("Phase 1", r.tooth, r.dept, r.procedure, PRICES[r.procedure] || "", 1),
+          ...mkRow("Phase 1", r.tooth, r.dept, r.procedure, masterPricesRef.current[r.procedure] || PRICES[r.procedure] || "", 1),
           id: ++rid2
         })));
       } else setTpRows([mkRow("Phase 1")]);
@@ -4046,7 +4056,7 @@ function TreatmentPlan({
       ...r,
       [key]: val
     };
-    if (key === "procedure") u.price = PRICES[val] || r.price;
+    if (key === "procedure") u.price = masterPricesRef.current[val] || PRICES[val] || r.price;
     return u;
   }));
   const toggleSel = row => setTpRows(prev => prev.map(r => {
@@ -6548,6 +6558,28 @@ function buildProcedureDoneHTML(pat, entries) {
   </body></html>`;
 }
 
+// Matches the clinic's printed "Procedure Form with Fee Received" (KBDC/FORMS/REG-07)
+function buildProcedureFeeSheetHTML(pat, entries) {
+  const logo = window.LOGO_B64;
+  const rows = entries.map(e => `<tr>
+      <td style="text-align:center;font-weight:700">${e.toothNo || "—"}</td>
+      <td>${e.procedureDone || "—"}</td>
+      <td class="amt">${e.quotedFee ? fmtRs(e.quotedFee) : "—"}</td>
+      <td class="dcol">${e.date ? fmtDMY(e.date) : "—"}</td>
+      <td class="amt">${e.received ? fmtRs(e.received) : "—"}</td>
+    </tr>`).join("");
+  const blankRows = Array.from({ length: Math.max(0, 20 - entries.length) }, () =>
+    `<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`).join("");
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>${TP_PCSS}</style></head><body>
+    <div class="hdr"><img class="logo" src="${logo}"/><div class="hdr-mid"><div class="cares">C. A. R. E. S.</div><div class="tagline">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div><div class="sub">BLOCK R - 74 B, DILSHAD GARDEN, DELHI - 110095</div><div class="sub">Ph.: 011-22131942 &nbsp; Mob: 7866939786, 9319990912 &nbsp; kbdentaldelhi@gmail.com</div></div></div>
+    <div class="dtitle">Procedure Form with Fee Received</div>
+    <div class="patrow"><span class="pname">${pat.name || "—"}</span><span class="puhid">UHID: ${pat.uhid || "—"}</span></div>
+    <table><thead><tr><th style="width:60pt">Tooth No.</th><th>Procedure Done</th><th style="width:80pt">Quoted Fee</th><th style="width:68pt">Date</th><th style="width:80pt">Received</th></tr></thead>
+    <tbody>${rows}${blankRows}</tbody></table>
+    <div class="foot"><span>KBDC/FORMS/REG-07</span><span>K.B. Dental Clinic &middot; kbdentaldelhi@gmail.com</span></div>
+  </body></html>`;
+}
+
 function buildProgressNotesHTML(pat, entries) {
   const logo = window.LOGO_B64;
   const dateStr = fmtDMY(new Date());
@@ -6761,13 +6793,14 @@ function TreatmentProgress({ globalPat, setGlobalPat }) {
   // Always fetch entries on first mount if a patient is already active (e.g.
   // arriving here from Patient Search) — the change-detection effect below
   // only re-fires on a genuine patient switch, so it alone would miss this.
-  useEffect(() => { if (globalPat) loadEntries(globalPat); }, []);
+  useEffect(() => { if (globalPat) { loadEntries(globalPat); loadFeeEntries(globalPat); } }, []);
 
   useEffect(() => {
     if (globalPat && (!pat || pat.uhid !== globalPat.uhid)) {
       setPat(globalPat);
       setUhidInput(globalPat.uhid);
       loadEntries(globalPat);
+      loadFeeEntries(globalPat);
     }
   }, [globalPat]);
 
@@ -6780,6 +6813,47 @@ function TreatmentProgress({ globalPat, setGlobalPat }) {
     } else {
       setEntries([]);
     }
+  };
+
+  // ── Procedure & Fee Sheet (KBDC/FORMS/REG-07) — lives as a tab here now ──
+  const [feeEntries, setFeeEntries] = useState([]);
+  const [feeShowForm, setFeeShowForm] = useState(false);
+  const [feeSaving, setFeeSaving] = useState(false);
+  const [fToothNo, setFToothNo] = useState("");
+  const [fProcedure, setFProcedure] = useState("");
+  const [fQuotedFee, setFQuotedFee] = useState("");
+  const [fFeeDate, setFFeeDate] = useState(today);
+  const [fReceived, setFReceived] = useState("");
+  const [fFeeErrors, setFFeeErrors] = useState({});
+
+  const loadFeeEntries = async (p) => {
+    const res = await api("getProcedureFeeSheet", { uhid: p.uhid });
+    if (res.success && res.entries) setFeeEntries(res.entries);
+    else setFeeEntries([]);
+  };
+
+  const resetFeeForm = () => {
+    setFToothNo(""); setFProcedure(""); setFQuotedFee(""); setFFeeDate(today); setFReceived(""); setFFeeErrors({});
+  };
+
+  const saveFeeEntry = async () => {
+    const e = {};
+    if (!fToothNo.trim()) e.toothNo = "Tooth No. is required";
+    if (!fProcedure.trim()) e.procedure = "Procedure is required";
+    setFFeeErrors(e);
+    if (Object.keys(e).length > 0) return;
+    setFeeSaving(true);
+    const res = await api("saveProcedureFeeEntry", {
+      uhid: pat.uhid, patientName: pat.name, toothNo: fToothNo,
+      procedureDone: fProcedure, quotedFee: fQuotedFee, date: fFeeDate, received: fReceived
+    });
+    setFeeSaving(false);
+    if (res.success) { setFeeShowForm(false); resetFeeForm(); loadFeeEntries(pat); }
+  };
+
+  const printFeeSheet = () => {
+    const html = buildProcedureFeeSheetHTML(pat, feeEntries);
+    const w = window.open("", "_blank"); w.document.write(html); w.document.close(); setTimeout(()=>w.print(), 400);
   };
 
   const loadPat = async () => {
@@ -7045,6 +7119,77 @@ function TreatmentProgress({ globalPat, setGlobalPat }) {
         )
   );
 
+  const feeTotalQuoted = feeEntries.reduce((s,e)=>s+(Number(e.quotedFee)||0), 0);
+  const feeTotalReceived = feeEntries.reduce((s,e)=>s+(Number(e.received)||0), 0);
+
+  const FeeSheetView = () => React.createElement("div", null,
+    React.createElement("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, flexWrap:"wrap", gap:8 } },
+      React.createElement("div", { style:{ fontSize:12, color:"#555" } },
+        feeEntries.length + " entr" + (feeEntries.length !== 1 ? "ies" : "y") + " · Received: ",
+        React.createElement("strong", { style:{ color:"#059669", fontSize:14 } }, fmtRs(feeTotalReceived))
+      ),
+      React.createElement("div", { style:{ display:"flex", gap:8 } },
+        React.createElement("button", { onClick:()=>setFeeShowForm(v=>!v),
+          style:{ padding:"6px 14px", fontSize:12, border:"none", borderRadius:6, cursor:"pointer", color:"#fff", background:T, fontWeight:700 } },
+          "+ New Entry"),
+        React.createElement("button", { onClick:printFeeSheet,
+          style:{ padding:"6px 14px", fontSize:12, border:`1px solid ${T}`, borderRadius:6, cursor:"pointer", color:T, background:"#fff", fontWeight:600 } },
+          "🖨 Print")
+      )
+    ),
+
+    feeShowForm && React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10, padding:"16px 20px", marginBottom:14 } },
+      React.createElement("div", { style:{ display:"grid", gridTemplateColumns:"1fr 2fr 1fr 1fr 1fr", gap:12, marginBottom:14 } },
+        React.createElement("div", null, React.createElement(Lbl,{c:"Tooth No. *"}),
+          React.createElement("input", { style:{ ...inp, borderColor:fFeeErrors.toothNo?"#e24b4a":"" }, value:fToothNo, onChange:e=>setFToothNo(e.target.value) })),
+        React.createElement("div", null, React.createElement(Lbl,{c:"Procedure Done *"}),
+          React.createElement("input", { style:{ ...inp, borderColor:fFeeErrors.procedure?"#e24b4a":"" }, value:fProcedure, onChange:e=>setFProcedure(e.target.value) })),
+        React.createElement("div", null, React.createElement(Lbl,{c:"Quoted Fee"}),
+          React.createElement("input", { style:inp, type:"number", value:fQuotedFee, onChange:e=>setFQuotedFee(e.target.value) })),
+        React.createElement("div", null, React.createElement(Lbl,{c:"Date"}),
+          React.createElement("input", { style:inp, type:"date", value:fFeeDate, onChange:e=>setFFeeDate(e.target.value) })),
+        React.createElement("div", null, React.createElement(Lbl,{c:"Received"}),
+          React.createElement("input", { style:inp, type:"number", value:fReceived, onChange:e=>setFReceived(e.target.value) }))
+      ),
+      React.createElement("div", { style:{ display:"flex", gap:8 } },
+        React.createElement("button", { onClick:saveFeeEntry, disabled:feeSaving,
+          style:{ padding:"8px 20px", fontSize:12.5, border:"none", borderRadius:7, cursor:"pointer", background:T, color:"#fff", fontWeight:700, opacity:feeSaving?0.6:1 } },
+          feeSaving?"Saving...":"💾 Save Entry"),
+        React.createElement("button", { onClick:()=>{ setFeeShowForm(false); resetFeeForm(); },
+          style:{ padding:"8px 16px", fontSize:12.5, border:`1px solid ${BORDER}`, borderRadius:7, cursor:"pointer", background:"#fff", color:"#555" } }, "Cancel")
+      )
+    ),
+
+    feeEntries.length === 0
+      ? React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:"28px", textAlign:"center", color:"#aaa", fontSize:13, border:`1px dashed ${BORDER}` } },
+          "No entries yet. Use \"+ New Entry\" to add the first procedure."
+        )
+      : React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8, overflow:"hidden" } },
+          React.createElement("table", { style:{ width:"100%", borderCollapse:"collapse", fontSize:12 } },
+            React.createElement("thead", null, React.createElement("tr", { style:{ background:BGS } },
+              ["Tooth No.","Procedure Done","Quoted Fee","Date","Received"].map(h=>
+                React.createElement("th", { key:h, style:{ textAlign:"left", padding:"8px 10px", borderBottom:`1px solid ${BORDER}`, color:"#555", fontWeight:700 } }, h)
+              )
+            )),
+            React.createElement("tbody", null, feeEntries.map((e,i) =>
+              React.createElement("tr", { key:i, style:{ borderBottom:`1px solid ${BORDER}` } },
+                React.createElement("td", { style:{ padding:"7px 10px", fontWeight:700, textAlign:"center" } }, e.toothNo||"—"),
+                React.createElement("td", { style:{ padding:"7px 10px" } }, e.procedureDone||"—"),
+                React.createElement("td", { style:{ padding:"7px 10px" } }, e.quotedFee?fmtRs(e.quotedFee):"—"),
+                React.createElement("td", { style:{ padding:"7px 10px" } }, e.date?fmtDMY(e.date):"—"),
+                React.createElement("td", { style:{ padding:"7px 10px", fontWeight:700, color:"#059669" } }, e.received?fmtRs(e.received):"—")
+              )
+            )),
+            React.createElement("tfoot", null, React.createElement("tr", { style:{ background:TL } },
+              React.createElement("td", { colSpan:2, style:{ padding:"8px 10px", textAlign:"right", fontWeight:700, color:T } }, "Total"),
+              React.createElement("td", { style:{ padding:"8px 10px", fontWeight:700 } }, fmtRs(feeTotalQuoted)),
+              React.createElement("td", null),
+              React.createElement("td", { style:{ padding:"8px 10px", fontWeight:700, color:"#059669" } }, fmtRs(feeTotalReceived))
+            ))
+          )
+        )
+  );
+
   return React.createElement("div", null,
     showSettings && React.createElement(DoctorsSettings, { onClose:()=>{ setShowSettings(false); setDoctors(getDoctors()); } }),
     React.createElement(ClinicHeader, null),
@@ -7062,6 +7207,7 @@ function TreatmentProgress({ globalPat, setGlobalPat }) {
         [
           { id:"procedure", label:"📋 Procedure Done Sheet" },
           { id:"progress",  label:"📊 Treatment Progress Notes" },
+          { id:"feesheet",  label:"🧾 Procedure & Fee Sheet" },
           { id:"entry",     label:"+ New Entry", highlight:true }
         ].map(t => React.createElement("button", {
           key:t.id, onClick:()=>setTab(t.id),
@@ -7082,6 +7228,7 @@ function TreatmentProgress({ globalPat, setGlobalPat }) {
 
     tab === "procedure" && React.createElement(ProcedureView, null),
     tab === "progress"  && React.createElement(ProgressView, null),
+    tab === "feesheet"  && React.createElement(FeeSheetView, null),
     tab === "entry"     && React.createElement(EntryForm, null),
 
     preview && React.createElement(PreviewModal, { html:previewHTML, onClose:()=>setPreview(false) })
@@ -12556,6 +12703,182 @@ function GenericRecordsView({ tabName, uhid }) {
 }
 
 // ════════════════════════════════════════════════════════
+// MASTER — Treatments/Fees, Doctor Details, Employees,
+// Expense Categories, Payment Modes
+// ════════════════════════════════════════════════════════
+
+// Flat string list editor (Expense Categories, Payment Modes)
+function SimpleListEditor({ items, onAdd, onRemove, placeholder }) {
+  const [text, setText] = React.useState("");
+  const add = () => { const v = text.trim(); if (!v || items.includes(v)) return; onAdd(v); setText(""); };
+  return React.createElement("div", null,
+    React.createElement("div", { style:{ display:"flex", gap:8, marginBottom:14 } },
+      React.createElement("input", { style:{...inp, flex:1}, value:text, placeholder, onChange:e=>setText(e.target.value), onKeyDown:e=>e.key==="Enter"&&add() }),
+      React.createElement("button", { onClick:add, style:{ padding:"9px 20px", fontSize:12, border:"none", borderRadius:7, cursor:"pointer", background:T, color:"#fff", fontWeight:700 } }, "+ Add")
+    ),
+    items.length===0
+      ? React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:24, textAlign:"center", color:"#aaa", fontSize:13, border:`1px dashed ${BORDER}` } }, "No entries yet.")
+      : React.createElement("div", { style:{ display:"flex", flexDirection:"column", gap:6 } },
+          items.map((it,i) => React.createElement("div", { key:i,
+            style:{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8, padding:"9px 14px" } },
+            React.createElement("span", { style:{ fontSize:13, fontWeight:600 } }, it),
+            React.createElement("button", { onClick:()=>onRemove(i),
+              style:{ border:"none", background:"none", color:"#e24b4a", cursor:"pointer", fontSize:12, fontWeight:700 } }, "Remove")
+          ))
+        )
+  );
+}
+
+// Name + Fee list editor (Treatments)
+function TreatmentListEditor({ items, onAdd, onRemove }) {
+  const [name, setName] = React.useState("");
+  const [fee, setFee] = React.useState("");
+  const add = () => { const v = name.trim(); if (!v) return; onAdd({ name:v, fee }); setName(""); setFee(""); };
+  return React.createElement("div", null,
+    React.createElement("div", { style:{ display:"flex", gap:8, marginBottom:14 } },
+      React.createElement("input", { style:{...inp, flex:2}, value:name, placeholder:"Treatment name", onChange:e=>setName(e.target.value), onKeyDown:e=>e.key==="Enter"&&add() }),
+      React.createElement("input", { style:{...inp, flex:1}, type:"number", value:fee, placeholder:"Fee", onChange:e=>setFee(e.target.value), onKeyDown:e=>e.key==="Enter"&&add() }),
+      React.createElement("button", { onClick:add, style:{ padding:"9px 20px", fontSize:12, border:"none", borderRadius:7, cursor:"pointer", background:T, color:"#fff", fontWeight:700 } }, "+ Add")
+    ),
+    items.length===0
+      ? React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:24, textAlign:"center", color:"#aaa", fontSize:13, border:`1px dashed ${BORDER}` } }, "No treatments yet.")
+      : React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8, overflow:"hidden", maxHeight:500, overflowY:"auto" } },
+          React.createElement("table", { style:{ width:"100%", borderCollapse:"collapse", fontSize:12.5 } },
+            React.createElement("thead", null, React.createElement("tr", { style:{ background:BGS } },
+              React.createElement("th", { style:{ textAlign:"left", padding:"8px 12px" } }, "Treatment"),
+              React.createElement("th", { style:{ textAlign:"right", padding:"8px 12px" } }, "Fee"),
+              React.createElement("th", { style:{ width:70 } })
+            )),
+            React.createElement("tbody", null, items.map((it,i) => React.createElement("tr", { key:i, style:{ borderTop:`1px solid ${BORDER}` } },
+              React.createElement("td", { style:{ padding:"7px 12px", fontWeight:600 } }, it.name),
+              React.createElement("td", { style:{ padding:"7px 12px", textAlign:"right", fontWeight:700, color:T } }, it.fee ? fmtRs(it.fee) : "—"),
+              React.createElement("td", { style:{ textAlign:"center" } },
+                React.createElement("button", { onClick:()=>onRemove(i), style:{ border:"none", background:"none", color:"#e24b4a", cursor:"pointer", fontSize:11.5, fontWeight:700 } }, "Remove"))
+            )))
+          )
+        )
+  );
+}
+
+// Name + Phone/Email/Role list editor (Doctors, Employees)
+function PersonListEditor({ items, onAdd, onRemove }) {
+  const [name, setName] = React.useState("");
+  const [phone, setPhone] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [role, setRole] = React.useState("");
+  const add = () => { const v = name.trim(); if (!v) return; onAdd({ name:v, phone, email, role }); setName(""); setPhone(""); setEmail(""); setRole(""); };
+  return React.createElement("div", null,
+    React.createElement("div", { style:{ display:"grid", gridTemplateColumns:"1.5fr 1fr 1.5fr 1fr auto", gap:8, marginBottom:14 } },
+      React.createElement("input", { style:inp, value:name, placeholder:"Name", onChange:e=>setName(e.target.value) }),
+      React.createElement("input", { style:inp, value:phone, placeholder:"Phone", onChange:e=>setPhone(e.target.value) }),
+      React.createElement("input", { style:inp, value:email, placeholder:"Email", onChange:e=>setEmail(e.target.value) }),
+      React.createElement("input", { style:inp, value:role, placeholder:"Role", onChange:e=>setRole(e.target.value) }),
+      React.createElement("button", { onClick:add, style:{ padding:"0 18px", fontSize:12, border:"none", borderRadius:7, cursor:"pointer", background:T, color:"#fff", fontWeight:700 } }, "+ Add")
+    ),
+    items.length===0
+      ? React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:24, textAlign:"center", color:"#aaa", fontSize:13, border:`1px dashed ${BORDER}` } }, "No entries yet.")
+      : React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8, overflow:"hidden" } },
+          React.createElement("table", { style:{ width:"100%", borderCollapse:"collapse", fontSize:12.5 } },
+            React.createElement("thead", null, React.createElement("tr", { style:{ background:BGS } },
+              ["Name","Phone","Email","Role",""].map(h=>React.createElement("th", { key:h, style:{ textAlign:"left", padding:"8px 12px" } }, h))
+            )),
+            React.createElement("tbody", null, items.map((it,i) => React.createElement("tr", { key:i, style:{ borderTop:`1px solid ${BORDER}` } },
+              React.createElement("td", { style:{ padding:"7px 12px", fontWeight:600 } }, it.name),
+              React.createElement("td", { style:{ padding:"7px 12px" } }, it.phone||"—"),
+              React.createElement("td", { style:{ padding:"7px 12px" } }, it.email||"—"),
+              React.createElement("td", { style:{ padding:"7px 12px" } }, it.role||"—"),
+              React.createElement("td", { style:{ textAlign:"center" } },
+                React.createElement("button", { onClick:()=>onRemove(i), style:{ border:"none", background:"none", color:"#e24b4a", cursor:"pointer", fontSize:11.5, fontWeight:700 } }, "Remove"))
+            )))
+          )
+        )
+  );
+}
+
+const MASTER_TABS = [
+  { id:"treatments", label:"🦷 Treatments & Fees" },
+  { id:"doctors",    label:"👨‍⚕️ Doctors" },
+  { id:"employees",  label:"👥 Employees" },
+  { id:"expenses",   label:"🧾 Expense Categories" },
+  { id:"modes",      label:"💳 Payment Modes" }
+];
+
+function Master() {
+  const [tab, setTab] = React.useState("treatments");
+  const [treatments, setTreatments] = React.useState([]);
+  const [doctorDetails, setDoctorDetails] = React.useState([]);
+  const [employees, setEmployees] = React.useState([]);
+  const [expenseCats, setExpenseCats] = React.useState([]);
+  const [paymentModes, setPaymentModes] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [msg, setMsg] = React.useState("");
+
+  React.useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      api("getTreatmentsMaster"), api("getDoctorDetailsList"), api("getEmployeesList"),
+      api("getExpenseCategoriesList"), api("getPaymentModesList")
+    ]).then(([t,d,e,c,m]) => {
+      setLoading(false);
+      if (t.success) setTreatments(t.treatments || []);
+      if (d.success) setDoctorDetails(d.doctors || []);
+      if (e.success) setEmployees(e.employees || []);
+      if (c.success) setExpenseCats(c.categories || []);
+      if (m.success) setPaymentModes(m.modes || []);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  const flash = () => { setMsg("✅ Saved"); setTimeout(()=>setMsg(""), 1200); };
+
+  const saveTreatments = async (arr) => { setTreatments(arr); await api("saveTreatmentsMaster", { treatments: JSON.stringify(arr) }); flash(); };
+  const saveDoctors = async (arr) => { setDoctorDetails(arr); await api("saveDoctorDetailsList", { doctors: JSON.stringify(arr) }); flash(); };
+  const saveEmployees = async (arr) => { setEmployees(arr); await api("saveEmployeesList", { employees: JSON.stringify(arr) }); flash(); };
+  const saveExpenseCats = async (arr) => { setExpenseCats(arr); await api("saveExpenseCategoriesList", { categories: JSON.stringify(arr) }); flash(); };
+  const saveModes = async (arr) => { setPaymentModes(arr); await api("savePaymentModesList", { modes: JSON.stringify(arr) }); flash(); };
+
+  return React.createElement("div", null,
+    React.createElement(ClinicHeader, null),
+    React.createElement("div", { style:{ fontSize:17, fontWeight:700, marginBottom:2 } }, "🗂 Master"),
+    React.createElement("div", { style:{ fontSize:12, color:"#888", marginBottom:16 } }, "Manage treatments & fees, doctors, employees, expense categories and payment modes used throughout the app"),
+
+    React.createElement("div", { style:{ display:"flex", gap:6, marginBottom:16, flexWrap:"wrap" } },
+      MASTER_TABS.map(t => React.createElement("button", { key:t.id, onClick:()=>setTab(t.id),
+        style:{ padding:"7px 16px", fontSize:12, fontWeight:700, borderRadius:6, cursor:"pointer",
+          border:`1px solid ${tab===t.id?T:BORDER}`, background:tab===t.id?T:"#fff", color:tab===t.id?"#fff":"#555" } }, t.label))
+    ),
+
+    msg && React.createElement("div", { style:{ fontSize:12, fontWeight:600, color:"#059669", marginBottom:10 } }, msg),
+    loading && React.createElement("div", { style:{ textAlign:"center", padding:20, color:"#888", fontSize:13 } }, "⏳ Loading..."),
+
+    !loading && tab==="treatments" && React.createElement(TreatmentListEditor, {
+      items:treatments,
+      onAdd:(item)=>saveTreatments([...treatments, item]),
+      onRemove:(i)=>saveTreatments(treatments.filter((_,idx)=>idx!==i))
+    }),
+    !loading && tab==="doctors" && React.createElement(PersonListEditor, {
+      items:doctorDetails,
+      onAdd:(item)=>saveDoctors([...doctorDetails, item]),
+      onRemove:(i)=>saveDoctors(doctorDetails.filter((_,idx)=>idx!==i))
+    }),
+    !loading && tab==="employees" && React.createElement(PersonListEditor, {
+      items:employees,
+      onAdd:(item)=>saveEmployees([...employees, item]),
+      onRemove:(i)=>saveEmployees(employees.filter((_,idx)=>idx!==i))
+    }),
+    !loading && tab==="expenses" && React.createElement(SimpleListEditor, {
+      items:expenseCats, placeholder:"New expense category...",
+      onAdd:(v)=>saveExpenseCats([...expenseCats, v]),
+      onRemove:(i)=>saveExpenseCats(expenseCats.filter((_,idx)=>idx!==i))
+    }),
+    !loading && tab==="modes" && React.createElement(SimpleListEditor, {
+      items:paymentModes, placeholder:"New payment mode...",
+      onAdd:(v)=>saveModes([...paymentModes, v]),
+      onRemove:(i)=>saveModes(paymentModes.filter((_,idx)=>idx!==i))
+    })
+  );
+}
+
+// ════════════════════════════════════════════════════════
 // CLINICAL RECORDS HUB — Forms + Sheets
 // ════════════════════════════════════════════════════════
 function ClinicalRecords({ globalPat, setGlobalPat }) {
@@ -13338,14 +13661,195 @@ function FinancePaymentsTab({ globalPat }) {
 }
 
 // Expense entry — placeholder shell until the clinic sends its reference form
+const EXPENSE_MODES = ["Cash", "UPI", "NEFT/RTGS", "Cheque", "Credit Card"];
+
+// Matches the clinic's live "Expense Form" (Google Form) field-for-field:
+// Date of Expense, Payment Done By, Name of Expense, Amount, Mode of
+// Expense, Remarks. (Photo attachment from that form is not supported here.)
 function FinanceExpenseSubTab() {
-  return React.createElement("div", {
-    style:{ background:BGS, border:`1px dashed ${BORDER}`, borderRadius:10, padding:"32px 24px", textAlign:"center" }
-  },
-    React.createElement("div", { style:{ fontSize:28, marginBottom:10 } }, "🧾"),
-    React.createElement("div", { style:{ fontSize:14, fontWeight:700, color:"#555", marginBottom:6 } }, "Expense tracking is coming soon"),
-    React.createElement("div", { style:{ fontSize:12.5, color:"#888", maxWidth:420, margin:"0 auto" } },
-      "This tab will let you log clinic expenses (rent, salaries, lab bills, supplies, etc.) once the reference expense form is provided — the entry form here will be built to match it exactly."
+  const today = new Date().toISOString().split("T")[0];
+  const [payers, setPayers] = React.useState([]);
+  const [employeeObjs, setEmployeeObjs] = React.useState([]);
+  const [categories, setCategories] = React.useState([]);
+  const [modes, setModes] = React.useState([]);
+  const [date, setDate] = React.useState(today);
+  const [paidBy, setPaidBy] = React.useState("");
+  const [expenseName, setExpenseName] = React.useState("");
+  const [amount, setAmount] = React.useState("");
+  const [mode, setMode] = React.useState("");
+  const [remarks, setRemarks] = React.useState("");
+  const [newPayerMode, setNewPayerMode] = React.useState(false);
+  const [newPayerText, setNewPayerText] = React.useState("");
+  const [newCatMode, setNewCatMode] = React.useState(false);
+  const [newCatText, setNewCatText] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [msg, setMsg] = React.useState("");
+  const [errors, setErrors] = React.useState({});
+
+  const [fromDate, setFromDate] = React.useState("");
+  const [toDate, setToDate] = React.useState("");
+  const [expenses, setExpenses] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    // Payment Done By is sourced from the Employees master (Master tab)
+    api("getEmployeesList").then(res => { if (res.success && res.employees) { setEmployeeObjs(res.employees); const names = res.employees.map(e=>e.name); setPayers(names); setPaidBy(prev => prev || names[0] || ""); } });
+    api("getExpenseCategoriesList").then(res => { if (res.success && res.categories) { setCategories(res.categories); setExpenseName(prev => prev || res.categories[0] || ""); } });
+    api("getPaymentModesList").then(res => { if (res.success && res.modes && res.modes.length) setModes(res.modes); else setModes(EXPENSE_MODES); });
+    loadExpenses();
+  }, []);
+
+  const loadExpenses = async () => {
+    setLoading(true);
+    const res = await api("getExpenses", { fromDate, toDate });
+    setLoading(false);
+    if (res.success && res.expenses) setExpenses(res.expenses);
+    else setExpenses([]);
+  };
+
+  const addNewPayer = async () => {
+    const v = newPayerText.trim();
+    if (!v) return;
+    if (payers.includes(v)) { setPaidBy(v); setNewPayerText(""); setNewPayerMode(false); return; }
+    const updatedObjs = [...employeeObjs, { name: v, phone: "", email: "", role: "" }];
+    setEmployeeObjs(updatedObjs);
+    setPayers([...payers, v]); setPaidBy(v);
+    await api("saveEmployeesList", { employees: JSON.stringify(updatedObjs) });
+    setNewPayerText(""); setNewPayerMode(false);
+  };
+  const addNewCategory = async () => {
+    const v = newCatText.trim();
+    if (!v) return;
+    const updated = categories.includes(v) ? categories : [...categories, v];
+    setCategories(updated); setExpenseName(v);
+    await api("saveExpenseCategoriesList", { categories: updated });
+    setNewCatText(""); setNewCatMode(false);
+  };
+
+  const saveExpenseEntry = async () => {
+    const e = {};
+    if (!paidBy) e.paidBy = "Required";
+    if (!expenseName) e.expenseName = "Required";
+    if (!amount) e.amount = "Required";
+    if (!mode) e.mode = "Required";
+    if (!remarks.trim()) e.remarks = "Required";
+    setErrors(e);
+    if (Object.keys(e).length > 0) return;
+    setSaving(true); setMsg("");
+    const res = await api("saveExpense", { date, paidBy, expenseName, amount, mode, remarks: remarks.trim() });
+    setSaving(false);
+    if (res.success) {
+      setMsg("✅ Saved!");
+      setAmount(""); setRemarks(""); setMode(""); setDate(today); setErrors({});
+      setTimeout(() => setMsg(""), 1500);
+      loadExpenses();
+    } else setMsg("❌ " + (res.error || "Save failed"));
+  };
+
+  const total = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+
+  return React.createElement("div", null,
+    React.createElement("div", { style:{ background:"#fff", border:`1.5px solid ${T}`, borderRadius:10, padding:"18px 22px", maxWidth:560, marginBottom:20 } },
+      React.createElement("div", { style:{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginBottom:14 } },
+        React.createElement("div", null, React.createElement(Lbl,{c:"Date of Expense *"}),
+          React.createElement("input", { style:inp, type:"date", value:date, onChange:e=>setDate(e.target.value) })),
+        React.createElement("div", null,
+          React.createElement(Lbl,{c:"Amount *"}),
+          React.createElement("input", { style:{ ...inp, borderColor:errors.amount?"#e24b4a":"" }, type:"number", value:amount, onChange:e=>setAmount(e.target.value) }))
+      ),
+
+      React.createElement("div", { style:{ marginBottom:14 } },
+        React.createElement(Lbl,{c:"Payment Done By *"}),
+        newPayerMode
+          ? React.createElement("div", { style:{ display:"flex", gap:6 } },
+              React.createElement("input", { style:{...inp,flex:1}, value:newPayerText, onChange:e=>setNewPayerText(e.target.value), placeholder:"New name...", onKeyDown:e=>e.key==="Enter"&&addNewPayer() }),
+              React.createElement("button", { onClick:addNewPayer, style:{ padding:"0 12px", border:"none", borderRadius:6, background:T, color:"#fff", cursor:"pointer", fontWeight:700 } }, "Add"),
+              React.createElement("button", { onClick:()=>setNewPayerMode(false), style:{ padding:"0 10px", border:`1px solid ${BORDER}`, borderRadius:6, background:"#fff", cursor:"pointer" } }, "✕")
+            )
+          : React.createElement("div", { style:{ display:"flex", gap:6 } },
+              React.createElement("select", { style:{...inp,flex:1,borderColor:errors.paidBy?"#e24b4a":""}, value:paidBy, onChange:e=>setPaidBy(e.target.value) },
+                React.createElement("option", { value:"" }, "— Select —"),
+                payers.map(p => React.createElement("option", { key:p, value:p }, p))),
+              React.createElement("button", { onClick:()=>setNewPayerMode(true),
+                style:{ width:36, border:`1px solid ${T}`, borderRadius:6, background:"#fff", color:T, cursor:"pointer", fontWeight:700, fontSize:16 } }, "+")
+            )
+      ),
+
+      React.createElement("div", { style:{ marginBottom:14 } },
+        React.createElement(Lbl,{c:"Name of Expense *"}),
+        newCatMode
+          ? React.createElement("div", { style:{ display:"flex", gap:6 } },
+              React.createElement("input", { style:{...inp,flex:1}, value:newCatText, onChange:e=>setNewCatText(e.target.value), placeholder:"New expense category...", onKeyDown:e=>e.key==="Enter"&&addNewCategory() }),
+              React.createElement("button", { onClick:addNewCategory, style:{ padding:"0 12px", border:"none", borderRadius:6, background:T, color:"#fff", cursor:"pointer", fontWeight:700 } }, "Add"),
+              React.createElement("button", { onClick:()=>setNewCatMode(false), style:{ padding:"0 10px", border:`1px solid ${BORDER}`, borderRadius:6, background:"#fff", cursor:"pointer" } }, "✕")
+            )
+          : React.createElement("div", { style:{ display:"flex", gap:6 } },
+              React.createElement("select", { style:{...inp,flex:1,borderColor:errors.expenseName?"#e24b4a":""}, value:expenseName, onChange:e=>setExpenseName(e.target.value) },
+                React.createElement("option", { value:"" }, "— Select —"),
+                categories.map(c => React.createElement("option", { key:c, value:c }, c))),
+              React.createElement("button", { onClick:()=>setNewCatMode(true),
+                style:{ width:36, border:`1px solid ${T}`, borderRadius:6, background:"#fff", color:T, cursor:"pointer", fontWeight:700, fontSize:16 } }, "+")
+            )
+      ),
+
+      React.createElement("div", { style:{ marginBottom:14 } },
+        React.createElement(Lbl,{c:"Mode of Expense *"}),
+        React.createElement("div", { style:{ display:"flex", flexWrap:"wrap", gap:14, marginTop:4 } },
+          (modes.length ? modes : EXPENSE_MODES).map(m => React.createElement("label", { key:m, style:{ display:"flex", alignItems:"center", gap:5, fontSize:12.5, cursor:"pointer" } },
+            React.createElement("input", { type:"radio", checked:mode===m, onChange:()=>setMode(m), style:{ accentColor:T } }),
+            m
+          ))
+        ),
+        errors.mode && React.createElement("div", { style:{ fontSize:11, color:"#e24b4a", marginTop:2 } }, "⚠ Select a mode")
+      ),
+
+      React.createElement("div", { style:{ marginBottom:16 } },
+        React.createElement(Lbl,{c:"Remarks (Detail of Expense) *"}),
+        React.createElement("textarea", { style:{ ...ta, height:60, borderColor:errors.remarks?"#e24b4a":"" }, value:remarks, onChange:e=>setRemarks(e.target.value) })
+      ),
+
+      React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:12 } },
+        React.createElement("button", { onClick:saveExpenseEntry, disabled:saving,
+          style:{ padding:"9px 26px", fontSize:13, border:"none", borderRadius:7, cursor:"pointer", background:T, color:"#fff", fontWeight:700, opacity:saving?0.6:1 } },
+          saving ? "Saving..." : "💾 Save Expense"),
+        msg && React.createElement("div", { style:{ fontSize:12, fontWeight:600, color: msg.startsWith("✅")?"#059669":"#c0392b" } }, msg)
+      )
+    ),
+
+    React.createElement("div", { style:{ fontSize:14, fontWeight:700, marginBottom:10 } }, "Expense Log"),
+    React.createElement("div", { style:{ display:"flex", gap:10, alignItems:"flex-end", flexWrap:"wrap", marginBottom:14 } },
+      React.createElement("div", null, React.createElement(Lbl,{c:"From Date"}),
+        React.createElement("input", { style:inp, type:"date", value:fromDate, onChange:e=>setFromDate(e.target.value) })),
+      React.createElement("div", null, React.createElement(Lbl,{c:"To Date"}),
+        React.createElement("input", { style:inp, type:"date", value:toDate, onChange:e=>setToDate(e.target.value) })),
+      React.createElement("button", { onClick:loadExpenses,
+        style:{ padding:"9px 20px", fontSize:12, border:"none", borderRadius:7, cursor:"pointer", background:T, color:"#fff", fontWeight:700 } },
+        loading ? "Loading..." : "🔍 Search")
+    ),
+    !loading && expenses.length > 0 && React.createElement("div", {
+      style:{ background:"#fff3f3", border:"1px solid #e24b4a", borderRadius:8, padding:"8px 14px", marginBottom:12, fontSize:13, fontWeight:700, color:"#c0392b" }
+    }, expenses.length + " expense" + (expenses.length!==1?"s":"") + " · Total: " + fmtRs(total)),
+    !loading && expenses.length === 0 && React.createElement("div", {
+      style:{ background:BGS, borderRadius:8, padding:28, textAlign:"center", color:"#aaa", fontSize:13, border:`1px dashed ${BORDER}` }
+    }, "No expenses recorded for this filter."),
+    !loading && expenses.length > 0 && React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8, overflow:"hidden" } },
+      React.createElement("table", { style:{ width:"100%", borderCollapse:"collapse", fontSize:12 } },
+        React.createElement("thead", null, React.createElement("tr", { style:{ background:BGS } },
+          ["Date","Paid By","Expense","Amount","Mode","Remarks"].map(h=>
+            React.createElement("th", { key:h, style:{ textAlign:"left", padding:"8px 10px", borderBottom:`1px solid ${BORDER}`, color:"#555", fontWeight:700 } }, h)
+          )
+        )),
+        React.createElement("tbody", null, expenses.map((e,i)=>
+          React.createElement("tr", { key:i, style:{ borderBottom:`1px solid ${BORDER}` } },
+            React.createElement("td", { style:{ padding:"7px 10px" } }, e.date ? fmtDMY(e.date) : "—"),
+            React.createElement("td", { style:{ padding:"7px 10px" } }, e.paidBy || "—"),
+            React.createElement("td", { style:{ padding:"7px 10px" } }, e.expenseName || "—"),
+            React.createElement("td", { style:{ padding:"7px 10px", fontWeight:700, color:"#c0392b" } }, fmtRs(e.amount)),
+            React.createElement("td", { style:{ padding:"7px 10px" } }, e.mode || "—"),
+            React.createElement("td", { style:{ padding:"7px 10px", color:"#888" } }, e.remarks || "—")
+          )
+        ))
+      )
     )
   );
 }
@@ -13749,9 +14253,40 @@ function FinanceSettingsSubTab() {
   );
 }
 
+function ReportsPlaceholder() {
+  return /*#__PURE__*/React.createElement("div", {
+    style: { padding: 24, background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 10, textAlign: "center" }
+  }, /*#__PURE__*/React.createElement("div", { style: { fontSize: 32, marginBottom: 8 } }, "📊"),
+  /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700, color: "#333", marginBottom: 6 } }, "Reports"),
+  /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: "#888" } }, "The list of reports needed here is coming soon. This section will be built out once the requirements are shared."));
+}
+
 function App() {
   const [page, setPage] = useState("dashboard");
-  const [globalPat, setGlobalPat] = useState(null);
+  // Multi-patient tabs: up to 10 patients can stay "open" at once, each doctor/chair
+  // can flip between them without losing the others' loaded data. globalPat/setGlobalPat
+  // are kept as the interface every page component already uses (the "active" tab).
+  const [openPatients, setOpenPatients] = useState([]);
+  const [activeUhid, setActiveUhid] = useState(null);
+  const globalPat = openPatients.find(p => p.uhid === activeUhid) || null;
+  const setGlobalPat = p => {
+    if (!p) { setActiveUhid(null); return; }
+    const exists = openPatients.find(x => x.uhid === p.uhid);
+    let next;
+    if (exists) {
+      next = openPatients.map(x => x.uhid === p.uhid ? { ...x, ...p } : x);
+    } else {
+      next = [...openPatients, p];
+      if (next.length > 10) next = next.slice(next.length - 10);
+    }
+    setOpenPatients(next);
+    setActiveUhid(p.uhid);
+  };
+  const closePatientTab = uhid => {
+    const next = openPatients.filter(x => x.uhid !== uhid);
+    setOpenPatients(next);
+    if (activeUhid === uhid) setActiveUhid(next.length ? next[next.length - 1].uhid : null);
+  };
 
   // Listen for save messages posted from the standalone iframe clinical forms (RCT/Implant/Crown-Bridge/Restoration/Orthodontics/Denture/Pedo/TMJoint)
   useEffect(() => {
@@ -13833,6 +14368,14 @@ function App() {
     id: "chatbot",
     icon: "💬",
     label: "Patient Chatbot"
+  }, {
+    id: "master",
+    icon: "🗂",
+    label: "Master"
+  }, {
+    id: "reports",
+    icon: "📊",
+    label: "Reports"
   }];
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -13956,7 +14499,50 @@ function App() {
       display: "flex",
       flexDirection: "column"
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, openPatients.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      flexWrap: "wrap",
+      alignItems: "center",
+      maxWidth: page === "crm" || page === "chatbot" ? "none" : 1060,
+      marginBottom: 14,
+      padding: "8px 10px",
+      background: "#fff",
+      border: `1px solid ${BORDER}`,
+      borderRadius: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 9,
+      fontWeight: 700,
+      color: "#888",
+      textTransform: "uppercase",
+      letterSpacing: "0.05em",
+      marginRight: 2
+    }
+  }, "Open Patients"), ...openPatients.map(p => /*#__PURE__*/React.createElement("div", {
+    key: p.uhid,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      padding: "5px 6px 5px 10px",
+      borderRadius: 16,
+      background: p.uhid === activeUhid ? T : TL,
+      color: p.uhid === activeUhid ? "#fff" : "#333",
+      fontSize: 12,
+      fontWeight: 600,
+      border: `1px solid ${p.uhid === activeUhid ? T : TM}`
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    onClick: () => setActiveUhid(p.uhid),
+    style: { cursor: "pointer" }
+  }, `${p.name} (${p.uhid})`), /*#__PURE__*/React.createElement("span", {
+    onClick: () => closePatientTab(p.uhid),
+    title: "Close",
+    style: { cursor: "pointer", opacity: 0.75, fontWeight: 900, padding: "0 3px" }
+  }, "×")))), /*#__PURE__*/React.createElement("div", {
     style: {
       maxWidth: page === "crm" || page === "chatbot" ? "none" : 1060,
       flex: 1,
@@ -14002,7 +14588,7 @@ function App() {
   }), page === "consent" && /*#__PURE__*/React.createElement(ConsentForms, {
     globalPat: globalPat,
     setGlobalPat: setGlobalPat
-  }), page === "crm" && /*#__PURE__*/React.createElement(CRMModule, null), page === "chatbot" && /*#__PURE__*/React.createElement(ChatbotModule, null))));
+  }), page === "crm" && /*#__PURE__*/React.createElement(CRMModule, null), page === "chatbot" && /*#__PURE__*/React.createElement(ChatbotModule, null), page === "master" && /*#__PURE__*/React.createElement(Master, null), page === "reports" && /*#__PURE__*/React.createElement(ReportsPlaceholder, null))));
 }
 window.KBApp = App;
 </script>
