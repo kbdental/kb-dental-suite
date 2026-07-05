@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K.B. Dental — Patient Assistant</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Poppins',sans-serif;background:#F0F2F8;height:100vh;overflow:hidden;}
+#root{height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+@keyframes bounce{0%,80%,100%{transform:scale(.6);opacity:.4}40%{transform:scale(1);opacity:1}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#C5CAE9;border-radius:10px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycby-OX-qvGE2U9Zt3b-_rpFqc5WQxRT5WMn1A030IcQIKXEaso36cMTbJ6c5xiP5O_6Zvg/exec";
+function backendApi(action, data) {
+  var p = new URLSearchParams(Object.assign({action:action}, data||{}));
+  return fetch(SCRIPT_URL + "?" + p.toString()).then(function(r){ return r.json(); });
+}
+
+function ChatBotPage() {
+  var e = React.createElement;
+  var useState = React.useState;
+  var useEffect = React.useEffect;
+  var useRef = React.useRef;
+
+  /* ── Theme ── */
+  var T = {
+    primary:'#1A237E', primaryDk:'#0D1B6E', primaryLt:'#E8EAF6',
+    green:'#1B5E20', greenMd:'#2E7D32', greenLt:'#E8F5E9',
+    accent:'#FF6F00', white:'#fff',
+    bg:'#F0F2F8', msgBg:'#fff', userBubble:'#1A237E',
+    text:'#1A237E', subtext:'#546E7A', border:'#E3E8F0'
+  };
+
+  /* ── Storage ── */
+  var STORE_KEY = 'kbdc_chatbot_sessions';
+  function loadSessions(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY)||'[]'); }catch(e2){ return []; } }
+  function saveSessions(s){ try{ localStorage.setItem(STORE_KEY,JSON.stringify(s)); }catch(e2){} }
+
+  /* ── State ── */
+  var ref0 = useState(function(){
+    var s = loadSessions();
+    return {
+      sessions: s,
+      activeId: s.length ? s[0].id : null,
+      input: '',
+      busy: false,
+      sidebarOpen: true,
+      lang: 'en',
+      booking: null,  /* null | { step, name, phone, treatment, date, time } */
+      manage: null,   /* null | { step, phone, appts, apptId, newDate, newDateISO } */
+      treatmentsBlock: ''
+    };
+  });
+  var st = ref0[0], setS = ref0[1];
+  function upd(p){ setS(function(prev){ return Object.assign({},prev,typeof p==='function'?p(prev):p); }); }
+
+  var bottomRef = useRef(null);
+  var inputRef = useRef(null);
+
+  /* ── Load real treatments list so the AI can ground its answers in what we actually offer ── */
+  useEffect(function(){
+    backendApi('getTreatmentsMaster').then(function(res){
+      if(res && res.success && res.treatments && res.treatments.length){
+        var byDept = {};
+        res.treatments.forEach(function(t){
+          var d = t.department || 'General';
+          if(!byDept[d]) byDept[d] = [];
+          byDept[d].push(t.name);
+        });
+        var block = Object.keys(byDept).map(function(d){ return d+': '+byDept[d].join(', '); }).join('\n');
+        upd({ treatmentsBlock: block });
+      }
+    }).catch(function(){});
+  }, []);
+
+  /* ── Date parsing for booking/reschedule ("28 May", "28/05", "28/05/2026") ── */
+  function parseToISODate(text){
+    if(!text) return null;
+    var t = text.trim();
+    var d = null;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(t)){
+      d = new Date(t+'T00:00:00');
+    } else if(/^\d{1,2}\/\d{1,2}(\/\d{2,4})?$/.test(t)){
+      var parts = t.split('/');
+      var day = parseInt(parts[0],10), month = parseInt(parts[1],10)-1;
+      var year = parts[2] ? (parts[2].length===2 ? 2000+parseInt(parts[2],10) : parseInt(parts[2],10)) : new Date().getFullYear();
+      d = new Date(year, month, day);
+    } else {
+      var hasYear = /\d{4}/.test(t);
+      d = new Date(hasYear ? t : t+' '+new Date().getFullYear());
+    }
+    if(!d || isNaN(d.getTime())) return null;
+    var today = new Date(); today.setHours(0,0,0,0);
+    if(d < today && !/\d{4}/.test(t)) d.setFullYear(d.getFullYear()+1);
+    var y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+    return y+'-'+m+'-'+dd;
+  }
+  function normTime(t){ return String(t||'').trim().toUpperCase().replace(/\s+/g,' '); }
+  function timeToMinutes(s){
+    var m = /(\d{1,2}):(\d{2})\s*([AP]M)/i.exec(String(s||''));
+    if(!m) return null;
+    var h = parseInt(m[1],10)%12; if(/pm/i.test(m[3])) h+=12;
+    return h*60+parseInt(m[2],10);
+  }
+  function isTimeBlocked(t, from, to){
+    if(!from || !to) return false;
+    var tm = timeToMinutes(t), fm = timeToMinutes(from), tom = timeToMinutes(to);
+    if(tm==null||fm==null||tom==null) return false;
+    return tm>=fm && tm<tom;
+  }
+  /* ── Real slot availability — only ever offer genuinely open times ── */
+  function fetchOpenSlots(isoDate){
+    if(!isoDate) return Promise.resolve([]);
+    return Promise.all([
+      backendApi('getAppointments', {date:isoDate}),
+      backendApi('getBlockedSlots', {date:isoDate})
+    ]).then(function(results){
+      var apptsRes = results[0], blocksRes = results[1];
+      var taken = {};
+      if(apptsRes && apptsRes.success){
+        apptsRes.appointments.forEach(function(a){ if(a.status!=='Cancelled') taken[normTime(a.time)] = true; });
+      }
+      var blocks = (blocksRes && blocksRes.success) ? blocksRes.blocks : [];
+      return TIME_SLOTS.filter(function(t){
+        if(taken[normTime(t)]) return false;
+        return !blocks.some(function(b){ return isTimeBlocked(t, b.fromTime, b.toTime); });
+      });
+    }).catch(function(){ return TIME_SLOTS.slice(); });
+  }
+
+  /* ── Active session ── */
+  function getActive(state){
+    var s = state || st;
+    return s.sessions.find(function(x){ return x.id === s.activeId; }) || null;
+  }
+  function getActiveMsgs(){ var s = getActive(); return s ? s.msgs : []; }
+
+  /* ── New session ── */
+  function newSession(){
+    var id = 'sess_' + Date.now();
+    var sess = { id:id, title:'New Chat', createdAt:new Date().toISOString(), msgs:[] };
+    upd(function(prev){
+      var updated = [sess].concat(prev.sessions);
+      saveSessions(updated);
+      return { sessions:updated, activeId:id, input:'', busy:false, booking:null, manage:null };
+    });
+  }
+
+  /* ── Switch session ── */
+  function switchSession(id){
+    upd({ activeId:id, input:'', busy:false, booking:null, manage:null });
+  }
+
+  /* ── Delete session ── */
+  function deleteSession(id){
+    upd(function(prev){
+      var updated = prev.sessions.filter(function(s){ return s.id!==id; });
+      saveSessions(updated);
+      return { sessions:updated, activeId: updated.length ? updated[0].id : null };
+    });
+  }
+
+  /* ── Add message to active session ── */
+  function addMsg(msg, bookingPatch){
+    upd(function(prev){
+      var sessions = prev.sessions.map(function(sess){
+        if(sess.id !== prev.activeId) return sess;
+        var msgs = sess.msgs.concat([msg]);
+        var title = sess.title==='New Chat' && msg.role==='user'
+          ? msg.text.slice(0,38) + (msg.text.length>38?'…':'')
+          : sess.title;
+        return Object.assign({},sess,{msgs:msgs,title:title});
+      });
+      saveSessions(sessions);
+      var patch = { sessions:sessions };
+      if(bookingPatch !== undefined) patch.booking = bookingPatch;
+      return patch;
+    });
+  }
+
+  function updateTypingMsg(typingId, newMsg){
+    upd(function(prev){
+      var sessions = prev.sessions.map(function(sess){
+        if(sess.id !== prev.activeId) return sess;
+        var msgs = sess.msgs.filter(function(m){ return m.id!==typingId; }).concat([newMsg]);
+        return Object.assign({},sess,{msgs:msgs});
+      });
+      saveSessions(sessions);
+      return { sessions:sessions, busy:false };
+    });
+  }
+
+  /* ── Scroll ── */
+  function scrollBottom(){
+    setTimeout(function(){
+      if(bottomRef.current) bottomRef.current.scrollIntoView({behavior:'smooth'});
+    }, 80);
+  }
+
+  /* ── Language detection ── */
+  function detectLang(text){
+    var t = text.toLowerCase();
+    var hindiChars = /[\u0900-\u097F]/.test(text);
+    if(hindiChars) return 'hi';
+    var hinglishWords = ['kya','hai','hain','nahi','kaise','kab','kahan','batao','chahiye','please','thik','theek','accha','acha','bilkul','zaroor','bata','mujhe','mera','meri','aap','hum','tum','dard','dant','pet','sir','bhai','behen','ji','haa','haan','nhi','abhi','jaldi','zyada','bahut','phir','kyun','kaun','kitna'];
+    var words = t.split(/\s+/);
+    var hinglishCount = words.filter(function(w){ return hinglishWords.indexOf(w)>=0; }).length;
+    return hinglishCount >= 1 ? 'hg' : 'en';
+  }
+
+  /* ── Comprehensive Knowledge Base ── */
+  var KB = {
+    timings: {
+      en: 'We are open Monday to Saturday, 9:30 AM to 6:30 PM. We are closed on Sundays and public holidays.',
+      hi: '\u0939\u092E \u0938\u094B\u092E\u0935\u093E\u0930 \u0938\u0947 \u0936\u0928\u093F\u0935\u093E\u0930 \u0924\u0915, \u0938\u0941\u092C\u0939 9:30 \u092C\u091C\u0947 \u0938\u0947 \u0936\u093E\u092E 6:30 \u092C\u091C\u0947 \u0924\u0915 \u0916\u0941\u0932\u0947 \u0939\u0948\u0902\u0964 \u0930\u0935\u093F\u0935\u093E\u0930 \u092C\u0902\u062F \u0930\u0939\u0924\u0947 \u0939\u0948\u0902\u0964',
+      hg: 'Hum Monday se Saturday tak khule hain, subah 9:30 se shaam 6:30 baje tak. Sunday ko band rehte hain.'
+    },
+    location: {
+      en: 'We are at Block R-74 B, Dilshad Garden, Delhi 110095. Just 5-7 minutes walk from Dilshad Garden Metro Station (Red Line).',
+      hi: '\u0939\u092E \u092C\u094D\u0932\u0949\u0915 \u0906\u0930-74 \u092C\u0940, \u0926\u093F\u0932\u0936\u093E\u0926 \u0917\u093E\u0930\u094D\u0921\u0928, \u0926\u093F\u0932\u094D\u0932\u0940 \u092E\u0947\u0902 \u0939\u0948\u0902\u0964 \u0926\u093F\u0932\u0936\u093E\u0926 \u0917\u093E\u0930\u094D\u0921\u0928 \u092E\u0947\u091F\u094D\u0930\u094B \u0938\u094D\u091F\u0947\u0936\u0928 \u0938\u0947 5-7 \u092E\u093F\u0928\u091F \u092A\u0948\u0926\u0932 \u0926\u0942\u0930\u0940 \u092A\u0930\u0964',
+      hg: 'Hum Block R-74 B, Dilshad Garden, Delhi mein hain. Metro station se sirf 5-7 minute ki walk hai (Red Line).'
+    },
+    contact: {
+      en: 'You can reach us at +91 93199 90912 or +91 78669 39786. We also respond on WhatsApp.',
+      hi: '\u0906\u092A \u0939\u092E\u0938\u0947 +91 93199 90912 \u092F\u093E +91 78669 39786 \u092A\u0930 \u0938\u0902\u092A\u0930\u094D\u0915 \u0915\u0930 \u0938\u0915\u0924\u0947 \u0939\u0948\u0902\u0964',
+      hg: 'Aap hume +91 93199 90912 ya +91 78669 39786 par call kar sakte hain. WhatsApp par bhi reply karte hain.'
+    },
+    payment: {
+      en: 'We accept Cash, UPI (GPay, PhonePe, Paytm), and all Debit/Credit Cards. No hidden charges - full transparency.',
+      hi: '\u0939\u092E \u0928\u0915\u0926, \u092F\u0942\u092A\u0940\u0906\u0908 \u0914\u0930 \u0938\u092D\u0940 \u0921\u0947\u092C\u093F\u091F/\u0915\u094D\u0930\u0947\u0921\u093F\u091F \u0915\u093E\u0930\u094D\u0921 \u0938\u094D\u0935\u0940\u0915\u093E\u0930 \u0915\u0930\u0924\u0947 \u0939\u0948\u0902\u0964 \u0915\u094B\u0908 \u091B\u0941\u092A\u093E \u0936\u0941\u0932\u094D\u0915 \u0928\u0939\u0940\u0902\u0964',
+      hg: 'Hum Cash, UPI (GPay, PhonePe, Paytm) aur Debit/Credit Cards lete hain. Koi hidden charges nahi.'
+    },
+    emergency: {
+      en: 'For dental emergencies (severe pain, swelling, trauma, broken tooth) please call us immediately at +91 93199 90912. We will guide you right away.',
+      hi: '\u0926\u0902\u0924 \u0906\u092A\u093E\u0924\u0915\u093E\u0932 (\u0924\u0947\u091C \u062C\u0926\u0930\u094D\u0926, \u0938\u0942\u091C\u0928, \u091A\u094B\u091F) \u0915\u0947 \u0932\u093F\u090F \u0924\u0941\u0930\u0902\u0924 +91 93199 90912 \u092A\u0930 \u0915\u093E\u0932 \u0915\u0930\u0947\u0902\u0964',
+      hg: 'Dental emergency mein (tez dard, sujan, chot) turant +91 93199 90912 par call karein. Hum abhi help karenge.'
+    },
+    rct: {
+      en: 'Root canal treatment (RCT) removes the infected nerve from inside the tooth to save it from extraction. We do hand, rotary, laser, and complex root canals for both front and back teeth. The procedure is mostly painless with proper anesthesia and usually completed in 1-2 sittings.',
+      hi: '\u0930\u0942\u091F \u0915\u0948\u0928\u0932 \u0926\u093E\u0902\u0924 \u0915\u0947 \u0905\u0902\u0926\u0930 \u0938\u0947 \u0938\u0902\u0915\u094D\u0930\u092E\u093F\u0924 \u0928\u0938 \u0939\u091F\u093E\u0928\u0947 \u0915\u0940 \u092A\u094D\u0930\u0915\u094D\u0930\u093F\u092F\u093E \u0939\u0948 \u091C\u093F\u0938\u0938\u0947 \u0926\u093E\u0902\u0924 \u092C\u091A \u091C\u093E\u0924\u093E \u0939\u0948\u0964 \u092F\u0939 1-2 \u092C\u0948\u0920\u0915 \u092E\u0947\u0902 \u092A\u0942\u0930\u093E \u0939\u094B\u0924\u093E \u0939\u0948\u0964',
+      hg: 'Root canal mein daant ke andar ki infected nerve hataate hain taaki daant bachaya ja sake. Dard nahi hota anesthesia se aur 1-2 sitting mein complete hota hai.'
+    },
+    implants: {
+      en: 'Dental implants are permanent artificial tooth roots placed in the jawbone. We use premium brands: Alpha Bio, Nobel Biocare (CC and Active), and Straumann. Both PFM and Zirconia crowns are available. Success rate is over 95% and they last a lifetime with proper care.',
+      hi: '\u0926\u0902\u0924 \u092A\u094D\u0930\u0924\u094D\u092F\u093E\u0930\u094B\u092A\u0923 \u091C\u092C\u0921\u093C\u0947 \u0915\u0940 \u0939\u0921\u094D\u0921\u0940 \u092E\u0947\u0902 \u0932\u0917\u093E\u092F\u093E \u091C\u093E\u0924\u093E \u0939\u0948\u0964 \u0939\u092E Alpha Bio, Nobel Biocare \u0914\u0930 Straumann \u092C\u094D\u0930\u093E\u0902\u0921 \u0909\u092A\u092F\u094B\u0917 \u0915\u0930\u0924\u0947 \u0939\u0948\u0902\u0964',
+      hg: 'Dental implants permanent artificial daant hote hain jawbone mein. Hum Alpha Bio, Nobel Biocare aur Straumann use karte hain. 95%+ success rate hai.'
+    },
+    braces: {
+      en: 'We offer Invisalign (Mild, Moderate, Comprehensive) for invisible teeth straightening, and Damon Braces in both Metal and Ceramic. The doctor recommends the right option after examining your teeth alignment.',
+      hi: '\u0939\u092E Invisalign (\u0905\u0926\u0943\u0936\u094D\u092F) \u0914\u0930 Damon Braces (\u0927\u093E\u0924\u0941/\u0938\u0940\u0930\u093E\u092E\u093F\u0915) \u0909\u092A\u0932\u092C\u094D\u0927 \u0915\u0930\u093E\u0924\u0947 \u0939\u0948\u0902\u0964',
+      hg: 'Hum Invisalign (Mild, Moderate, Comprehensive) aur Damon Braces (Metal aur Ceramic) dono offer karte hain. Doctor examination ke baad best option batayenge.'
+    },
+    whitening: {
+      en: 'We offer professional Zoom whitening in-clinic (instant results in about an hour) and take-home whitening kits. Both are safe and effective. Results can last 1-2 years with proper care.',
+      hi: '\u0939\u092E \u0915\u094D\u0932\u093F\u0928\u093F\u0915 \u092E\u0947\u0902 Zoom \u0935\u094D\u0939\u093E\u0907\u091F\u0928\u093F\u0902\u0917 \u0914\u0930 \u0918\u0930 \u0915\u0947 \u0932\u093F\u090F \u0915\u093F\u091F \u0909\u092A\u0932\u092C\u094D\u0927 \u0915\u0930\u093E\u0924\u0947 \u0939\u0948\u0902\u0964',
+      hg: 'Zoom whitening clinic mein 1 ghante mein hoti hai, ya ghar ke liye kit bhi milti hai. 1-2 saal tak results rehte hain.'
+    },
+    children: {
+      en: 'We have a dedicated children dentistry section covering tooth-colored fillings, fluoride treatment, pulpotomy, pediatric root canals, space maintainers, and kids crowns. We make it a fun, fear-free experience for children.',
+      hi: '\u0939\u092E\u093E\u0930\u0947 \u092F\u0939\u093E\u0901 \u092C\u091A\u094D\u091A\u094B\u0902 \u0915\u0940 \u0926\u0902\u0924 \u0938\u0947\u0935\u093E\u090F\u0902 \u0909\u092A\u0932\u092C\u094D\u0927 \u0939\u0948\u0902 - \u092B\u093F\u0932\u093F\u0902\u0917, \u092B\u094D\u0932\u094B\u0930\u093E\u0907\u0921, \u092A\u0941\u0932\u094D\u092A\u094B\u091F\u094B\u092E\u0940 \u0906\u0926\u093F\u0964',
+      hg: 'Bacchon ke liye dedicated section hai - fillings, fluoride, pulpotomy, pedo RCT, space maintainers, crowns sab milta hai. Bacchon ko fear-free experience dete hain.'
+    },
+    crowns: {
+      en: 'We offer Zirconia (strongest, most natural-looking), E-Max (all-ceramic, great aesthetics), and PFM crowns. Zirconia is generally recommended for back teeth and E-Max for front teeth. All are durable and natural-looking.',
+      hi: '\u0939\u092E \u091C\u093C\u093F\u0930\u094D\u0915\u094B\u0928\u093F\u092F\u093E, E-Max \u0914\u0930 PFM \u0915\u094D\u0930\u093E\u0909\u0928 \u0909\u092A\u0932\u092C\u094D\u0927 \u0915\u0930\u093E\u0924\u0947 \u0939\u0948\u0902\u0964',
+      hg: 'Zirconia (sabse mazboot), E-Max aur PFM crowns available hain. Zirconia back teeth ke liye, E-Max front teeth ke liye best hota hai.'
+    },
+    dentures: {
+      en: 'We offer Complete Dentures (full set), BPS precision dentures, Monomer-free dentures, Flexible RPD, and Cast Partial Dentures. The right type depends on how many teeth are missing - doctor will advise after examination.',
+      hi: '\u0939\u092E \u0938\u0902\u092A\u0942\u0930\u094D\u0923 \u0921\u0947\u0928\u091A\u0930, BPS \u0921\u0947\u0928\u091A\u0930, \u092B\u094D\u0932\u0947\u0915\u094D\u0938\u093F\u092C\u0932 RPD \u0906\u0926\u093F \u0909\u092A\u0932\u092C\u094D\u0927 \u0915\u0930\u093E\u0924\u0947 \u0939\u0948\u0902\u0964',
+      hg: 'Complete dentures, BPS dentures, Flexible RPD - sab available hain. Doctor examination ke baad best option batayenge.'
+    },
+    gums: {
+      en: 'We treat all gum diseases: Scaling (Grade 1-2-3), Deep Scaling, Periodontal Therapy, Flap Surgery, Laser Gum Treatment, and Gum Contouring (reshaping for a better smile). Healthy gums are the foundation of good oral health.',
+      hi: '\u0939\u092E \u0938\u092D\u0940 \u092E\u0938\u0942\u095C\u094B\u0902 \u0915\u0940 \u092C\u0940\u092E\u093E\u0930\u093F\u092F\u093E\u0902 \u0920\u0940\u0915 \u0915\u0930\u0924\u0947 \u0939\u0948\u0902 - \u0938\u094D\u0915\u0947\u0932\u093F\u0902\u0917, \u0921\u0940\u092A \u0938\u094D\u0915\u0947\u0932\u093F\u0902\u0917, \u0932\u0947\u091C\u093C\u0930 \u0909\u092A\u091A\u093E\u0930\u0964',
+      hg: 'Masoodo ki tamam bimariyan treat karte hain - scaling, deep scaling, laser gum treatment, flap surgery sab available hai.'
+    },
+    extraction: {
+      en: 'We perform all types of tooth extractions: simple extractions (Level 1-2-3) and surgical extractions including wisdom teeth (Mild, Moderate, Severe cases). All extractions are done under proper local anesthesia - you will not feel pain during the procedure.',
+      hi: '\u0939\u092E \u0938\u092D\u0940 \u092A\u094D\u0930\u0915\u093E\u0930 \u0915\u0947 \u0926\u093E\u0902\u0924 \u0928\u093F\u0915\u093E\u0932\u0924\u0947 \u0939\u0948\u0902 - \u0938\u093E\u0927\u093E\u0930\u0923 \u0938\u0947 \u0932\u0947\u0915\u0930 \u0905\u0915\u094D\u0915\u0932 \u0926\u093E\u0922\u093C \u0924\u0915\u0964 \u0926\u0930\u094D\u0926 \u0928\u0939\u0940\u0902 \u0939\u094B\u0924\u093E\u0964',
+      hg: 'Sab tarah ke extractions karte hain - simple se lekar wisdom tooth tak. Anesthesia se dard nahi hota.'
+    },
+    pricing: {
+      en: 'We believe in complete transparency. The doctor explains all treatment costs after a thorough examination before starting any procedure. No hidden charges, no surprises. Every patient deserves to know what they are paying for.',
+      hi: '\u0939\u092E \u092A\u0942\u0930\u0940 \u092A\u093E\u0930\u0926\u0930\u094D\u0936\u093F\u0924\u093E \u092E\u0947\u0902 \u0935\u093F\u0936\u094D\u0935\u093E\u0938 \u0915\u0930\u0924\u0947 \u0939\u0948\u0902\u0964 \u0921\u0949\u0915\u094D\u091F\u0930 \u091C\u093E\u0902\u091A \u0915\u0947 \u092C\u093E\u0926 \u0938\u093E\u0930\u0940 \u0932\u093E\u0917\u0924 \u092C\u0924\u093E\u0924\u0947 \u0939\u0948\u0902\u0964 \u0915\u094B\u0908 \u091B\u0941\u092A\u093E \u0936\u0941\u0932\u094D\u0915 \u0928\u0939\u0940\u0902\u0964',
+      hg: 'Doctor examination ke baad puri cost batate hain. Koi hidden charges nahi. Puri transparency maintain karte hain.'
+    },
+    services: {
+      en: 'We offer: Consultation & Digital Imaging (RVG/OPG/CBCT), Gum Treatments, Tooth-colored Fillings, Root Canal (all types), Children Dentistry, Dentures, Crowns & Bridges, Veneers & Laminates, Dental Implants, Braces & Invisalign, Oral Surgery, Teeth Whitening, Smile Makeover, TMD Treatment, and Conscious Sedation.',
+      hi: '\u0939\u092E \u0938\u092D\u0940 \u092A\u094D\u0930\u0915\u093E\u0930 \u0915\u0940 \u0926\u0902\u0924 \u0938\u0947\u0935\u093E\u090F\u0902 \u092A\u094D\u0930\u0926\u093E\u0928 \u0915\u0930\u0924\u0947 \u0939\u0948\u0902\u0964',
+      hg: 'Consultation, filling, RCT, implants, braces, whitening, children dentistry, dentures, crowns, gum treatment - sab available hai.'
+    },
+    doctor: {
+      en: 'Our specialist doctors have decades of experience in general and advanced dentistry. Each treatment is performed by a qualified specialist. The doctor will personally examine you and suggest the best treatment plan.',
+      hi: '\u0939\u092E\u093E\u0930\u0947 \u0935\u093F\u0936\u0947\u0937\u091C\u094D\u091E \u0921\u0949\u0915\u094D\u091F\u0930\u094B\u0902 \u0915\u094B \u0926\u0902\u0924 \u091A\u093F\u0915\u093F\u0924\u094D\u0938\u093E \u092E\u0947\u0902 \u0926\u0936\u0915\u094B\u0902 \u0915\u093E \u0905\u0928\u0941\u092D\u0935 \u0939\u0948\u0964',
+      hg: 'Hamare specialist doctors ko decades ka experience hai. Har treatment specialist karte hain aur personally examine karke plan batate hain.'
+    },
+    smile: {
+      en: 'Smile makeovers combine multiple treatments like veneers, whitening, braces, implants and crowns to completely transform your smile. We create a customized plan based on your face shape and preferences. The result is a natural, confident smile.',
+      hi: '\u0938\u094D\u092E\u093E\u0907\u0932 \u092E\u0947\u0915\u0913\u0935\u0930 \u092E\u0947\u0902 \u0935\u093F\u0928\u093F\u092F\u0930, \u0935\u094D\u0939\u093E\u0907\u091F\u0928\u093F\u0902\u0917, \u092B\u093F\u0932\u093F\u0902\u0917 \u0906\u0926\u093F \u0915\u093E \u0938\u0902\u092F\u094B\u091C\u0928 \u0939\u094B\u0924\u093E \u0939\u0948\u0964',
+      hg: 'Smile makeover mein veneers, whitening, braces, implants combine karke complete transformation hoti hai. Face shape ke hisaab se custom plan banate hain.'
+    },
+    default: {
+      en: 'Thank you for your question! For the most accurate and personalized answer, our team would love to help you. You can book an appointment and our doctor will guide you completely.',
+      hi: '\u0906\u092A\u0915\u0947 \u0938\u0935\u093E\u0932 \u0915\u0947 \u0932\u093F\u090F \u0927\u0928\u094D\u092F\u0935\u093E\u0926! \u0938\u0939\u0940 \u091C\u093E\u0928\u0915\u093E\u0930\u0940 \u0915\u0947 \u0932\u093F\u090F \u0939\u092E\u0938\u0947 \u092E\u093F\u0932\u0947\u0902\u0964',
+      hg: 'Aapke sawaal ke liye shukriya! Sahi jawab ke liye appointment book karein ya directly call karein.'
+    }
+  };
+
+  function getKB(key, lang){ var k = KB[key]; if(!k) return null; return k[lang] || k['en']; }
+
+  /* ── Local fallback ── */
+  function localFallback(text, lang){
+    var t = (text||'').toLowerCase();
+    if(/time|timing|open|close|sunday|hour|waqt|samay|khula|band|baje/.test(t)) return getKB('timings',lang);
+    if(/location|address|reach|direction|where|metro|kahan|kidhar|rasta|jagah/.test(t)) return getKB('location',lang);
+    if(/phone|number|contact|call|helpline|sampark/.test(t)) return getKB('contact',lang);
+    if(/pay|upi|cash|card|payment|paisa|bhugtan/.test(t)) return getKB('payment',lang);
+    if(/emergency|urgent|swelling|bleed|trauma|toot|dard|severe|sujan/.test(t)) return getKB('emergency',lang);
+    if(/implant|titanium|permanent tooth|nakli daant/.test(t)) return getKB('implants',lang);
+    if(/brace|invisalign|ortho|straight|tedha|seedha/.test(t)) return getKB('braces',lang);
+    if(/root canal|rct|nerve|nadi|jad/.test(t)) return getKB('rct',lang);
+    if(/whiten|zoom|bleach|safed|ujla/.test(t)) return getKB('whitening',lang);
+    if(/child|kid|baby|bachche|bacha|pediatric/.test(t)) return getKB('children',lang);
+    if(/crown|cap|khol|covering/.test(t)) return getKB('crowns',lang);
+    if(/denture|nakli|artificial|removable/.test(t)) return getKB('dentures',lang);
+    if(/gum|masood|bleeding gum/.test(t)) return getKB('gums',lang);
+    if(/extract|remove|nikaalna|ukhad/.test(t)) return getKB('extraction',lang);
+    if(/price|cost|fee|kitna|charge|paisa|rate/.test(t)) return getKB('pricing',lang);
+    if(/smile|makeover|veneer|laminate/.test(t)) return getKB('smile',lang);
+    if(/doctor|dentist|specialist|experience/.test(t)) return getKB('doctor',lang);
+    if(/service|treatment|offer|kya karte|kya hai/.test(t)) return getKB('services',lang);
+    return getKB('default',lang);
+  }
+
+  /* ── System prompt ── */
+  var SYSTEM = 'You are a professional, warm dental clinic receptionist assistant for K.B. Dental Clinic in Dilshad Garden, Delhi. You work like a full call centre — knowledgeable, helpful, and always guiding patients toward the right next step.\n\n' +
+    'LANGUAGE RULE (CRITICAL): Detect the exact language of the patient message and reply in the EXACT same language:\n' +
+    '- English message → reply in English only\n' +
+    '- Hindi (Devanagari) message → reply in Hindi only\n' +
+    '- Hinglish/Roman Hindi → reply in the same Hinglish style\n' +
+    'Never mix languages unless the patient does.\n\n' +
+    'STYLE: For quick factual questions (timings, location, contact, payment modes), reply in 1-2 short sentences. When the patient asks about a SPECIFIC treatment or procedure, give a fuller, informative answer (4-6 sentences covering what it involves, what to expect, and recovery/care) so they feel completely informed — still warm and conversational, no bullet points, no markdown, natural speech.\n\n' +
+    'CLINIC INFO:\n' +
+    'Name: K.B. Dental Clinic\n' +
+    'Address: Block R-74 B, Dilshad Garden, Delhi 110095\n' +
+    'Metro: 5-7 min walk from Dilshad Garden Metro Station (Red Line)\n' +
+    'Hours: Monday-Saturday, 9:30 AM - 6:30 PM. Closed Sundays.\n' +
+    'Phone: +91 93199 90912, +91 78669 39786\n' +
+    'Payment: Cash, UPI (GPay/PhonePe/Paytm), Debit/Credit Cards\n\n' +
+    'TREATMENTS: Consultation, Digital Imaging (RVG/OPG/CBCT), Gum Treatment (Scaling Gr1-2-3, Deep Scaling, Periodontal Therapy, Flap Surgery, Laser, Gum Contouring), Fillings (Composite, GIC, Temporary), Root Canal (Hand/Rotary/Laser/Complex, anterior & posterior), Children Dentistry (Fillings, Fluoride, Pulpotomy, Pedo-RCT, Space Maintainers, Crowns), Dentures (Complete, BPS, Monomer-free, Flexible RPD, Cast Partial), Crowns & Bridges (Zirconia, E-Max, PFM, Metal), Veneers & Laminates, Implants (Alpha Bio, Nobel Biocare CC+Active, Straumann, PFM+Zirconia crowns, Full Arch), Orthodontics (Invisalign Mild/Moderate/Comprehensive, Damon Braces Metal+Ceramic), Oral Surgery (Extractions Level 1-2-3, Wisdom Tooth Mild/Moderate/Severe, Sinus Lift, Bone Grafting), Whitening (Zoom in-clinic, Home Kit), Smile Makeover, TMD Treatment, Conscious Sedation.\n\n' +
+    (st.treatmentsBlock ? 'FULL CURRENT TREATMENTS LIST (grounded in our real service list — use these exact names when a patient asks about a specific procedure, grouped by department):\n' + st.treatmentsBlock + '\n\n' : '') +
+    'RULES:\n' +
+    '1. Never give specific prices. Say doctor explains after examination.\n' +
+    '2. Only share phone numbers if patient explicitly asks OR it is a genuine emergency (pain/swelling/trauma).\n' +
+    '3. For appointment requests, tell them you can book right here in chat.\n' +
+    '4. For emergencies, always provide the phone number immediately.\n' +
+    '5. Be warm and reassuring. Never say "I don\'t know" — always guide to next step.\n' +
+    '6. If asked to reschedule or cancel an existing appointment, tell them you can help right here in chat.';
+
+  /* ── Treatments list ── */
+  var TREATMENTS = [
+    'Consultation','Root Canal (RCT)','Dental Implant','Braces / Invisalign',
+    'Teeth Whitening','Crown / Cap','Tooth Extraction','Scaling / Cleaning',
+    'Tooth Filling','Dentures','Veneers','Children Dentistry',
+    'Smile Makeover','Wisdom Tooth','Other'
+  ];
+
+  var TIME_SLOTS = ['9:30 AM','10:00 AM','10:30 AM','11:00 AM','11:30 AM','12:00 PM','12:30 PM','2:00 PM','2:30 PM','3:00 PM','3:30 PM','4:00 PM','4:30 PM','5:00 PM','5:30 PM','6:00 PM'];
+
+  /* ── Booking flow ── */
+  var BOOKING_STEPS = ['name','phone','treatment','date','time','confirm'];
+
+  function bookingPrompt(step, booking, lang){
+    var prompts = {
+      name: { en:'Great! To book an appointment, may I start with your full name?', hi:'\u0905\u092A\u0928\u093E \u0928\u093E\u092E \u092C\u0924\u093E\u090F\u0902?', hg:'Bilkul! Appointment book karte hain. Aapka naam kya hai?' },
+      phone: { en:'Thank you '+booking.name+'! What is your mobile number so we can confirm?', hi:''+booking.name+', \u0906\u092A\u0915\u093E \u092E\u094B\u092C\u093E\u0907\u0932 \u0928\u0902\u092C\u0930?', hg:'Shukriya '+booking.name+'! Confirm karne ke liye aapka mobile number?' },
+      treatment: { en:'Which treatment are you looking for?', hi:'\u0915\u093F\u0938 \u0907\u0932\u093E\u091C \u0915\u0947 \u0932\u093F\u090F \u0906\u0928\u093E \u091A\u093E\u0939\u0924\u0947 \u0939\u0948\u0902?', hg:'Kaun sa treatment chahiye?' },
+      date: { en:'Which date works best for you? (Please type like: 28 May or 28/05)', hi:'\u0915\u094C\u0928 \u0938\u0940 \u0924\u093E\u0930\u0940\u0916 \u0938\u0941\u0935\u093F\u0927\u093E\u091C\u0928\u0915 \u0930\u0939\u0947\u0917\u0940?', hg:'Kaunsi date convenient hai? (Likhen jaise: 28 May ya 28/05)' },
+      time: { en:'What time works for you?', hi:'\u0915\u093F\u0938 \u0938\u092E\u092F \u0906\u0928\u093E \u0938\u0941\u0935\u093F\u0927\u093E\u091C\u0928\u0915 \u0939\u094B\u0917\u093E?', hg:'Kaunsa time suit karta hai?' },
+      confirm: {
+        en: 'Perfect! Here is your appointment summary:\n\n Name: '+booking.name+'\n Phone: '+booking.phone+'\n Treatment: '+(booking.treatment||'To be decided')+'\n Date: '+(booking.date||'To be decided')+'\n Time: '+(booking.time||'To be decided')+'\n\nShall I confirm this? Our team will call you to verify.',
+        hi: '\u0906\u092A\u0915\u0940 \u0905\u092A\u0949\u0907\u0902\u091F\u092E\u0947\u0902\u091F \u0935\u093F\u0935\u0930\u0923:\n\n \u0928\u093E\u092E: '+booking.name+'\n \u092B\u094B\u0928: '+booking.phone+'\n \u0907\u0932\u093E\u091C: '+(booking.treatment||'--')+'\n \u0924\u093E\u0930\u0940\u0916: '+(booking.date||'--')+'\n \u0938\u092E\u092F: '+(booking.time||'--')+'\n\n\u0915\u094D\u092F\u093E \u092F\u0939 \u0920\u0940\u0915 \u0939\u0948?',
+        hg: 'Yeh raha aapka appointment summary:\n\n Naam: '+booking.name+'\n Phone: '+booking.phone+'\n Treatment: '+(booking.treatment||'--')+'\n Date: '+(booking.date||'--')+'\n Time: '+(booking.time||'--')+'\n\nConfirm kar lun?'
+      }
+    };
+    var p = prompts[step];
+    return p ? (p[lang] || p['en']) : '';
+  }
+
+  /* ── Process booking step ── */
+  function processBookingInput(text, booking, lang){
+    var step = booking.step;
+    var next = Object.assign({}, booking);
+
+    if(step==='name'){
+      next.name = text.trim();
+      next.step = 'phone';
+    } else if(step==='phone'){
+      next.phone = text.trim();
+      next.step = 'treatment';
+    } else if(step==='treatment'){
+      next.treatment = text.trim();
+      next.step = 'date';
+    } else if(step==='date'){
+      next.date = text.trim();
+      next.step = 'time';
+    } else if(step==='time'){
+      next.time = text.trim();
+      next.step = 'confirm';
+    } else if(step==='confirm'){
+      var t = text.toLowerCase();
+      if(t.indexOf('yes')>=0||t.indexOf('confirm')>=0||t.indexOf('ok')>=0||t.indexOf('han')>=0||t.indexOf('haa')>=0||t.indexOf('bilkul')>=0||t.indexOf('sahi')>=0){
+        return { done:true, booking:next };
+      } else {
+        return { restart:true };
+      }
+    }
+    return { next:next };
+  }
+
+  /* ── Context-aware quick chips ── */
+  function getChips(msgs, lang){
+    if(!msgs || msgs.length===0){
+      if(lang==='hi') return [
+        {label:'\u0905\u092A\u0949\u0907\u0902\u091F\u092E\u0947\u0902\u091F \u0938\u0947\u0935\u093E',en:'I want to book an appointment'},
+        {label:'\u0938\u092E\u092F \u0914\u0930 \u0938\u094D\u0925\u093E\u0928',en:'\u0938\u092E\u092F \u0914\u0930 \u0938\u094D\u0925\u093E\u0928 \u092C\u0924\u093E\u090F\u0902'},
+        {label:'Implant \u0915\u0940 \u091C\u093E\u0928\u0915\u093E\u0930\u0940',en:'Tell me about implants'},
+        {label:'RCT \u0915\u094D\u092F\u093E \u0939\u094B\u0924\u093E \u0939\u0948?',en:'What is root canal treatment?'},
+        {label:'\u0926\u093E\u0902\u0924 \u0926\u0930\u094D\u062F \u0907\u092E\u0930\u091C\u0947\u0902\u0938\u0940',en:'Dental emergency, severe pain'},
+        {label:'\u092B\u0940\u0938 \u0915\u093F\u0924\u0928\u0940 \u0939\u0948?',en:'What are the treatment fees?'},
+        {label:'\u0905\u092A\u0949\u0907\u0902\u091F\u092E\u0947\u0902\u091F \u0930\u0940\u0936\u0947\u0921\u094D\u092F\u0942\u0932/\u0915\u0948\u0902\u0938\u093F\u0932',en:'I want to reschedule or cancel my appointment'}
+      ];
+      return [
+        {label:'Book Appointment',en:'I want to book an appointment'},
+        {label:'Timings & Location',en:'What are your timings and location?'},
+        {label:'Implants',en:'Tell me about dental implants'},
+        {label:'Root Canal',en:'What is root canal treatment?'},
+        {label:'Dental Emergency',en:'I have a dental emergency, severe pain'},
+        {label:'Braces / Invisalign',en:'Tell me about braces and Invisalign'},
+        {label:'Teeth Whitening',en:'Tell me about teeth whitening'},
+        {label:'Treatment Cost',en:'What are the approximate fees?'},
+        {label:'Reschedule / Cancel',en:'I want to reschedule or cancel my appointment'}
+      ];
+    }
+    return [];
+  }
+
+  /* ── Send message ── */
+  function send(overrideText){
+    var text = (overrideText !== undefined ? overrideText : st.input).trim();
+    if(!text || st.busy) return;
+
+    var lang = detectLang(text);
+    var active = getActive();
+    if(!active){
+      newSession();
+      setTimeout(function(){ send(overrideText); }, 100);
+      return;
+    }
+
+    var uId = 'u'+Date.now();
+    var tId = 't'+Date.now();
+    var uMsg = { id:uId, role:'user', text:text, lang:lang };
+
+    // Check if in booking flow
+    var booking = st.booking;
+    if(booking && booking.step){
+      upd(function(prev){
+        var sessions = prev.sessions.map(function(sess){
+          if(sess.id!==prev.activeId) return sess;
+          var t3 = sess.title==='New Chat' ? text.slice(0,38)+(text.length>38?'…':'') : sess.title;
+          return Object.assign({},sess,{msgs:sess.msgs.concat([uMsg]),title:t3});
+        });
+        saveSessions(sessions);
+        return { sessions:sessions };
+      });
+      var result = processBookingInput(text, booking, lang);
+
+      if(result.done){
+        // Booking confirmed — save it as a real appointment on the front desk's schedule
+        backendApi('saveChatbotAppointment', {
+          name: booking.name || '', phone: booking.phone || '',
+          treatment: booking.treatment || '', date: booking.date || '',
+          time: booking.time || '', lang: lang
+        }).catch(function(){});
+        var confirmText = lang==='hi'
+          ? '\u0906\u092A\u0915\u0940 \u0905\u092A\u0949\u0907\u0902\u091F\u092E\u0947\u0902\u091F \u0915\u0928\u094D\u092B\u0930\u094D\u092E \u0939\u094B \u0917\u092F\u0940! \u2705 \u0939\u092E\u093E\u0930\u0940 \u091F\u0940\u092E \u091C\u0932\u094D\u0926 \u0939\u0940 \u0906\u092A\u0938\u0947 \u0938\u0902\u092A\u0930\u094D\u0915 \u0915\u0930\u0947\u0917\u0940\u0964'
+          : lang==='hg'
+          ? 'Appointment confirm ho gayi! \u2705 Hamari team jald hi aapse contact karegi.'
+          : 'Appointment confirmed! \u2705 Our team will call you shortly to verify. See you at K.B. Dental Clinic!';
+        var confirmMsg = { id:'b'+Date.now(), role:'bot', text:confirmText, buttons:[
+          {icon:'\uD83D\uDCDE',label:'Call Us Now',href:'tel:9319990912'},
+          {icon:'\uD83D\uDCAC',label:'WhatsApp',href:'https://wa.me/919319990912?text='+encodeURIComponent('Hi, I booked an appointment. Name: '+booking.name+', Treatment: '+(booking.treatment||'TBD')+', Date: '+(booking.date||'TBD')+', Time: '+(booking.time||'TBD'))}
+        ]};
+        upd(function(prev){
+          var sessions = prev.sessions.map(function(sess){
+            if(sess.id!==prev.activeId) return sess;
+            return Object.assign({},sess,{msgs:sess.msgs.concat([confirmMsg])});
+          });
+          saveSessions(sessions);
+          return { sessions:sessions, booking:null };
+        });
+        scrollBottom();
+        return;
+      }
+
+      if(result.restart){
+        var cancelText = lang==='hi' ? '\u0920\u0940\u0915 \u0939\u0948, \u0905\u092A\u0949\u0907\u0902\u091F\u092E\u0947\u0902\u091F \u0930\u0926\u094D\u0926 \u0915\u0930 \u0926\u093F\u092F\u093E\u0964 \u092A\u0941\u0928\u0903 \u0936\u0941\u0930\u0941 \u0915\u0930\u0928\u0947 \u0915\u0947 \u0932\u093F\u090F \u0932\u093F\u0916\u0947\u0902\u0964' : lang==='hg' ? 'Theek hai, booking cancel kar dete hain. Dobara shuru karne ke liye likhen.' : 'No problem, booking cancelled. Type again whenever you want to book.';
+        upd(function(prev){
+          var cancelMsg = { id:'b'+Date.now(), role:'bot', text:cancelText };
+          var sessions = prev.sessions.map(function(sess){
+            if(sess.id!==prev.activeId) return sess;
+            return Object.assign({},sess,{msgs:sess.msgs.concat([cancelMsg])});
+          });
+          saveSessions(sessions);
+          return { sessions:sessions, booking:null };
+        });
+        scrollBottom();
+        return;
+      }
+
+      if(result.next){
+        var nextBooking = result.next;
+
+        // Date just entered \u2014 check real availability before showing time options
+        if(booking.step==='date'){
+          var isoDate = parseToISODate(nextBooking.date);
+          nextBooking.dateISO = isoDate;
+          fetchOpenSlots(isoDate).then(function(openSlots){
+            var nextPrompt2, chips2, storeBooking2;
+            if(isoDate && openSlots.length){
+              nextPrompt2 = bookingPrompt('time', nextBooking, lang);
+              chips2 = openSlots;
+              storeBooking2 = nextBooking;
+            } else {
+              nextPrompt2 = lang==='hi' ? '\u092E\u093E\u092B\u093C \u0915\u0940\u091C\u093F\u090F, \u0907\u0938 \u0924\u093E\u0930\u0940\u0916 \u0915\u094B \u0915\u094B\u0908 \u0938\u094D\u0932\u0949\u091F \u0909\u092A\u0932\u092C\u094D\u0927 \u0928\u0939\u0940\u0902\u0964 \u0915\u094B\u0908 \u0914\u0930 \u0924\u093E\u0930\u0940\u0916 \u092C\u0924\u093E\u090F\u0902?' : lang==='hg' ? 'Sorry, is date par koi slot available nahi hai. Koi aur date batayein?' : 'Sorry, there are no open slots on that date. Could you suggest another date?';
+              chips2 = [];
+              storeBooking2 = Object.assign({}, nextBooking, {step:'date'});
+            }
+            var nextBotMsg2 = { id:'b'+Date.now(), role:'bot', text:nextPrompt2, bookingChips:chips2, confirmBtns:[] };
+            upd(function(prev){
+              var sessions = prev.sessions.map(function(sess){
+                if(sess.id!==prev.activeId) return sess;
+                return Object.assign({},sess,{msgs:sess.msgs.concat([nextBotMsg2])});
+              });
+              saveSessions(sessions);
+              return { sessions:sessions, booking:storeBooking2 };
+            });
+            scrollBottom();
+          });
+          return;
+        }
+
+        var nextPrompt = bookingPrompt(nextBooking.step, nextBooking, lang);
+        var extraBtns = [];
+        if(nextBooking.step==='confirm'){
+          extraBtns = [{icon:'\u2705',label:'Yes, Confirm',action:'confirm'},{icon:'\u274C',label:'Cancel',action:'cancel'}];
+        }
+        upd(function(prev){
+          var nextBotMsg = { id:'b'+Date.now(), role:'bot', text:nextPrompt, bookingChips: nextBooking.step==='treatment' ? TREATMENTS : [], confirmBtns:extraBtns };
+          var sessions = prev.sessions.map(function(sess){
+            if(sess.id!==prev.activeId) return sess;
+            return Object.assign({},sess,{msgs:sess.msgs.concat([nextBotMsg])});
+          });
+          saveSessions(sessions);
+          return { sessions:sessions, booking:nextBooking };
+        });
+        scrollBottom();
+      }
+      return;
+    }
+
+    // Check if in manage-existing-appointment flow (reschedule/cancel)
+    var mgr = st.manage;
+    if(mgr && mgr.step){
+      upd(function(prev){
+        var sessions = prev.sessions.map(function(sess){
+          if(sess.id!==prev.activeId) return sess;
+          var t3b = sess.title==='New Chat' ? text.slice(0,38)+(text.length>38?'\u2026':'') : sess.title;
+          return Object.assign({},sess,{msgs:sess.msgs.concat([uMsg]),title:t3b});
+        });
+        saveSessions(sessions);
+        return { sessions:sessions };
+      });
+
+      var pushBotMsg = function(msg, patch){
+        upd(function(prev){
+          var sessions = prev.sessions.map(function(sess){
+            if(sess.id!==prev.activeId) return sess;
+            return Object.assign({},sess,{msgs:sess.msgs.concat([msg])});
+          });
+          saveSessions(sessions);
+          return Object.assign({ sessions:sessions }, patch||{});
+        });
+        scrollBottom();
+      };
+
+      if(mgr.step==='phone'){
+        backendApi('findAppointmentsByPhone', {phone:text.trim()}).then(function(res){
+          var appts = (res && res.success) ? res.appointments : [];
+          if(!appts.length){
+            pushBotMsg({ id:'b'+Date.now(), role:'bot',
+              text: lang==='hi' ? '\u092E\u093E\u092B\u093C \u0915\u0940\u091C\u093F\u090F, \u0907\u0938 \u0928\u0902\u092C\u0930 \u092A\u0930 \u0915\u094B\u0908 \u0905\u092A\u0949\u0907\u0902\u091F\u092E\u0947\u0902\u091F \u0928\u0939\u0940\u0902 \u092E\u093F\u0932\u093E\u0964 \u0915\u0943\u092A\u092F\u093E \u0915\u094D\u0932\u093F\u0928\u093F\u0915 \u0915\u094B \u0915\u0949\u0932 \u0915\u0930\u0947\u0902\u0964' : lang==='hg' ? 'Sorry, is number par koi appointment nahi mila. Clinic ko call kar lijiye.' : 'Sorry, I could not find any upcoming appointment with that number. Please call the clinic and our team will help.',
+              buttons:[{icon:'\uD83D\uDCDE',label:'Call Us',href:'tel:9319990912'}]
+            }, { manage:null });
+            return;
+          }
+          var listText = appts.map(function(a,i){ return (i+1)+'. '+a.date+' at '+a.time+' \u2014 '+a.type+' ('+a.status+')'; }).join('\n');
+          var promptTxt = (lang==='hi'?'\u0906\u092A\u0915\u0947 \u0905\u092A\u0949\u0907\u0902\u091F\u092E\u0947\u0902\u091F:\n':lang==='hg'?'Aapke appointments:\n':'Here are your upcoming appointments:\n') + listText + '\n\n' + (lang==='hi'?'\u0915\u0943\u092A\u092F\u093E \u0928\u0902\u092C\u0930 \u092C\u0924\u093E\u090F\u0902 (\u091C\u0948\u0938\u0947 1)':lang==='hg'?'Number batayein (jaise 1)':'Please tell me the number (e.g. 1)');
+          var chips = appts.map(function(a,i){ return String(i+1); });
+          pushBotMsg({ id:'b'+Date.now(), role:'bot', text:promptTxt, bookingChips:chips },
+            { manage: Object.assign({}, mgr, {step:'selectAppt', appts:appts}) });
+        });
+        return;
+      }
+
+      if(mgr.step==='selectAppt'){
+        var idx = parseInt(text.trim(),10) - 1;
+        var chosen = mgr.appts[idx];
+        if(!chosen){
+          pushBotMsg({ id:'b'+Date.now(), role:'bot', text: lang==='hi'?'\u0915\u0943\u092A\u092F\u093E \u0938\u0942\u091A\u0940 \u092E\u0947\u0902 \u0938\u0947 \u0938\u0939\u0940 \u0928\u0902\u092C\u0930 \u092C\u0924\u093E\u090F\u0902\u0964':lang==='hg'?'List me se sahi number batayein.':'Please pick a valid number from the list above.' });
+          return;
+        }
+        var actionPrompt = lang==='hi'?'\u0915\u094D\u092F\u093E \u0906\u092A \u0907\u0938\u0947 \u0930\u0940\u0936\u0947\u0921\u094D\u092F\u0942\u0932 \u0915\u0930\u0928\u093E \u091A\u093E\u0939\u0924\u0947 \u0939\u0948\u0902 \u092F\u093E \u0915\u0948\u0902\u0938\u093F\u0932?':lang==='hg'?'Reschedule karna hai ya cancel?':'Would you like to reschedule or cancel this appointment?';
+        pushBotMsg({ id:'b'+Date.now(), role:'bot', text:actionPrompt, bookingChips:['Reschedule','Cancel'] },
+          { manage: Object.assign({}, mgr, {step:'action', apptId:chosen.id}) });
+        return;
+      }
+
+      if(mgr.step==='action'){
+        var lc = text.toLowerCase();
+        if(/cancel/.test(lc)){
+          backendApi('updateAppointmentStatus', {apptId:mgr.apptId, status:'Cancelled', cancelReason:'Cancelled via chatbot'}).then(function(){
+            pushBotMsg({ id:'b'+Date.now(), role:'bot', text: lang==='hi'?'\u0906\u092A\u0915\u093E \u0905\u092A\u0949\u0907\u0902\u091F\u092E\u0947\u0902\u091F \u0915\u0948\u0902\u0938\u093F\u0932 \u0915\u0930 \u0926\u093F\u092F\u093E \u0917\u092F\u093E \u0939\u0948\u0964':lang==='hg'?'Aapka appointment cancel kar diya gaya hai.':'Your appointment has been cancelled. Hope to see you another time!' }, { manage:null });
+          });
+          return;
+        }
+        if(/resched/.test(lc)){
+          pushBotMsg({ id:'b'+Date.now(), role:'bot', text: bookingPrompt('date', {}, lang) },
+            { manage: Object.assign({}, mgr, {step:'newDate'}) });
+          return;
+        }
+        pushBotMsg({ id:'b'+Date.now(), role:'bot', text: lang==='hi'?'\u0930\u0940\u0936\u0947\u0921\u094D\u092F\u0942\u0932 \u092F\u093E \u0915\u0948\u0902\u0938\u093F\u0932?':lang==='hg'?'Reschedule ya cancel?':'Reschedule or Cancel?', bookingChips:['Reschedule','Cancel'] });
+        return;
+      }
+
+      if(mgr.step==='newDate'){
+        var isoD = parseToISODate(text.trim());
+        fetchOpenSlots(isoD).then(function(openSlots){
+          if(!isoD || !openSlots.length){
+            pushBotMsg({ id:'b'+Date.now(), role:'bot', text: lang==='hi'?'\u092E\u093E\u092B\u093C \u0915\u0940\u091C\u093F\u090F, \u0907\u0938 \u0924\u093E\u0930\u0940\u0916 \u0915\u094B \u0938\u094D\u0932\u0949\u091F \u0928\u0939\u0940\u0902\u0964 \u0915\u094B\u0908 \u0914\u0930 \u0924\u093E\u0930\u0940\u0916 \u092C\u0924\u093E\u090F\u0902\u0964':lang==='hg'?'Sorry, us date par slot nahi hai. Doosri date batayein.':'Sorry, no open slots that day \u2014 please try another date.' });
+            return;
+          }
+          pushBotMsg({ id:'b'+Date.now(), role:'bot', text: bookingPrompt('time', {}, lang), bookingChips:openSlots },
+            { manage: Object.assign({}, mgr, {step:'newTime', newDate:text.trim(), newDateISO:isoD}) });
+        });
+        return;
+      }
+
+      if(mgr.step==='newTime'){
+        backendApi('updateAppointment', {apptId:mgr.apptId, date:mgr.newDateISO, time:text.trim()}).then(function(){
+          pushBotMsg({ id:'b'+Date.now(), role:'bot', text: lang==='hi'?'\u0906\u092A\u0915\u093E \u0905\u092A\u0949\u0907\u0902\u091F\u092E\u0947\u0902\u091F \u0928\u0908 \u0924\u093E\u0930\u0940\u0916/\u0938\u092E\u092F \u092A\u0930 \u092C\u0926\u0932 \u0926\u093F\u092F\u093E \u0917\u092F\u093E \u0939\u0948\u0964':lang==='hg'?'Aapka appointment naye date/time par reschedule ho gaya hai.':'Your appointment has been rescheduled successfully!' }, { manage:null });
+        });
+        return;
+      }
+      return;
+    }
+
+    // Check if message is about managing an EXISTING appointment (checked before
+    // the new-booking intent, since "reschedule" contains the substring "schedule")
+    var isManageRequest = /cancel|resched|postpone|badal.*appoint|change.*appoint/i.test(text.toLowerCase());
+    if(isManageRequest){
+      var initManage = { step:'phone', appts:[], apptId:null };
+      var initPromptM = lang==='hi' ? '\u091C\u093C\u0930\u0942\u0930! \u0915\u0943\u092A\u092F\u093E \u0935\u0939 \u092E\u094B\u092C\u093E\u0907\u0932 \u0928\u0902\u092C\u0930 \u092C\u0924\u093E\u090F\u0902 \u091C\u093F\u0938\u0938\u0947 \u0905\u092A\u0949\u0907\u0902\u091F\u092E\u0947\u0902\u091F \u092C\u0941\u0915 \u0939\u0941\u0906 \u0925\u093E\u0964' : lang==='hg' ? 'Bilkul! Jis number se booking hui thi, wo mobile number batayein.' : 'Sure! Please share the mobile number your appointment was booked with.';
+      var initBotMsgM = { id:'b'+Date.now(), role:'bot', text:initPromptM };
+      upd(function(prev){
+        var sessions = prev.sessions.map(function(sess){
+          if(sess.id!==prev.activeId) return sess;
+          var t2m = sess.title==='New Chat' ? text.slice(0,38)+(text.length>38?'\u2026':'') : sess.title;
+          return Object.assign({},sess,{msgs:sess.msgs.concat([uMsg,initBotMsgM]),title:t2m});
+        });
+        saveSessions(sessions);
+        return { sessions:sessions, manage:initManage };
+      });
+      scrollBottom();
+      return;
+    }
+
+    // Check if message is appointment-related
+    var isBookingRequest = /book|appoint|visit|aana|aaye|chahiye.*appointment|schedule|slot|fix appointment|book karo|appointment chahiye/.test(text.toLowerCase());
+    if(isBookingRequest){
+      var initBooking = { step:'name', name:'', phone:'', treatment:'', date:'', time:'' };
+      var initPrompt = bookingPrompt('name', initBooking, lang);
+      var initBotMsg2 = { id:'b'+Date.now(), role:'bot', text:initPrompt };
+      upd(function(prev){
+        var sessions = prev.sessions.map(function(sess){
+          if(sess.id!==prev.activeId) return sess;
+          var t2 = sess.title==='New Chat' ? text.slice(0,38)+(text.length>38?'…':'') : sess.title;
+          return Object.assign({},sess,{msgs:sess.msgs.concat([uMsg,initBotMsg2]),title:t2});
+        });
+        saveSessions(sessions);
+        return { sessions:sessions, booking:initBooking };
+      });
+      scrollBottom();
+      return;
+    }
+
+    // Normal chat — build apiMsgs BEFORE state update to avoid stale closure
+    var currentMsgs7 = getActiveMsgs();
+    var apiMsgs = currentMsgs7
+      .filter(function(m){ return (m.role==='user'||m.role==='bot') && !m.typing; })
+      .map(function(m){ return {role:m.role==='user'?'user':'assistant', content:m.text}; })
+      .concat([{role:'user', content:text}]);
+
+    upd(function(prev){
+      var sessions = prev.sessions.map(function(sess){
+        if(sess.id!==prev.activeId) return sess;
+        var t7 = sess.title==='New Chat' ? text.slice(0,38)+(text.length>38?'…':'') : sess.title;
+        return Object.assign({},sess,{msgs:sess.msgs.concat([uMsg,{id:tId,role:'bot',text:'',typing:true}]),title:t7});
+      });
+      saveSessions(sessions);
+      return { sessions:sessions, busy:true, input:'' };
+    });
+    scrollBottom();
+
+    backendApi('chatbotReply', { system:SYSTEM, messages:JSON.stringify(apiMsgs) })
+    .then(function(data){
+      var reply = data && data.success && data.reply ? data.reply : localFallback(text,lang);
+      var btns = getActionBtns(reply+' '+text, lang);
+      var botMsg = {id:'b'+Date.now(),role:'bot',text:reply,buttons:btns,lang:lang};
+      updateTypingMsg(tId, botMsg);
+      scrollBottom();
+    })
+    .catch(function(){
+      var reply = localFallback(text,lang);
+      var btns = getActionBtns(reply+' '+text, lang);
+      updateTypingMsg(tId,{id:'b'+Date.now(),role:'bot',text:reply,buttons:btns,lang:lang});
+      scrollBottom();
+    });
+  }
+
+  /* ── Action buttons based on content ── */
+  function getActionBtns(text, lang){
+    var t = (text||'').toLowerCase();
+    var btns = [];
+    if(/location|address|direction|kahan|reach|metro|map/.test(t))
+      btns.push({icon:'\uD83D\uDCCD',label:'Get Directions',href:'https://maps.google.com/?q=Block+R-74+B,+Dilshad+Garden,+Delhi'});
+    if(/book|appoint|visit|schedule|slot/.test(t))
+      btns.push({icon:'\uD83D\uDCC5',label:'Book Appointment',action:'book'});
+    if(/emergency|urgent|pain|swelling|dard|tez|severe/.test(t))
+      btns.push({icon:'\uD83D\uDCDE',label:'Call Now — Emergency',href:'tel:9319990912'});
+    if(btns.length===0)
+      btns.push({icon:'\uD83D\uDCC5',label:'Book Appointment',action:'book'});
+    btns.push({icon:'\uD83D\uDCAC',label:'WhatsApp Us',href:'https://wa.me/919319990912?text='+encodeURIComponent('Hello K.B. Dental Clinic, I need help with dental care.')});
+    return btns;
+  }
+
+  function handleBtnAction(btn){
+    if(btn.action==='book'){
+      send('I want to book an appointment');
+    } else if(btn.action==='confirm'){
+      send('Yes, confirm');
+    } else if(btn.action==='cancel'){
+      send('No, cancel');
+    } else if(btn.href){
+      window.open(btn.href,'_blank');
+    }
+  }
+
+  /* ── Render message bubble ── */
+  function renderMsg(msg, idx){
+    var isUser = msg.role==='user';
+    if(msg.typing){
+      return e('div',{key:msg.id,style:{display:'flex',alignItems:'flex-end',gap:8,marginBottom:10}},
+        e('div',{style:{width:34,height:34,borderRadius:'50%',background:'linear-gradient(135deg,#1A237E,#1357A6)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}},'🦷'),
+        e('div',{style:{background:'#fff',borderRadius:'4px 18px 18px 18px',padding:'14px 18px',boxShadow:'0 2px 8px rgba(0,0,0,.08)',border:'1px solid #E3E8F0'}},
+          e('div',{style:{display:'flex',gap:5,alignItems:'center'}},
+            e('span',{style:{width:8,height:8,borderRadius:'50%',background:'#90A4AE',display:'inline-block',animation:'bounce 1.2s infinite'}}),
+            e('span',{style:{width:8,height:8,borderRadius:'50%',background:'#90A4AE',display:'inline-block',animation:'bounce 1.2s infinite .2s'}}),
+            e('span',{style:{width:8,height:8,borderRadius:'50%',background:'#90A4AE',display:'inline-block',animation:'bounce 1.2s infinite .4s'}})
+          )
+        )
+      );
+    }
+    return e('div',{key:msg.id||idx,style:{display:'flex',flexDirection:isUser?'row-reverse':'row',alignItems:'flex-end',gap:8,marginBottom:10}},
+      !isUser && e('div',{style:{width:34,height:34,borderRadius:'50%',background:'linear-gradient(135deg,#1A237E,#1357A6)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0,boxShadow:'0 2px 6px rgba(26,35,126,.3)'}},'🦷'),
+      e('div',{style:{maxWidth:'78%',display:'flex',flexDirection:'column',alignItems:isUser?'flex-end':'flex-start',gap:6}},
+        e('div',{style:{
+          background:isUser?'linear-gradient(135deg,#1A237E,#1357A6)':'#fff',
+          color:isUser?'#fff':'#263238',
+          borderRadius:isUser?'18px 18px 4px 18px':'4px 18px 18px 18px',
+          padding:'11px 16px',fontSize:13.5,lineHeight:1.7,
+          boxShadow:'0 2px 10px rgba(0,0,0,.08)',
+          border:isUser?'none':'1px solid #E3E8F0',
+          fontFamily:"'Poppins',sans-serif",
+          whiteSpace:'pre-line'
+        }}, msg.text),
+        !isUser && msg.bookingChips && msg.bookingChips.length>0 &&
+        e('div',{style:{display:'flex',flexWrap:'wrap',gap:6,marginTop:2}},
+          msg.bookingChips.map(function(chip,ci){
+            return e('button',{key:ci,onClick:function(){send(chip);},style:{
+              padding:'6px 12px',borderRadius:20,border:'1.5px solid #1A237E',
+              background:'#fff',color:'#1A237E',fontSize:11.5,fontWeight:600,
+              cursor:'pointer',fontFamily:"'Poppins',sans-serif"
+            }},chip);
+          })
+        ),
+        !isUser && msg.buttons && msg.buttons.length>0 &&
+        e('div',{style:{display:'flex',flexWrap:'wrap',gap:6,marginTop:2}},
+          msg.buttons.map(function(btn,bi){
+            return e('button',{key:bi,onClick:function(){handleBtnAction(btn);},style:{
+              display:'inline-flex',alignItems:'center',gap:5,
+              padding:'7px 14px',borderRadius:20,
+              background: btn.href&&btn.href.indexOf('wa.me')>=0?'#25D366':'#fff',
+              border:'1.5px solid '+(btn.href&&btn.href.indexOf('wa.me')>=0?'#25D366':'#1A237E'),
+              color:btn.href&&btn.href.indexOf('wa.me')>=0?'#fff':'#1A237E',
+              fontSize:12,fontWeight:600,cursor:'pointer',
+              fontFamily:"'Poppins',sans-serif",
+              boxShadow:'0 1px 4px rgba(0,0,0,.08)'
+            }}, btn.icon+' '+btn.label);
+          })
+        )
+      )
+    );
+  }
+
+  /* ── Welcome screen ── */
+  function renderWelcome(){
+    var chips = getChips([], st.lang);
+    return e('div',{style:{padding:'20px 16px'}},
+      e('div',{style:{background:'linear-gradient(135deg,#1A237E,#1357A6)',borderRadius:20,padding:'24px 20px',marginBottom:16,textAlign:'center',boxShadow:'0 4px 20px rgba(26,35,126,.25)'}},
+        e('div',{style:{fontSize:44,marginBottom:10}},'🦷'),
+        e('div',{style:{fontSize:18,fontWeight:700,color:'#fff',marginBottom:4}},'K.B. Dental Clinic'),
+        e('div',{style:{fontSize:12,color:'rgba(255,255,255,.7)',marginBottom:16}},'Dilshad Garden, Delhi \u2022 Est. Call Centre'),
+        e('div',{style:{background:'rgba(255,255,255,.15)',borderRadius:12,padding:'12px 16px',fontSize:12.5,color:'rgba(255,255,255,.9)',lineHeight:1.7,textAlign:'left'}},
+          'Namaste! \uD83D\uDE4F I am your KB Dental Assistant \u2014 available 24x7 to help you with appointments, treatments, timings and any questions. Hum Hindi, English aur Hinglish mein baat kar sakte hain!'
+        )
+      ),
+      e('div',{style:{fontSize:11,fontWeight:700,color:'#546E7A',letterSpacing:'.08em',marginBottom:10,paddingLeft:4}},'HOW CAN I HELP YOU?'),
+      e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
+        chips.map(function(chip,ci){
+          return e('button',{key:ci,onClick:function(){send(chip.en);},style:{
+            padding:'10px 12px',borderRadius:12,
+            border:'1.5px solid #E3E8F0',
+            background:'#fff',color:'#1A237E',
+            fontSize:12,fontWeight:500,cursor:'pointer',
+            fontFamily:"'Poppins',sans-serif",
+            textAlign:'left',lineHeight:1.4,
+            boxShadow:'0 1px 4px rgba(0,0,0,.06)',
+            transition:'all .15s'
+          }}, chip.label);
+        })
+      )
+    );
+  }
+
+  /* ── Ensure session exists ── */
+  useEffect(function(){
+    if(!st.activeId){
+      newSession();
+    }
+  }, []);
+
+  var activeMsgs = getActiveMsgs();
+  var chips = getChips(activeMsgs, st.lang);
+
+  /* ── Render ── */
+  return e('div',{style:{flex:1,display:'flex',overflow:'hidden',fontFamily:"'Poppins',sans-serif",background:T.bg}},
+
+    /* ── Sidebar ── */
+    st.sidebarOpen && e('div',{style:{width:260,flexShrink:0,background:'#fff',borderRight:'1px solid '+T.border,display:'flex',flexDirection:'column',overflow:'hidden'}},
+      /* Sidebar header */
+      e('div',{style:{padding:'14px 16px',borderBottom:'1px solid '+T.border,background:'linear-gradient(135deg,#1A237E,#1357A6)'}},
+        e('div',{style:{fontSize:13,fontWeight:700,color:'#fff',marginBottom:8}},'Chat History'),
+        e('button',{onClick:newSession,style:{width:'100%',padding:'8px',background:'rgba(255,255,255,.15)',color:'#fff',border:'1.5px solid rgba(255,255,255,.4)',borderRadius:8,fontSize:12,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
+          '+ New Chat'
+        )
+      ),
+      /* Session list */
+      e('div',{style:{flex:1,overflowY:'auto',padding:'8px'}},
+        st.sessions.length===0
+          ? e('div',{style:{padding:'20px',textAlign:'center',color:'#90A4AE',fontSize:12}},'No conversations yet.\nStart a new chat!')
+          : st.sessions.map(function(sess){
+            var isActive = sess.id===st.activeId;
+            return e('div',{key:sess.id,style:{
+              padding:'10px 12px',borderRadius:10,marginBottom:4,cursor:'pointer',
+              background:isActive?'#EEF2FF':'transparent',
+              border:isActive?'1.5px solid #C5CAE9':'1.5px solid transparent',
+              transition:'all .15s'
+            }},
+              e('div',{style:{display:'flex',alignItems:'flex-start',gap:6}},
+                e('div',{style:{flex:1},onClick:function(){switchSession(sess.id);}},
+                  e('div',{style:{fontSize:12,fontWeight:600,color:isActive?'#1A237E':'#374151',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginBottom:2}},sess.title),
+                  e('div',{style:{fontSize:10,color:'#9CA3AF'}},new Date(sess.createdAt).toLocaleDateString('en-IN',{day:'numeric',month:'short'})+' \u00b7 '+sess.msgs.length+' msgs')
+                ),
+                e('button',{onClick:function(ev){ev.stopPropagation();deleteSession(sess.id);},style:{padding:'2px 6px',background:'transparent',border:'none',color:'#EF5350',cursor:'pointer',fontSize:13,borderRadius:4,flexShrink:0}},'\u00D7')
+              )
+            );
+          })
+      )
+    ),
+
+    /* ── Main chat area ── */
+    e('div',{style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}},
+
+      /* Chat header */
+      e('div',{style:{background:'linear-gradient(135deg,#1A237E,#1357A6)',padding:'12px 16px',flexShrink:0,boxShadow:'0 2px 8px rgba(0,0,0,.15)'}},
+        e('div',{style:{display:'flex',alignItems:'center',gap:12}},
+          e('button',{onClick:function(){upd(function(p){return {sidebarOpen:!p.sidebarOpen};});},style:{background:'rgba(255,255,255,.15)',border:'none',color:'#fff',padding:'6px 10px',borderRadius:8,cursor:'pointer',fontSize:14}},
+            st.sidebarOpen?'\u25C0':'\u25B6'
+          ),
+          e('div',{style:{width:38,height:38,borderRadius:'50%',background:'rgba(255,255,255,.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,border:'2px solid rgba(255,255,255,.4)'}},'🦷'),
+          e('div',{style:{flex:1}},
+            e('div',{style:{fontSize:14,fontWeight:700,color:'#fff'}}, 'KB Dental Assistant'),
+            e('div',{style:{fontSize:10.5,color:'rgba(255,255,255,.7)'}}, 'K.B. Dental Clinic, Dilshad Garden \u00b7 Online 24x7')
+          ),
+          e('div',{style:{display:'flex',alignItems:'center',gap:6}},
+            e('a',{href:'tel:9319990912',style:{background:'rgba(255,255,255,.15)',border:'1px solid rgba(255,255,255,.4)',color:'#fff',padding:'5px 12px',borderRadius:20,fontSize:11,fontWeight:600,textDecoration:'none',display:'flex',alignItems:'center',gap:4}},'\uD83D\uDCDE Call'),
+            e('a',{href:'https://wa.me/919319990912',target:'_blank',style:{background:'#25D366',border:'none',color:'#fff',padding:'5px 12px',borderRadius:20,fontSize:11,fontWeight:600,textDecoration:'none',display:'flex',alignItems:'center',gap:4}},'\uD83D\uDCAC WhatsApp')
+          )
+        )
+      ),
+
+      /* Messages */
+      e('div',{style:{flex:1,overflowY:'auto',padding:'12px 16px 6px'}},
+        activeMsgs.length===0 ? renderWelcome() : activeMsgs.map(function(msg,i){ return renderMsg(msg,i); }),
+        e('div',{ref:bottomRef,style:{height:1}})
+      ),
+
+      /* Quick chips */
+      chips.length>0 && e('div',{style:{padding:'8px 16px 0',background:'#fff',borderTop:'1px solid '+T.border,display:'flex',gap:6,overflowX:'auto',flexShrink:0}},
+        chips.slice(0,5).map(function(chip,ci){
+          return e('button',{key:ci,onClick:function(){send(chip.en);},style:{
+            padding:'6px 14px',borderRadius:20,border:'1.5px solid #C5CAE9',
+            background:'#EEF2FF',color:'#1A237E',fontSize:11.5,fontWeight:500,
+            cursor:'pointer',fontFamily:"'Poppins',sans-serif",whiteSpace:'nowrap',flexShrink:0
+          }},chip.label);
+        })
+      ),
+
+      /* Input bar */
+      e('div',{style:{background:'#fff',padding:'10px 16px 14px',flexShrink:0,borderTop:'1px solid '+T.border,boxShadow:'0 -2px 8px rgba(0,0,0,.05)'}},
+        e('div',{style:{display:'flex',gap:8,alignItems:'center'}},
+          e('input',{
+            value:st.input,
+            onChange:function(ev){upd({input:ev.target.value});},
+            onKeyDown:function(ev){ if(ev.key==='Enter'&&!ev.shiftKey){ev.preventDefault();send();} },
+            placeholder:st.lang==='hi'?'\u0905\u092A\u0928\u093E \u0938\u0935\u093E\u0932 \u0932\u093F\u0916\u0947\u0902...':st.lang==='hg'?'Apna sawaal likhein...':'Type your question here...',
+            disabled:st.busy,
+            style:{
+              flex:1,padding:'12px 18px',
+              border:'1.5px solid '+(st.busy?'#C5CAE9':'#9FA8DA'),
+              borderRadius:28,fontSize:13,outline:'none',
+              fontFamily:"'Poppins',sans-serif",
+              background:st.busy?'#F8F9FE':'#fff',
+              color:'#1A237E',transition:'border-color .2s',
+              boxShadow:'inset 0 1px 4px rgba(0,0,0,.04)'
+            }
+          }),
+          e('button',{
+            onClick:function(){send();},
+            disabled:st.busy||!st.input.trim(),
+            style:{
+              width:46,height:46,borderRadius:'50%',
+              background:st.busy||!st.input.trim()?'#C5CAE9':'linear-gradient(135deg,#1A237E,#1357A6)',
+              border:'none',color:'#fff',fontSize:18,
+              cursor:st.busy||!st.input.trim()?'not-allowed':'pointer',
+              display:'flex',alignItems:'center',justifyContent:'center',
+              flexShrink:0,boxShadow:st.busy||!st.input.trim()?'none':'0 3px 10px rgba(26,35,126,.4)',
+              transition:'all .2s'
+            }
+          }, st.busy ? '\u2026' : '\u27A4')
+        )
+      )
+    )
+  );
+}
+
+
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(ChatBotPage, null));
+</script>
+</body>
+</html>
