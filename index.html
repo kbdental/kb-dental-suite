@@ -63,15 +63,36 @@ function saveDoctorsLS(arr) {
   try { localStorage.setItem("kbdc_doctors", JSON.stringify(arr)); } catch(e) {}
 }
 const PAYMENT_MODES = ["Cash", "UPI / GPay", "Card", "Net Banking", "Cheque", "N/A"];
+// Staff session token — issued by the backend at sign-in, kept only for this
+// browser session, and attached to every call. Nothing reusable is baked into
+// the page source, so having the /exec URL alone doesn't grant data access.
+const KB_TOKEN_KEY = "kbdc_session_token";
+function getSessionToken() { try { return sessionStorage.getItem(KB_TOKEN_KEY) || ""; } catch (e) { return ""; } }
+function setSessionToken(t) { try { t ? sessionStorage.setItem(KB_TOKEN_KEY, t) : sessionStorage.removeItem(KB_TOKEN_KEY); } catch (e) {} }
+
+// Lets any API call signal the app to drop back to the login screen when the
+// backend reports the session is missing or expired.
+let _onAuthRequired = null;
+function setAuthRequiredHandler(fn) { _onAuthRequired = fn; }
+function handleAuthFailure(res) {
+  if (res && res.authRequired) {
+    setSessionToken("");
+    if (_onAuthRequired) _onAuthRequired();
+  }
+  return res;
+}
+
 async function api(action, data = {}) {
   try {
     const p = new URLSearchParams({
       action
     });
     Object.entries(data).forEach(([k, v]) => p.append(k, typeof v === "object" ? JSON.stringify(v) : String(v ?? "")));
+    const tok = getSessionToken();
+    if (tok) p.append("token", tok);
     const r = await fetch(SCRIPT_URL + "?" + p.toString());
     if (!r.ok) throw new Error("HTTP " + r.status);
-    return await r.json();
+    return handleAuthFailure(await r.json());
   } catch (e) {
     console.error("API:", e);
     return {
@@ -87,10 +108,10 @@ async function apiPost(action, data = {}) {
   try {
     const r = await fetch(SCRIPT_URL, {
       method: "POST",
-      body: JSON.stringify({ action, ...data })
+      body: JSON.stringify({ action, token: getSessionToken(), ...data })
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
-    return await r.json();
+    return handleAuthFailure(await r.json());
   } catch (e) {
     console.error("API:", e);
     return { success: false, error: e.message };
@@ -6086,7 +6107,7 @@ const FOLDER_MENU_ITEMS = [
   { id:"feesheet",         label:"🧾 Procedure & Fee Sheet" },
   { id:"prescription",     label:"💊 Prescription"        },
   { id:"documents",        label:"📎 Documents"           },
-  { id:"finance",          label:"💰 Finance"             },
+  { id:"feecollection",    label:"💰 Fee Collection"      },
   { id:"consent",          label:"✍ Consent Forms"       },
   { id:"registration",     label:"📋 Registration"        },
 ];
@@ -9445,6 +9466,28 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
     setPreview(true);
   };
 
+  // Builds a real PDF in Drive, then opens a pre-filled WhatsApp chat with the
+  // link. WhatsApp's click-to-chat can only carry text, so the PDF is shared as
+  // a link — and the message is never sent automatically, the user still taps
+  // send in WhatsApp themselves.
+  const [pdfBusy, setPdfBusy] = React.useState(false);
+  const doWhatsAppPDF = async (which) => {
+    if (!pat) return;
+    const mobile = String(pat.mobile || pat.whatsapp || "").replace(/\D/g, "").slice(-10);
+    if (!mobile) { alert("This patient has no mobile number saved, so the PDF can't be sent on WhatsApp. You can still use Print."); return; }
+    setPdfBusy(true);
+    const html = which === "progress" ? buildProgressNotesHTML(pat, entries) : buildProcedureDoneHTML(pat, entries);
+    const docName = which === "progress" ? "Treatment Progress Notes" : "Procedure Done";
+    const res = await apiPost("createDocumentPDF", {
+      uhid: pat.uhid, patientName: pat.name || "", html, docName, category: "Progress Notes"
+    });
+    setPdfBusy(false);
+    if (!res || !res.success) { alert("Could not create the PDF: " + ((res && res.error) || "unknown error")); return; }
+    const clinic = (window.CLINIC && window.CLINIC.name) || "K.B. Dental Clinic";
+    const text = "Hello " + (pat.name || "") + ", here is your " + docName + " from " + clinic + ":\n" + res.url;
+    window.open("https://wa.me/91" + mobile + "?text=" + encodeURIComponent(text), "_blank");
+  };
+
   const totalAmt = entries.reduce((s, e) => s + (e.amountReceived ? Number(e.amountReceived) : 0), 0);
 
   // ── Procedure Done View ───────────────────────────────
@@ -9505,7 +9548,12 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
         React.createElement("button", {
           onClick:()=>doPrint("progress"),
           style:{ padding:"6px 14px", fontSize:12, border:"none", borderRadius:6, cursor:"pointer", color:"#fff", background:T, fontWeight:700 }
-        }, "🖨 Print / WhatsApp PDF")
+        }, "🖨 Print"),
+        React.createElement("button", {
+          onClick:()=>doWhatsAppPDF("progress"),
+          disabled:pdfBusy,
+          style:{ padding:"6px 14px", fontSize:12, border:"none", borderRadius:6, cursor:pdfBusy?"wait":"pointer", color:"#fff", background:pdfBusy?"#aaa":"#059669", fontWeight:700 }
+        }, pdfBusy ? "⏳ Creating PDF..." : "📤 WhatsApp PDF")
       )
     ),
     entries.length === 0
@@ -14079,6 +14127,8 @@ function PatientDocuments({ globalPat }) {
   const [docCategories, setDocCategories] = React.useState([]);
   const [category, setCategory] = React.useState("");
   const [msg, setMsg] = React.useState("");
+  const [errMsg, setErrMsg] = React.useState("");
+  const [preview, setPreview] = React.useState(null);
   const fileInputRef = React.useRef(null);
 
   React.useEffect(() => {
@@ -14115,27 +14165,44 @@ function PatientDocuments({ globalPat }) {
     else { setPat(null); setNotFound(true); setDocs([]); }
   };
 
-  const flash = (text) => { setMsg(text); setTimeout(() => setMsg(""), 2500); };
+  const flash = (text) => { setMsg(text); setErrMsg(""); setTimeout(() => setMsg(""), 2500); };
+  const flashErr = (text) => { setErrMsg(text); setMsg(""); setTimeout(() => setErrMsg(""), 6000); };
+
+  const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MB — mirrored server-side
 
   const onFilesPicked = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length || !pat) return;
+
+    // Reject oversized files up front so a big scan doesn't spend a minute
+    // uploading only to be refused by the backend.
+    const tooBig = files.filter(f => f.size > MAX_UPLOAD_BYTES);
+    if (tooBig.length) {
+      flashErr("⚠️ Over 25 MB, not uploaded: " + tooBig.map(f => f.name + " (" + (f.size/1048576).toFixed(1) + " MB)").join(", "));
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (tooBig.length === files.length) return;
+    }
+    const ok = files.filter(f => f.size <= MAX_UPLOAD_BYTES);
+
     setUploading(true);
-    for (const file of files) {
+    let failed = [];
+    for (const file of ok) {
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result.split(",")[1]);
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-      await apiPost("uploadPatientDocument", {
-        uhid: pat.uhid, fileName: file.name, mimeType: file.type || "application/octet-stream",
-        base64Data: base64, category
+      const res = await apiPost("uploadPatientDocument", {
+        uhid: pat.uhid, patientName: pat.name || "", fileName: file.name,
+        mimeType: file.type || "application/octet-stream", base64Data: base64, category
       });
+      if (!res || !res.success) failed.push(file.name + (res && res.error ? " — " + res.error : ""));
     }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
-    flash("✅ Uploaded");
+    if (failed.length) flashErr("❌ Failed: " + failed.join("; "));
+    else if (ok.length) flash("✅ Uploaded " + ok.length + " file" + (ok.length > 1 ? "s" : ""));
     loadDocs(pat.uhid);
   };
 
@@ -14176,7 +14243,9 @@ function PatientDocuments({ globalPat }) {
             onChange:onFilesPicked, disabled:uploading }),
           uploading && React.createElement("span", { style:{ fontSize:12, color:"#888" } }, "⏳ Uploading..."),
           msg && React.createElement("span", { style:{ fontSize:12, fontWeight:600, color:"#059669" } }, msg)
-        )
+        ),
+        React.createElement("div", { style:{ fontSize:10.5, color:"#999", marginTop:8 } }, "Images and PDFs · max 25 MB per file"),
+        errMsg && React.createElement("div", { style:{ fontSize:12, fontWeight:600, color:"#c0392b", marginTop:8, lineHeight:1.5 } }, errMsg)
       ),
       loading && React.createElement("div", { style:{ textAlign:"center", padding:20, color:"#888", fontSize:13 } }, "⏳ Loading..."),
       !loading && docs.length === 0 && React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:24, textAlign:"center", color:"#aaa", fontSize:13, border:`1px dashed ${BORDER}` } }, "No documents uploaded yet."),
@@ -14185,14 +14254,54 @@ function PatientDocuments({ globalPat }) {
         React.createElement("div", { style:{ display:"flex", flexWrap:"wrap", gap:10 } },
           grouped[cat].map(d => React.createElement("div", { key:d.id,
             style:{ width:150, background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8, padding:10, fontSize:11.5 } },
-            React.createElement("a", { href:d.url, target:"_blank", rel:"noopener", style:{ textDecoration:"none", color:T, fontWeight:600, display:"block", marginBottom:4, wordBreak:"break-word" } },
-              (d.mimeType && d.mimeType.startsWith("image/")) ? "🖼 " + d.fileName : "📄 " + d.fileName),
+            React.createElement("div", {
+              onClick:()=>setPreview(d),
+              title:"Click to preview",
+              style:{ cursor:"pointer", height:80, marginBottom:6, borderRadius:5, overflow:"hidden", background:BGS,
+                display:"flex", alignItems:"center", justifyContent:"center", border:`1px solid ${BORDER}` } },
+              (d.mimeType && d.mimeType.indexOf("image/") === 0)
+                ? React.createElement("img", {
+                    src:"https://drive.google.com/thumbnail?id=" + d.driveFileId + "&sz=w300",
+                    style:{ width:"100%", height:"100%", objectFit:"cover" },
+                    onError:e=>{ e.target.style.display="none"; } })
+                : React.createElement("span", { style:{ fontSize:28 } }, "📄")
+            ),
+            React.createElement("div", { onClick:()=>setPreview(d),
+              style:{ cursor:"pointer", color:T, fontWeight:600, marginBottom:4, wordBreak:"break-word" } }, d.fileName),
             React.createElement("div", { style:{ color:"#999", fontSize:10, marginBottom:6 } }, d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString() : ""),
-            React.createElement("button", { onClick:()=>removeDoc(d.id),
-              style:{ fontSize:10.5, padding:"3px 8px", border:`1px solid ${BORDER}`, borderRadius:5, background:"#fff", color:"#c0392b", cursor:"pointer" } }, "🗑 Delete")
+            React.createElement("div", { style:{ display:"flex", gap:5 } },
+              React.createElement("button", { onClick:()=>setPreview(d),
+                style:{ fontSize:10.5, padding:"3px 8px", border:`1px solid ${BORDER}`, borderRadius:5, background:"#fff", color:T, cursor:"pointer" } }, "👁 View"),
+              React.createElement("button", { onClick:()=>removeDoc(d.id),
+                style:{ fontSize:10.5, padding:"3px 8px", border:`1px solid ${BORDER}`, borderRadius:5, background:"#fff", color:"#c0392b", cursor:"pointer" } }, "🗑")
+            )
           ))
         )
       ))
+    ),
+
+    // Preview overlay — Drive's /preview renderer handles both images and PDFs,
+    // so one iframe covers every uploaded document type without extra libraries.
+    preview && React.createElement("div", {
+      onClick:()=>setPreview(null),
+      style:{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:9999,
+        display:"flex", alignItems:"center", justifyContent:"center", padding:24 } },
+      React.createElement("div", {
+        onClick:e=>e.stopPropagation(),
+        style:{ background:"#fff", borderRadius:10, width:"min(900px,95vw)", height:"min(85vh,900px)", display:"flex", flexDirection:"column", overflow:"hidden" } },
+        React.createElement("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", borderBottom:`1px solid ${BORDER}`, gap:10 } },
+          React.createElement("div", { style:{ fontSize:13, fontWeight:700, color:T, wordBreak:"break-word" } }, preview.fileName),
+          React.createElement("div", { style:{ display:"flex", gap:8, flexShrink:0 } },
+            React.createElement("a", { href:preview.url, target:"_blank", rel:"noopener",
+              style:{ fontSize:11.5, padding:"5px 12px", border:`1px solid ${BORDER}`, borderRadius:6, background:"#fff", color:T, textDecoration:"none", fontWeight:600 } }, "↗ Open in Drive"),
+            React.createElement("button", { onClick:()=>setPreview(null),
+              style:{ fontSize:11.5, padding:"5px 12px", border:"none", borderRadius:6, background:T, color:"#fff", cursor:"pointer", fontWeight:700 } }, "✕ Close")
+          )
+        ),
+        React.createElement("iframe", {
+          src:"https://drive.google.com/file/d/" + preview.driveFileId + "/preview",
+          style:{ flex:1, width:"100%", border:"none" }, allow:"autoplay" })
+      )
     )
   );
 }
@@ -16040,8 +16149,8 @@ function SimplePasswordGate({ verifyAction, sessionKey, message, children }) {
 }
 
 
-function FinanceModule({ globalPat, setGlobalPat }) {
-  const [tab, setTab] = React.useState("dashboard");
+function FinanceModule({ globalPat, setGlobalPat, initialTab }) {
+  const [tab, setTab] = React.useState(initialTab || "dashboard");
   return React.createElement("div", null,
     React.createElement(ClinicHeader, null),
     React.createElement("div", { style:{ fontSize:18, fontWeight:700, marginBottom:4 } }, "💰 Finance"),
@@ -16288,6 +16397,59 @@ function ReportsPlaceholder() {
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700, color: "#333", marginBottom: 6 } }, "Reports"),
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 13, color: "#888" } }, "The list of reports needed here is coming soon. This section will be built out once the requirements are shared.")),
     /*#__PURE__*/React.createElement(ReportsPasswordChanger, null)
+  );
+}
+
+// Sits in front of the whole app when the backend has REQUIRE_AUTH switched on.
+// While auth is off (the default) this renders nothing and the app behaves
+// exactly as before, so enabling enforcement is a backend-side decision.
+function StaffLoginGate({ children }) {
+  const [checking, setChecking] = useState(true);
+  const [needsLogin, setNeedsLogin] = useState(false);
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const check = React.useCallback(() => {
+    api("authStatus").then(res => {
+      setChecking(false);
+      if (res && res.success) setNeedsLogin(!!res.authRequired && !res.valid);
+      else setNeedsLogin(false);
+    }).catch(() => { setChecking(false); setNeedsLogin(false); });
+  }, []);
+
+  useEffect(() => {
+    check();
+    setAuthRequiredHandler(() => setNeedsLogin(true));
+  }, [check]);
+
+  const doLogin = async () => {
+    if (!pw.trim()) return;
+    setBusy(true); setErr("");
+    const res = await api("staffLogin", { password: pw });
+    setBusy(false);
+    if (res && res.success && res.token) {
+      setSessionToken(res.token);
+      setPw(""); setNeedsLogin(false);
+    } else setErr((res && res.error) || "Sign-in failed");
+  };
+
+  if (checking) return React.createElement("div", { style:{ padding:40, textAlign:"center", color:"#888", fontSize:13 } }, "⏳ Loading...");
+  if (!needsLogin) return children;
+
+  return React.createElement("div", { style:{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:BGS, padding:20 } },
+    React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:12, padding:"28px 30px", width:"min(380px,100%)", boxShadow:"0 4px 20px rgba(0,0,0,.08)" } },
+      React.createElement("div", { style:{ fontSize:17, fontWeight:800, color:T, marginBottom:4 } }, "🔐 Staff Sign In"),
+      React.createElement("div", { style:{ fontSize:12, color:"#888", marginBottom:18 } }, "Enter the clinic app password to access patient data."),
+      React.createElement("input", { type:"password", value:pw, autoFocus:true, placeholder:"Password",
+        style:{ ...inp, width:"100%", marginBottom:12 },
+        onChange:e=>setPw(e.target.value), onKeyDown:e=>e.key==="Enter"&&doLogin() }),
+      err && React.createElement("div", { style:{ fontSize:12, color:"#c0392b", marginBottom:10, fontWeight:600 } }, "⚠ " + err),
+      React.createElement("button", { onClick:doLogin, disabled:busy||!pw.trim(),
+        style:{ width:"100%", padding:"10px", fontSize:13, border:"none", borderRadius:8, cursor:busy?"wait":"pointer",
+          background:T, color:"#fff", fontWeight:700, opacity:(busy||!pw.trim())?0.6:1 } },
+        busy ? "Signing in..." : "Sign In")
+    )
   );
 }
 
@@ -16649,6 +16811,10 @@ function App() {
   }), page === "finance" && /*#__PURE__*/React.createElement(FinanceModule, {
     globalPat: globalPat,
     setGlobalPat: setGlobalPat
+  }), page === "feecollection" && /*#__PURE__*/React.createElement(FinanceModule, {
+    globalPat: globalPat,
+    setGlobalPat: setGlobalPat,
+    initialTab: "receipt"
   }), page === "consent" && /*#__PURE__*/React.createElement(ConsentForms, {
     globalPat: globalPat,
     setGlobalPat: setGlobalPat
@@ -16662,7 +16828,10 @@ function App() {
     onNavigate: navigateFromSearch
   }), page === "crm" && /*#__PURE__*/React.createElement(CRMModule, null), page === "chatbot" && /*#__PURE__*/React.createElement(ChatbotModule, null), page === "master" && /*#__PURE__*/React.createElement(SimplePasswordGate, { verifyAction:"verifyMasterPassword", sessionKey:"kbdc_master_unlocked", message:"Enter the Master password to view this page." }, /*#__PURE__*/React.createElement(Master, null)), page === "followups" && /*#__PURE__*/React.createElement(FollowUps, { onNavigate: setPage }), page === "reports" && /*#__PURE__*/React.createElement(SimplePasswordGate, { verifyAction:"verifyReportsPassword", sessionKey:"kbdc_reports_unlocked", message:"Enter your password to view Reports (either of the two people's passwords works)." }, /*#__PURE__*/React.createElement(ReportsPlaceholder, null)))));
 }
-window.KBApp = App;
+function AppWithAuth() {
+  return React.createElement(StaffLoginGate, null, React.createElement(App, null));
+}
+window.KBApp = AppWithAuth;
 </script>
 <script>
 // Print/preview export mode: open this file with ?consents=all (every procedure
