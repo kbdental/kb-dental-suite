@@ -63,6 +63,22 @@ function saveDoctorsLS(arr) {
   try { localStorage.setItem("kbdc_doctors", JSON.stringify(arr)); } catch(e) {}
 }
 const PAYMENT_MODES = ["Cash", "UPI / GPay", "Card", "Net Banking", "Cheque", "N/A"];
+// Patient documents are private in Drive and are fetched as bytes through the
+// authenticated backend, so they are rendered from an in-memory blob URL rather
+// than a public Drive link. Callers must revokeObjectURL when done.
+function base64ToBlobUrl(b64, mimeType) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes], { type: mimeType || "application/octet-stream" }));
+}
+
+function downloadBlobUrl(url, fileName) {
+  const a = document.createElement("a");
+  a.href = url; a.download = fileName || "document";
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
 // Staff session token — issued by the backend at sign-in, kept only for this
 // browser session, and attached to every call. Nothing reusable is baked into
 // the page source, so having the /exec URL alone doesn't grant data access.
@@ -9483,9 +9499,18 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
     });
     setPdfBusy(false);
     if (!res || !res.success) { alert("Could not create the PDF: " + ((res && res.error) || "unknown error")); return; }
+    // No public Drive link is created any more. The PDF is downloaded locally
+    // and the staff member attaches it in WhatsApp, so a patient document is
+    // never exposed through a permanent unauthenticated URL.
+    if (res.base64) {
+      const url = base64ToBlobUrl(res.base64, "application/pdf");
+      downloadBlobUrl(url, res.fileName || (docName + ".pdf"));
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    }
     const clinic = (window.CLINIC && window.CLINIC.name) || "K.B. Dental Clinic";
-    const text = "Hello " + (pat.name || "") + ", here is your " + docName + " from " + clinic + ":\n" + res.url;
+    const text = "Hello " + (pat.name || "") + ", please find your " + docName + " from " + clinic + " attached.";
     window.open("https://wa.me/91" + mobile + "?text=" + encodeURIComponent(text), "_blank");
+    alert("The PDF has been downloaded to this computer.\n\nWhatsApp will open with a message ready — attach the downloaded PDF before sending.");
   };
 
   const totalAmt = entries.reduce((s, e) => s + (e.amountReceived ? Number(e.amountReceived) : 0), 0);
@@ -14168,6 +14193,33 @@ function PatientDocuments({ globalPat }) {
   const flash = (text) => { setMsg(text); setErrMsg(""); setTimeout(() => setMsg(""), 2500); };
   const flashErr = (text) => { setErrMsg(text); setMsg(""); setTimeout(() => setErrMsg(""), 6000); };
 
+  // Documents are private in Drive: fetch the bytes through the authenticated
+  // backend and render locally. The uhid is sent so the server can refuse a
+  // document that doesn't belong to the patient currently open.
+  const openPreview = async (d) => {
+    setPreview({ ...d, loading: true });
+    const res = await api("getPatientDocumentContent", { id: d.id, uhid: pat.uhid });
+    if (res && res.success && res.base64) {
+      const url = base64ToBlobUrl(res.base64, res.mimeType || d.mimeType);
+      blobUrlRef.current = url;
+      setPreview({ ...d, loading: false, mimeType: res.mimeType || d.mimeType, blobUrl: url });
+    } else {
+      setPreview({ ...d, loading: false,
+        error: (res && res.error) || "Could not load this document.",
+        tooLarge: !!(res && res.tooLarge) });
+    }
+  };
+
+  // Blob URLs hold the decoded file in memory until explicitly released. The
+  // ref mirrors the current URL so the unmount cleanup can revoke it without
+  // capturing a stale copy of `preview`.
+  const blobUrlRef = React.useRef(null);
+  const closePreview = () => {
+    setPreview(prev => { if (prev && prev.blobUrl) URL.revokeObjectURL(prev.blobUrl); return null; });
+    blobUrlRef.current = null;
+  };
+  React.useEffect(() => () => { if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current); }, []);
+
   const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MB — mirrored server-side
 
   const onFilesPicked = async (e) => {
@@ -14255,22 +14307,21 @@ function PatientDocuments({ globalPat }) {
           grouped[cat].map(d => React.createElement("div", { key:d.id,
             style:{ width:150, background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8, padding:10, fontSize:11.5 } },
             React.createElement("div", {
-              onClick:()=>setPreview(d),
+              onClick:()=>openPreview(d),
               title:"Click to preview",
               style:{ cursor:"pointer", height:80, marginBottom:6, borderRadius:5, overflow:"hidden", background:BGS,
                 display:"flex", alignItems:"center", justifyContent:"center", border:`1px solid ${BORDER}` } },
-              (d.mimeType && d.mimeType.indexOf("image/") === 0)
-                ? React.createElement("img", {
-                    src:"https://drive.google.com/thumbnail?id=" + d.driveFileId + "&sz=w300",
-                    style:{ width:"100%", height:"100%", objectFit:"cover" },
-                    onError:e=>{ e.target.style.display="none"; } })
-                : React.createElement("span", { style:{ fontSize:28 } }, "📄")
+              // Thumbnails previously came from Drive's public thumbnail
+              // endpoint; documents are private now, so the icon stands in and
+              // the file itself is fetched (authenticated) only when opened.
+              React.createElement("span", { style:{ fontSize:28 } },
+                (d.mimeType && d.mimeType.indexOf("image/") === 0) ? "🖼" : "📄")
             ),
-            React.createElement("div", { onClick:()=>setPreview(d),
+            React.createElement("div", { onClick:()=>openPreview(d),
               style:{ cursor:"pointer", color:T, fontWeight:600, marginBottom:4, wordBreak:"break-word" } }, d.fileName),
             React.createElement("div", { style:{ color:"#999", fontSize:10, marginBottom:6 } }, d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString() : ""),
             React.createElement("div", { style:{ display:"flex", gap:5 } },
-              React.createElement("button", { onClick:()=>setPreview(d),
+              React.createElement("button", { onClick:()=>openPreview(d),
                 style:{ fontSize:10.5, padding:"3px 8px", border:`1px solid ${BORDER}`, borderRadius:5, background:"#fff", color:T, cursor:"pointer" } }, "👁 View"),
               React.createElement("button", { onClick:()=>removeDoc(d.id),
                 style:{ fontSize:10.5, padding:"3px 8px", border:`1px solid ${BORDER}`, borderRadius:5, background:"#fff", color:"#c0392b", cursor:"pointer" } }, "🗑")
@@ -14280,10 +14331,11 @@ function PatientDocuments({ globalPat }) {
       ))
     ),
 
-    // Preview overlay — Drive's /preview renderer handles both images and PDFs,
-    // so one iframe covers every uploaded document type without extra libraries.
+    // Preview overlay — the document is fetched as bytes through the
+    // authenticated backend and rendered from an in-memory blob URL. No public
+    // Drive link is involved, so nothing here survives outside this session.
     preview && React.createElement("div", {
-      onClick:()=>setPreview(null),
+      onClick:closePreview,
       style:{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:9999,
         display:"flex", alignItems:"center", justifyContent:"center", padding:24 } },
       React.createElement("div", {
@@ -14292,15 +14344,24 @@ function PatientDocuments({ globalPat }) {
         React.createElement("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", borderBottom:`1px solid ${BORDER}`, gap:10 } },
           React.createElement("div", { style:{ fontSize:13, fontWeight:700, color:T, wordBreak:"break-word" } }, preview.fileName),
           React.createElement("div", { style:{ display:"flex", gap:8, flexShrink:0 } },
-            React.createElement("a", { href:preview.url, target:"_blank", rel:"noopener",
-              style:{ fontSize:11.5, padding:"5px 12px", border:`1px solid ${BORDER}`, borderRadius:6, background:"#fff", color:T, textDecoration:"none", fontWeight:600 } }, "↗ Open in Drive"),
-            React.createElement("button", { onClick:()=>setPreview(null),
+            preview.blobUrl && React.createElement("button", { onClick:()=>downloadBlobUrl(preview.blobUrl, preview.fileName),
+              style:{ fontSize:11.5, padding:"5px 12px", border:`1px solid ${BORDER}`, borderRadius:6, background:"#fff", color:T, cursor:"pointer", fontWeight:600 } }, "⬇ Download"),
+            React.createElement("button", { onClick:closePreview,
               style:{ fontSize:11.5, padding:"5px 12px", border:"none", borderRadius:6, background:T, color:"#fff", cursor:"pointer", fontWeight:700 } }, "✕ Close")
           )
         ),
-        React.createElement("iframe", {
-          src:"https://drive.google.com/file/d/" + preview.driveFileId + "/preview",
-          style:{ flex:1, width:"100%", border:"none" }, allow:"autoplay" })
+        React.createElement("div", { style:{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", overflow:"auto", background:BGS } },
+          preview.loading
+            ? React.createElement("div", { style:{ color:"#888", fontSize:13 } }, "⏳ Loading document...")
+            : preview.error
+              ? React.createElement("div", { style:{ color:"#c0392b", fontSize:12.5, padding:24, textAlign:"center", lineHeight:1.6, maxWidth:460 } },
+                  "⚠ " + preview.error,
+                  preview.tooLarge && React.createElement("div", { style:{ color:"#888", marginTop:10, fontSize:11.5 } },
+                    "Large files can still be opened from the clinic's Google Drive by an account with access."))
+              : (preview.mimeType && preview.mimeType.indexOf("image/") === 0)
+                ? React.createElement("img", { src:preview.blobUrl, style:{ maxWidth:"100%", maxHeight:"100%", objectFit:"contain" } })
+                : React.createElement("iframe", { src:preview.blobUrl, style:{ flex:1, width:"100%", height:"100%", border:"none" } })
+        )
       )
     )
   );
