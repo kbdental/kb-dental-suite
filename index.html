@@ -6161,6 +6161,13 @@ function QuickApptModal({ show, defaultDate, onClose, onSaved }) {
       time: fTime, type: fReason, doctor: fDoctor, chair: fChair,
       mobile: fMobile, notes: fNotes, status: "Scheduled"
     });
+    // A walk-in is standing at the desk, so they are checked in the moment the
+    // record is made. saveAppointment always writes a blank CheckinTime;
+    // moving the status is what stamps it, and doing it here means the time is
+    // captured even if nobody remembers to press Checked In afterwards.
+    if (res.success && res.id && fDate === new Date().toISOString().split("T")[0]) {
+      await api("updateAppointmentStatus", { apptId: res.id, status: "Checked In" });
+    }
     setSaving(false);
     if (res.success) {
       resetForm();
@@ -10727,6 +10734,11 @@ function DailyRegister({ globalPat, setGlobalPat }) {
   // file, and the register is the document that has to be right.
   const [nAge, setNAge] = React.useState("");
   const [nPhone, setNPhone] = React.useState("");
+  // A patient entered straight into the register has no appointment, so the
+  // Daysheet never stamps check-in/engaged/check-out for them and those three
+  // columns stay empty. Ticking this puts them on the Daysheet as a walk-in,
+  // checked in, so the rest of the visit is tracked like anyone else's.
+  const [nAddToDaysheet, setNAddToDaysheet] = React.useState(true);
   const [nErrors, setNErrors] = React.useState({});
   const [nSaving, setNSaving] = React.useState(false);
 
@@ -10751,10 +10763,40 @@ function DailyRegister({ globalPat, setGlobalPat }) {
     } else { setNPat(null); setNNotFound(true); }
   };
 
+  // Puts a register-only patient onto the Daysheet as a walk-in, checked in,
+  // so check-in / engaged / check-out get stamped for them like any booked
+  // patient. Skipped when they already have an appointment that day, so
+  // writing the register up after a booked visit never doubles the entry.
+  const ensureDaysheetVisit = async () => {
+    try {
+      const existing = await api("getAppointments", { date: nDate });
+      const already = existing.success && (existing.appointments || []).some(a =>
+        String(a.uhid || "").trim().toUpperCase() === String(nPat.uhid).trim().toUpperCase()
+        && String(a.status || "") !== "Cancelled");
+      if (already) return;
+      const res = await api("saveAppointment", {
+        date: nDate, uhid: nPat.uhid, patientName: nPat.name, time: nWalkIn,
+        type: nProcedureDone || "Walk-in", doctor: nDoctor, chair: "",
+        mobile: nPhone, notes: "Walk-in — added from Daily Register", status: "Scheduled"
+      });
+      // Only stamp a check-in for a visit happening today. Back-dating an entry
+      // would otherwise record the clock at the moment of typing as the time
+      // the patient walked in on some earlier day.
+      if (res.success && res.id && nDate === todayISO) {
+        await api("updateAppointmentStatus", { apptId: res.id, status: "Checked In" });
+      }
+    } catch (err) {
+      // The register entry itself is saved by this point; failing to mirror it
+      // onto the Daysheet is not worth losing that, so report and carry on.
+      console.error("Daysheet walk-in:", err);
+    }
+  };
+
   const resetAddForm = () => {
     setNUhid(""); setNPat(null); setNNotFound(false); setNDate(todayISO);
     setNToothNo(""); setNProcedureDone(""); setNWorkDone(""); setNPayMode(""); setNErrors({});
     setNWalkIn(nowHHMM()); setNConsult(nowHHMM()); setNAge(""); setNPhone("");
+    setNAddToDaysheet(true);
   };
 
   const saveNewEntry = async () => {
@@ -10771,8 +10813,9 @@ function DailyRegister({ globalPat, setGlobalPat }) {
       operatingDoctor: nDoctor, modeOfPayment: nPayMode,
       timeWalkIn: nWalkIn, consultationTime: nConsult, tat: tatBetween(nWalkIn, nConsult)
     });
+    if (res.success && nAddToDaysheet) await ensureDaysheetVisit();
     setNSaving(false);
-    if (res.success) { setShowAdd(false); resetAddForm(); loadEntries(); }
+    if (res.success) { setShowAdd(false); resetAddForm(); loadEntries(); loadApptTimes(); }
     else alert("Save error: " + (res.error || "Unknown"));
   };
 
@@ -10898,6 +10941,12 @@ function DailyRegister({ globalPat, setGlobalPat }) {
           React.createElement(Lbl,{c:"TAT (auto)"}),
           React.createElement("input",{style:{...inp,background:BGS,color:"#555",fontWeight:700},value:tatBetween(nWalkIn,nConsult)||"—",readOnly:true})
         )
+      ),
+      React.createElement("label",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:14,fontSize:12.5,color:"#444",cursor:"pointer"}},
+        React.createElement("input",{type:"checkbox",checked:nAddToDaysheet,style:{width:16,height:16,cursor:"pointer"},
+          onChange:e=>setNAddToDaysheet(e.target.checked)}),
+        React.createElement("span",null,"Also add to Daysheet as a walk-in",
+          React.createElement("span",{style:{color:"#888"}}," — records check-in, engaged and check-out times. Skipped if this patient already has an appointment today."))
       ),
       React.createElement("div",{style:{marginBottom:16}},
         React.createElement(Lbl,{c:"Mode of Payment"}),
