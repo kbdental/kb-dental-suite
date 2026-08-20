@@ -3108,12 +3108,17 @@ function CarePlan({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [apiMsg, setApiMsg] = useState("");
+  // Same fix as TreatmentPlan: `pat` starts out equal to globalPat, so the
+  // old test could never be true on mount and an already-saved care plan was
+  // never fetched — opening the tab for a selected patient showed blank pages.
+  const loadedUhidRef = useRef("");
   useEffect(() => {
-    if (globalPat && (!pat || pat.uhid !== globalPat.uhid)) {
-      setPat(globalPat);
-      setUhidInput(globalPat.uhid);
-      loadFromPat(globalPat);
-    }
+    if (!globalPat || !globalPat.uhid) return;
+    if (loadedUhidRef.current === globalPat.uhid) return;
+    loadedUhidRef.current = globalPat.uhid;
+    setPat(globalPat);
+    setUhidInput(globalPat.uhid);
+    loadFromPat(globalPat);
   }, [globalPat]);
   const loadFromPat = async p => {
     setApiMsg("Loading care plan...");
@@ -4337,21 +4342,33 @@ function TreatmentPlan({
   const [saved, setSaved] = useState(false);
   const [apiMsg, setApiMsg] = useState("");
   const masterPricesRef = useRef({});
+  // Seeding rows from the Care Plan needs the master fee list, but both are
+  // fetched on mount — holding the promise (not just the result) lets the seed
+  // wait for it instead of racing it and filling every fee in as blank.
+  const masterPricesReady = useRef(null);
   useEffect(() => {
-    api("getTreatmentsMaster").then(res => {
+    masterPricesReady.current = api("getTreatmentsMaster").then(res => {
       if (res.success && res.treatments) {
         const map = {};
         res.treatments.forEach(t => { map[t.name] = t.fee; });
         masterPricesRef.current = map;
       }
+      return masterPricesRef.current;
     });
   }, []);
+  // `pat` is seeded from globalPat at useState time, so on mount with a patient
+  // already selected the old `pat.uhid !== globalPat.uhid` test was false and
+  // nothing was ever loaded — neither the saved plan nor the Care Plan
+  // procedures. Tracking which UHID has actually been fetched fires on mount
+  // and on a patient change, and only once per patient.
+  const loadedUhidRef = useRef("");
   useEffect(() => {
-    if (globalPat && (!pat || pat.uhid !== globalPat.uhid)) {
-      setPat(globalPat);
-      setUhidInput(globalPat.uhid);
-      loadFromPat(globalPat);
-    }
+    if (!globalPat || !globalPat.uhid) return;
+    if (loadedUhidRef.current === globalPat.uhid) return;
+    loadedUhidRef.current = globalPat.uhid;
+    setPat(globalPat);
+    setUhidInput(globalPat.uhid);
+    loadFromPat(globalPat);
   }, [globalPat]);
   const loadFromPat = async p => {
     setApiMsg("Loading treatment plan...");
@@ -4370,18 +4387,45 @@ function TreatmentPlan({
       })));
       setSaved(true);
     } else {
-      // Load from care plan as default
-      const cpRes = await api("getCarePlan", {
-        uhid: p.uhid
-      });
-      if (cpRes.success && cpRes.page4 && cpRes.page4.rows && cpRes.page4.rows.length) {
-        let rid2 = rowId;
-        setTpRows(cpRes.page4.rows.filter(r => r.procedure).map(r => ({
-          ...mkRow("Phase 1", r.tooth, r.dept, r.procedure, masterPricesRef.current[r.procedure] || PRICES[r.procedure] || "", 1),
-          id: ++rid2
-        })));
-      } else setTpRows([mkRow("Phase 1")]);
+      // Nothing costed yet — seed the plan from the Care Plan's treatment
+      // sheet so the same procedures don't have to be typed a second time.
+      const seeded = await carePlanRows(p.uhid);
+      setTpRows(seeded.length ? seeded : [mkRow("Phase 1")]);
     }
+  };
+  // Care Plan page 4 lists tooth / department / procedure with no costing;
+  // this is where those become priced plan rows. Fees come from the Treatments
+  // master, falling back to the built-in list, and are left blank when a
+  // procedure is in neither — blank is honest, 0 is not.
+  const carePlanRows = async uhid => {
+    await (masterPricesReady.current || Promise.resolve({}));
+    const cpRes = await api("getCarePlan", { uhid });
+    const rows = cpRes.success && cpRes.page4 && cpRes.page4.rows ? cpRes.page4.rows : [];
+    return rows.filter(r => r && r.procedure && String(r.procedure).trim()).map(r =>
+      mkRow("Phase 1", r.tooth, r.dept, r.procedure,
+            masterPricesRef.current[r.procedure] || PRICES[r.procedure] || "", 1));
+  };
+  // For a plan that already exists: pull in any Care Plan procedure not
+  // already on it, matched on tooth + procedure so re-pulling adds nothing
+  // twice and never disturbs a fee that has been edited by hand.
+  const pullFromCarePlan = async () => {
+    if (!pat) return;
+    setApiMsg("Reading Care Plan...");
+    const seeded = await carePlanRows(pat.uhid);
+    setApiMsg("");
+    if (!seeded.length) {
+      alert("No procedures found on this patient's Care Plan (page 4 — Treatment Plan).");
+      return;
+    }
+    const key = r => (String(r.tooth || "").trim() + "|" + String(r.procedure || "").trim()).toLowerCase();
+    const existing = new Set(tpRows.map(key));
+    const fresh = seeded.filter(r => !existing.has(key(r)));
+    if (!fresh.length) {
+      alert("Every Care Plan procedure is already on this treatment plan.");
+      return;
+    }
+    setTpRows(prev => [...prev, ...fresh]);
+    setSaved(false);
   };
   const loadPat = () => {
     const uhid = uhidInput.trim();
@@ -4839,6 +4883,19 @@ function TreatmentPlan({
       background: "#fff"
     }
   }, p)), /*#__PURE__*/React.createElement("button", {
+    onClick: pullFromCarePlan,
+    title: "Add procedures from this patient's Care Plan that aren't on the plan yet",
+    style: {
+      padding: "4px 12px",
+      fontSize: 11,
+      border: `1px solid ${T}`,
+      borderRadius: 20,
+      cursor: "pointer",
+      color: "#fff",
+      background: T,
+      fontWeight: 600
+    }
+  }, "\u2193 Pull from Care Plan"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setTpRows([]),
     style: {
       padding: "4px 12px",
