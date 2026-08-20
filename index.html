@@ -679,16 +679,34 @@ function DOBInput({
   value,
   onChange
 }) {
-  const parts = value ? value.split("/") : ["", "", ""];
-  const dd = parts[0] || "",
-    mm = parts[1] || "",
-    yyyy = parts[2] || "";
+  // The three dropdowns keep their own state. Deriving them from `value` alone
+  // meant a half-made date ("day picked, month not yet") had nothing to be
+  // derived from — onChange fires "" until all three are set, so each pick
+  // immediately snapped back to blank and a date could never be entered by hand.
+  const [dd, setDd] = useState("");
+  const [mm, setMm] = useState("");
+  const [yyyy, setYyyy] = useState("");
+  useEffect(() => {
+    const parts = value ? value.split("/") : [];
+    if (parts.length === 3) {
+      setDd(parts[0] || "");
+      setMm(parts[1] || "");
+      setYyyy(parts[2] || "");
+    } else if (!value) {
+      setDd("");
+      setMm("");
+      setYyyy("");
+    }
+  }, [value]);
   const years = [];
   for (let y = new Date().getFullYear() - 5; y >= 1930; y--) years.push(y);
   const days = [];
   for (let d = 1; d <= 31; d++) days.push(String(d).padStart(2, "0"));
   const upd = (d, m, y) => {
-    if (d && m && y) onChange(d + "/" + m + "/" + y);else onChange("");
+    setDd(d);
+    setMm(m);
+    setYyyy(y);
+    onChange(d && m && y ? d + "/" + m + "/" + y : "");
   };
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1248,6 +1266,18 @@ function Err({
     }
   }, "\u26A0 ", msg) : null;
 }
+// checkDuplicate matches on MOBILE and answers with existingUHID/existingName,
+// but the panel that renders the warning reads .uhid/.name — so a real hit used
+// to display a blank UHID and "Open Existing Record" fetched undefined. It also
+// compares against whatever mobile it is given, so calling it without one
+// matches any row whose mobile cell is blank; a hit carrying no UHID is that
+// false positive, not a duplicate.
+function normaliseDup(res, inputName) {
+  if (!res || !res.success || !res.duplicate) return null;
+  const uhid = String(res.existingUHID || res.uhid || "").trim();
+  if (!uhid) return null;
+  return { uhid: uhid, name: String(res.existingName || res.name || "").trim(), inputName: inputName };
+}
 function Registration({
   globalPat,
   onPatientRegistered,
@@ -1275,6 +1305,20 @@ function Registration({
   const [loadingList, setLoadingList] = useState(false);
   const [apiMsg, setApiMsg] = useState("");
   const [saving, setSaving] = useState(false);
+  // ── Quick Registration (front-desk, 4 fields → UHID) ──────────────
+  // A walk-in who only wants a prescription still needs a UHID, but they
+  // haven't sat with the iPad yet. Name + DOB + mobile + complaint is enough
+  // to open a record; the rest of the form is completed later via the patient
+  // link (register.html?uhid=...), which updates the same UHID row.
+  const [q, setQ] = useState({ name: "", dob: "", mobile: "", complaint: "" });
+  const [qErrors, setQErrors] = useState({});
+  const [qBusy, setQBusy] = useState(false);
+  const [quickDone, setQuickDone] = useState(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  // Selecting the new patient globally would otherwise trip the globalPat
+  // effect below, which jumps straight to step 1 and wipes the panel showing
+  // the freshly issued UHID and its iPad link.
+  const quickCreatedRef = React.useRef("");
   const up = (setter, k) => e => setter(prev => ({
     ...prev,
     [k]: e.target ? e.target.value : e
@@ -1282,6 +1326,7 @@ function Registration({
 
   // Auto-load existing patient if globalPat is set
   useEffect(() => {
+    if (globalPat && globalPat.uhid && globalPat.uhid === quickCreatedRef.current) return;
     if (globalPat && globalPat.uhid) {
       setIsEditing(true);
       setUhid(globalPat.uhid);
@@ -1347,6 +1392,89 @@ function Registration({
       setLoadingList(false);
     }).catch(() => setLoadingList(false));
   }, []);
+  // Link the patient opens on the iPad to finish the form. Resolved against the
+  // page's own directory so it works the same on GitHub Pages and locally.
+  const completionLink = u => location.href.split(/[?#]/)[0].replace(/[^/]*$/, "register.html") + "?uhid=" + encodeURIComponent(u);
+  const copyLink = async u => {
+    const link = completionLink(u);
+    try {
+      await navigator.clipboard.writeText(link);
+    } catch (e) {
+      // clipboard API needs a secure context; fall back to a scratch textarea
+      const t = document.createElement("textarea");
+      t.value = link;
+      document.body.appendChild(t);
+      t.select();
+      try { document.execCommand("copy"); } catch (e2) {}
+      t.remove();
+    }
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2500);
+  };
+  const quickRegister = async () => {
+    const mob = (q.mobile || "").replace(/\D/g, "");
+    const e = {};
+    if (!q.name.trim()) e.name = "Full name is required";
+    if (!q.dob) e.dob = "Date of birth is required";
+    if (mob.length !== 10) e.mobile = "Enter a 10-digit mobile number";
+    if (!q.complaint.trim()) e.complaint = "Chief complaint is required";
+    setQErrors(e);
+    if (Object.keys(e).length) { window.scrollTo(0, 0); return; }
+    setQBusy(true);
+    setDup(null);
+    setApiMsg("Checking for duplicate...");
+    const dupRes = await api("checkDuplicate", { name: q.name.trim(), dob: q.dob, mobile: mob });
+    const dupHit = normaliseDup(dupRes, q.name.trim());
+    if (dupHit) {
+      setDup(dupHit);
+      setQBusy(false);
+      setApiMsg("");
+      window.scrollTo(0, 0);
+      return;
+    }
+    setApiMsg("Generating UHID...");
+    const uhidRes = await api("getNextUHID");
+    // No local fallback UHID here: a made-up number would sit outside the
+    // sheet's sequence and collide with the next real one, and this record is
+    // the patient's only identity until they finish the form.
+    if (!uhidRes.success || !uhidRes.uhid) {
+      setQBusy(false);
+      setApiMsg("");
+      alert("Could not generate a UHID: " + (uhidRes.error || "the server did not return one") + "\n\nPlease retry — do not write a UHID by hand.");
+      return;
+    }
+    const newUhid = uhidRes.uhid;
+    setApiMsg("Saving to Google Sheets...");
+    const res = await api("saveRegistration", {
+      uhid: newUhid,
+      name: q.name.trim(),
+      dob: q.dob,
+      mobile: mob,
+      whatsapp: mob,
+      complaint: q.complaint.trim(),
+      regStatus: "Quick"
+    });
+    setQBusy(false);
+    setApiMsg("");
+    if (!res.success) { alert("Save error: " + (res.error || "Unknown error")); return; }
+    const rec = { uhid: newUhid, name: q.name.trim(), dob: q.dob, mobile: mob, complaint: q.complaint.trim() };
+    quickCreatedRef.current = newUhid;
+    setQuickDone(rec);
+    onPatientRegistered({ uhid: newUhid, name: rec.name, dob: rec.dob, gender: "", mobile: mob });
+  };
+  // Carry a just-created quick record straight into the full form, so the front
+  // desk can hand over the iPad in the room instead of sending a link.
+  const completeNow = () => {
+    const rec = quickDone;
+    if (!rec) return;
+    setIsEditing(true);
+    setUhid(rec.uhid);
+    setP(prev => ({ ...prev, name: rec.name, dob: rec.dob, mobile: rec.mobile, whatsapp: rec.mobile }));
+    setD(prev => ({ ...prev, complaint: rec.complaint }));
+    setQuickDone(null);
+    setQ({ name: "", dob: "", mobile: "", complaint: "" });
+    setStep(1);
+  };
   const validate = s => {
     const e = {};
     if (s === 1) {
@@ -1393,15 +1521,14 @@ function Registration({
     setApiMsg("Checking for duplicate...");
     const dupRes = await api("checkDuplicate", {
       name: pat.name,
-      dob: pat.dob || ""
+      dob: pat.dob || "",
+      mobile: pat.mobile || ""
     });
     setLoadingList(false);
     setApiMsg("");
-    if (dupRes.success && dupRes.duplicate) {
-      setDup({
-        ...dupRes,
-        inputName: pat.name
-      });
+    const dupHit = normaliseDup(dupRes, pat.name);
+    if (dupHit) {
+      setDup(dupHit);
       return;
     }
     setDup(null);
@@ -1568,9 +1695,74 @@ function Registration({
       fontWeight: 600
     }
   }, fwdLabel));
+  // Quick Registration card — rendered above the pending-iPad list on step 0.
+  const ceQ = React.createElement;
+  const qField = (label, key, extra) => ceQ("div", { style: { marginBottom: 10 } },
+    ceQ(Lbl, { c: label }),
+    extra || ceQ("input", {
+      style: { ...inp, borderColor: qErrors[key] ? "#e24b4a" : BORDER },
+      value: q[key],
+      onChange: e => setQ(prev => ({ ...prev, [key]: e.target.value })),
+      disabled: qBusy
+    }),
+    ceQ(Err, { msg: qErrors[key] }));
+  const quickCard = quickDone ? ceQ("div", {
+    style: { border: "1px solid #059669", background: "#f0fdf6", borderRadius: 10, padding: "16px 18px", marginBottom: 18 }
+  },
+    ceQ("div", { style: { fontSize: 13, fontWeight: 700, color: "#065f46", marginBottom: 8 } }, "✓ UHID Generated"),
+    ceQ("div", { style: { display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 } },
+      ceQ("div", { style: { fontSize: 28, fontWeight: 800, color: "#065f46", letterSpacing: "0.04em" } }, quickDone.uhid),
+      ceQ("div", { style: { fontSize: 14, fontWeight: 600, color: "#065f46" } }, quickDone.name)),
+    ceQ("div", { style: { fontSize: 12, color: "#047857", marginBottom: 12 } },
+      "DOB: ", fmtDMY(quickDone.dob), " \xB7 ", quickDone.mobile, " \xB7 ", quickDone.complaint),
+    ceQ("div", { style: { fontSize: 12, color: "#065f46", background: "#dcfce7", borderRadius: 7, padding: "8px 12px", marginBottom: 12 } },
+      "The record is open — prescriptions and clinical notes can be written now. The full registration form is still pending; hand the patient the iPad on this visit or the next one."),
+    ceQ("div", { style: { display: "flex", flexWrap: "wrap", gap: 8 } },
+      ceQ("button", {
+        onClick: completeNow,
+        style: { padding: "8px 18px", fontSize: 13, background: T, color: "#fff", border: "none", borderRadius: 7, cursor: "pointer", fontWeight: 700 }
+      }, "Complete Full Form Now →"),
+      ceQ("button", {
+        onClick: () => copyLink(quickDone.uhid),
+        style: { padding: "8px 18px", fontSize: 13, background: "#fff", color: "#065f46", border: "1px solid #059669", borderRadius: 7, cursor: "pointer", fontWeight: 600 }
+      }, linkCopied ? "✓ Link Copied" : "📋 Copy iPad Link"),
+      ceQ("button", {
+        onClick: () => window.open(completionLink(quickDone.uhid), "_blank"),
+        style: { padding: "8px 18px", fontSize: 13, background: "#fff", color: "#555", border: `1px solid ${BORDER}`, borderRadius: 7, cursor: "pointer" }
+      }, "Open iPad Form"),
+      ceQ("button", {
+        onClick: () => { setQuickDone(null); setQ({ name: "", dob: "", mobile: "", complaint: "" }); setQErrors({}); },
+        style: { padding: "8px 18px", fontSize: 13, background: "transparent", color: "#555", border: `1px solid ${BORDER}`, borderRadius: 7, cursor: "pointer" }
+      }, "New Quick Registration")),
+    ceQ("div", { style: { fontSize: 11, color: "#047857", marginTop: 10, wordBreak: "break-all" } }, completionLink(quickDone.uhid))
+  ) : ceQ("div", {
+    style: { border: `1px solid ${BORDER}`, borderRadius: 10, padding: "16px 18px", marginBottom: 22, background: "#fff" }
+  },
+    ceQ(Sec, { t: "Quick Registration — Generate UHID" }),
+    ceQ("div", { style: { fontSize: 12, color: "#666", marginBottom: 14 } },
+      "For a walk-in who is only being examined or given a prescription. These four details are enough to open a record and issue a UHID — the full form can be filled on the iPad on this or any later visit, and updates the same UHID."),
+    ceQ("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" } },
+      qField("Full Name *", "name"),
+      qField("Date of Birth *", "dob", ceQ(DOBInput, { value: q.dob, onChange: v => setQ(prev => ({ ...prev, dob: v })) })),
+      qField("Mobile Number *", "mobile", ceQ("input", {
+        style: { ...inp, borderColor: qErrors.mobile ? "#e24b4a" : BORDER },
+        value: q.mobile, inputMode: "numeric", maxLength: 10, placeholder: "10-digit number", disabled: qBusy,
+        onChange: e => setQ(prev => ({ ...prev, mobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))
+      })),
+      qField("Chief Complaint *", "complaint", ceQ("textarea", {
+        style: { ...ta, borderColor: qErrors.complaint ? "#e24b4a" : BORDER, minHeight: 34 },
+        value: q.complaint, disabled: qBusy, placeholder: "e.g. Pain in lower right back tooth since 2 days",
+        onChange: e => setQ(prev => ({ ...prev, complaint: e.target.value }))
+      }))),
+    ceQ("button", {
+      onClick: quickRegister,
+      disabled: qBusy,
+      style: { marginTop: 6, padding: "10px 24px", fontSize: 13, background: qBusy ? "#9ac" : T, color: "#fff", border: "none", borderRadius: 7, cursor: qBusy ? "wait" : "pointer", fontWeight: 700 }
+    }, qBusy ? "Working..." : "Generate UHID →")
+  );
   if (step === 0) return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(ClinicHeader, null), /*#__PURE__*/React.createElement(StepBar, {
     cur: 0
-  }), apiMsg && /*#__PURE__*/React.createElement("div", {
+  }), quickCard, apiMsg && /*#__PURE__*/React.createElement("div", {
     style: {
       background: TL,
       border: `1px solid ${TM}`,
@@ -5011,7 +5203,7 @@ const APPT_TYPES = [
   "Restoration","Denture","Whitening","Review","Other"
 ];
 const TIME_SLOTS = [
-  "09:00","09:30","10:00","10:30","11:00","11:30","12:00","12:30",
+  "09:00","09:30","10:00","10:30","11:00","11:30","12:00","12:30","13:00","13:30",
   "14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00","18:30","19:00","19:30"
 ];
 const STATUS_COL = { Scheduled:"#0078B4", "Checked In":"#059669", "In Chair":"#D97706", Completed:"#6B7280", Cancelled:"#e24b4a", "No Show":"#9ca3af" };

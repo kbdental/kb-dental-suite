@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>K.B. Dental Clinic — Complete Your Registration</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f0;color:#1a1a1a;font-size:16px;line-height:1.5}
+.wrap{max-width:760px;margin:0 auto;padding:16px 16px 60px}
+.card{background:#fff;border:1px solid #e5e5e0;border-radius:12px;padding:20px;margin-bottom:16px}
+.hdr{text-align:center;padding:18px 12px;background:#fff;border:1px solid #e5e5e0;border-radius:12px;margin-bottom:16px}
+.cares{font-size:20px;font-weight:800;color:#C0392B;letter-spacing:.12em}
+.tag{font-size:11px;font-weight:700;color:#0078B4;letter-spacing:.04em;margin-top:2px}
+.sub{font-size:11px;color:#666;margin-top:4px}
+h2{font-size:12px;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:.07em;padding:6px 10px;border-left:3px solid #0078B4;background:#f0f6fb;margin:22px 0 14px}
+h2:first-child{margin-top:0}
+label{display:block;font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+input,select,textarea{width:100%;padding:11px 12px;font-size:16px;font-family:inherit;border:1px solid #e5e5e0;border-radius:8px;background:#fff;color:#1a1a1a}
+input:focus,select:focus,textarea:focus{outline:2px solid #0078B4;outline-offset:1px}
+textarea{resize:vertical;min-height:70px}
+.f{margin-bottom:14px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 14px}
+@media(max-width:560px){.g2,.g3{grid-template-columns:1fr}}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:7px;border:1px solid #e5e5e0;border-radius:20px;padding:8px 14px;font-size:14px;cursor:pointer;background:#fff;user-select:none}
+.chip.on{border-color:#0078B4;background:#DCF4FB;color:#0078B4;font-weight:600}
+.chip input{display:none}
+.yn{display:flex;gap:8px}
+.yn button{flex:1;padding:9px;font-size:14px;border:1px solid #e5e5e0;border-radius:8px;background:#fff;cursor:pointer;font-family:inherit}
+.yn button.on{border-color:#0078B4;background:#DCF4FB;color:#0078B4;font-weight:700}
+.pain{display:flex;flex-wrap:wrap;gap:6px}
+.pain button{width:44px;height:44px;border:1px solid #e5e5e0;border-radius:8px;background:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit}
+.pain button.on{border-color:#0078B4;background:#0078B4;color:#fff}
+.btn{width:100%;padding:15px;font-size:17px;font-weight:700;color:#fff;background:#0078B4;border:none;border-radius:9px;cursor:pointer;font-family:inherit}
+.btn[disabled]{background:#9ab;cursor:wait}
+.btn2{padding:11px 20px;font-size:14px;background:#fff;color:#555;border:1px solid #e5e5e0;border-radius:8px;cursor:pointer;font-family:inherit}
+.err{font-size:13px;color:#c0392b;background:#fff0f0;border:1px solid #e24b4a;border-radius:8px;padding:11px 14px;margin-bottom:14px}
+.note{font-size:13px;color:#0078B4;background:#f0f6fb;border-radius:8px;padding:11px 14px;margin-bottom:14px}
+.uhid{font-size:26px;font-weight:800;color:#0078B4;letter-spacing:.04em}
+.ro{background:#f5f5f0;color:#555}
+.consent{font-size:13px;color:#333;line-height:1.7;max-height:220px;overflow-y:auto;border:1px solid #e5e5e0;border-radius:8px;padding:14px;background:#fafafa;margin-bottom:12px}
+.consent p{margin-bottom:8px}
+.hide{display:none}
+.center{text-align:center}
+.big{font-size:44px;margin-bottom:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div class="cares">C. A. R. E. S.</div>
+    <div class="tag">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div>
+    <div class="sub">K. B. Dental Clinic &middot; Block R-74B, Dilshad Garden, Delhi-110095</div>
+    <div class="sub">011-22131942 &middot; 7866939786, 9319990912</div>
+  </div>
+  <div id="app"></div>
+</div>
+
+<script>
+// Patient-facing registration completion form for the clinic iPad.
+//
+// The front desk creates the record with four details (name, DOB, mobile,
+// chief complaint) and the system issues a UHID immediately, so a walk-in who
+// only wants a prescription still has a chart. This page is where that record
+// is filled in the rest of the way — on this visit or any later one — and it
+// writes back to the SAME UHID rather than creating a second patient.
+//
+// It is a public page (no staff token), so it talks to two dedicated backend
+// actions rather than the staff ones: patientLookup and
+// patientCompleteRegistration. Both require the patient's own mobile number to
+// match the record, return only what this form needs, and cannot create a
+// patient or change UHID, name or DOB. Nothing is shown until that match.
+var SCRIPT_URL = "https://script.google.com/macros/s/AKfycby-OX-qvGE2U9Zt3b-_rpFqc5WQxRT5WMn1A030IcQIKXEaso36cMTbJ6c5xiP5O_6Zvg/exec";
+
+function api(action, data) {
+  var p = new URLSearchParams({ action: action });
+  Object.keys(data || {}).forEach(function (k) {
+    var v = data[k];
+    p.append(k, typeof v === "object" ? JSON.stringify(v) : String(v == null ? "" : v));
+  });
+  return fetch(SCRIPT_URL + "?" + p.toString())
+    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .catch(function (e) { console.error("API:", e); return { success: false, error: e.message }; });
+}
+
+var CONDITIONS = ["Blood Pressure High / Low","Diabetes","Thyroid","Blood Disease","Heart Problem (Angina / Stroke)","Jaundice","Asthma","Liver Disease","Respiratory Disease (Bronchitis)","Hepatitis","Ulcer","Kidney Disease","Arthritis, Rheumatism","Herpes","Epilepsy","Skin Diseases","Radiation Treatment","COVID","Cancer","Rheumatic Fever","Psychiatric Treatment","Tuberculosis","AIDS","Venereal Disease"];
+var ALLERGIES_LIST = ["Penicillin","Sulfa","Ibuprofen","Aspirin","Local Anaesthesia","Iodine","Latex"];
+var HOW_KNOWN = ["An Existing Patient","Website","Word of Mouth","Sign Board","Social Media","Google"];
+var BLOOD_GROUPS = ["A + ve","A - ve","B + ve","B - ve","O + ve","O - ve","AB + ve","AB - ve"];
+var MARITAL = ["Single","Married","Divorced","Widowed"];
+var PAIN_L = ["No Pain","Very Mild","Discomforting","Tolerable","Distressing","Very Distressing","Intense","Very Intense","Utterly Horrible","Excruciating","Unimaginable"];
+
+// The sheet is read back with inconsistent key casing depending on which
+// endpoint wrote the row, so every read goes through this.
+function pick(o) {
+  for (var i = 1; i < arguments.length; i++) {
+    var v = o[arguments[i]];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
+  }
+  return "";
+}
+function digits(s) { return String(s || "").replace(/\D/g, ""); }
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+function qs(name) { return new URLSearchParams(location.search).get(name) || ""; }
+
+var app = document.getElementById("app");
+var state = {
+  uhid: qs("uhid").trim().toUpperCase(),
+  mobile: "",
+  record: null,      // the row as stored, once the backend confirms the mobile
+  screen: "gate",    // gate | loading | form | done
+  message: "",
+  saving: false,
+  F: {
+    gender: "", bloodGroup: "", occupation: "", maritalStatus: "", address: "",
+    whatsapp: "", email: "", referredBy: "",
+    emergencyName: "", emergencyRelation: "", emergencyContact: "",
+    conditions: [], anyOther: "", medicines: "", allergies: [], otherAllergy: "",
+    pregnant: "No", dueDate: "", feedingMother: "No",
+    smoke: "No", smokeFreq: "", panMasala: "No", panFreq: "",
+    tobacco: "No", tobaccoFreq: "", alcohol: "No", alcoholFreq: "",
+    howKnown: [], complaint: "", inPain: "", painLevel: null, consent: false
+  },
+  errors: {}
+};
+
+// ── screens ──────────────────────────────────────────────────────
+function render() {
+  var s = state.screen;
+  if (s === "loading") app.innerHTML = '<div class="card center" style="color:#888">Checking your details...</div>';
+  else if (s === "gate") renderGate();
+  else if (s === "form") renderForm();
+  else if (s === "done") renderDone();
+  window.scrollTo(0, 0);
+}
+
+// One gate for both cases: opened from the front desk's link (UHID in the URL)
+// or typed in cold. The mobile number is checked by the backend against the
+// record, so a guessed UHID reveals nothing on its own.
+function renderGate() {
+  var fromLink = !!qs("uhid");
+  app.innerHTML =
+    '<div class="card">' +
+      '<h2>Complete Your Registration</h2>' +
+      '<div class="note">Please confirm the mobile number you gave at the front desk. ' +
+        (fromLink ? '' : 'You will also need the UHID from your prescription or file — the front desk can read it out for you.') +
+      '</div>' +
+      (state.message ? '<div class="err">' + esc(state.message) + '</div>' : "") +
+      '<div class="f"><label>UHID</label><input id="g-uhid" value="' + esc(state.uhid) + '"' +
+        (fromLink ? ' class="ro" readonly' : ' placeholder="e.g. AL0123" autocapitalize="characters"') + '/></div>' +
+      '<div class="f"><label>Mobile Number</label><input id="g-mob" inputmode="numeric" maxlength="10" placeholder="10-digit number"/></div>' +
+      '<button class="btn" id="g-go">Continue</button>' +
+    '</div>';
+  document.getElementById("g-go").onclick = function () {
+    var u = document.getElementById("g-uhid").value.trim().toUpperCase();
+    var m = digits(document.getElementById("g-mob").value);
+    if (!u) { state.message = "Please enter your UHID."; render(); return; }
+    if (m.length !== 10) { state.message = "Please enter the full 10-digit mobile number."; render(); return; }
+    state.uhid = u;
+    state.mobile = m;
+    state.message = "";
+    loadRecord();
+  };
+}
+
+function chips(field, list) {
+  return '<div class="chips">' + list.map(function (item) {
+    var on = state.F[field].indexOf(item) >= 0;
+    return '<span class="chip' + (on ? " on" : "") + '" data-multi="' + field + '" data-val="' + esc(item) + '">' +
+      (on ? "✓ " : "") + esc(item) + '</span>';
+  }).join("") + '</div>';
+}
+function yn(field) {
+  return '<div class="yn">' + ["Yes", "No"].map(function (v) {
+    return '<button type="button" data-yn="' + field + '" data-val="' + v + '" class="' + (state.F[field] === v ? "on" : "") + '">' + v + '</button>';
+  }).join("") + '</div>';
+}
+function txt(field, label, opts) {
+  opts = opts || {};
+  var bad = state.errors[field];
+  return '<div class="f"><label>' + esc(label) + '</label>' +
+    (opts.area
+      ? '<textarea data-f="' + field + '"' + (bad ? ' style="border-color:#e24b4a"' : "") + '>' + esc(state.F[field]) + '</textarea>'
+      : '<input data-f="' + field + '" value="' + esc(state.F[field]) + '"' +
+        (opts.numeric ? ' inputmode="numeric" maxlength="10"' : "") +
+        (opts.type ? ' type="' + opts.type + '"' : "") +
+        (bad ? ' style="border-color:#e24b4a"' : "") + '/>') +
+    (bad ? '<div style="font-size:12px;color:#c0392b;margin-top:3px">⚠ ' + esc(bad) + '</div>' : "") +
+    '</div>';
+}
+function sel(field, label, list) {
+  var bad = state.errors[field];
+  return '<div class="f"><label>' + esc(label) + '</label><select data-f="' + field + '"' + (bad ? ' style="border-color:#e24b4a"' : "") + '>' +
+    '<option value="">Select</option>' +
+    list.map(function (o) { return '<option' + (state.F[field] === o ? " selected" : "") + '>' + esc(o) + '</option>'; }).join("") +
+    '</select>' + (bad ? '<div style="font-size:12px;color:#c0392b;margin-top:3px">⚠ ' + esc(bad) + '</div>' : "") + '</div>';
+}
+
+function renderForm() {
+  var r = state.record;
+  var errCount = Object.keys(state.errors).length;
+  app.innerHTML =
+    '<div class="card">' +
+      '<div style="font-size:12px;color:#666">Your UHID</div>' +
+      '<div class="uhid">' + esc(state.uhid) + '</div>' +
+      '<div style="font-size:15px;font-weight:600;margin-top:6px">' + esc(r.name) + '</div>' +
+      '<div style="font-size:13px;color:#666">DOB: ' + esc(r.dob || "—") + ' &middot; ' + esc(r.mobile || "—") + '</div>' +
+      '<div class="note" style="margin-top:12px;margin-bottom:0">If any of the above is wrong, please tell the front desk — they will correct it for you.</div>' +
+    '</div>' +
+    (errCount ? '<div class="card"><div class="err">Please fill the highlighted fields below (' + errCount + ' remaining).</div></div>' : "") +
+    '<div class="card">' +
+      '<h2>Personal Information</h2>' +
+      '<div class="g2">' + sel("gender", "Gender *", ["Male", "Female", "Other"]) + sel("bloodGroup", "Blood Group *", BLOOD_GROUPS) + '</div>' +
+      '<div class="g2">' + txt("occupation", "Occupation *") + sel("maritalStatus", "Marital Status *", MARITAL) + '</div>' +
+      txt("address", "Full Address *", { area: true }) +
+      '<div class="g2">' + txt("whatsapp", "WhatsApp Number *", { numeric: true }) + txt("email", "Email *", { type: "email" }) + '</div>' +
+      txt("referredBy", "Referred By (optional)") +
+      '<h2>Emergency Contact</h2>' +
+      '<div class="g3">' + txt("emergencyName", "Name *") + txt("emergencyRelation", "Relation *") + txt("emergencyContact", "Contact Number *", { numeric: true }) + '</div>' +
+    '</div>' +
+    '<div class="card">' +
+      '<h2>Medical History</h2>' +
+      '<div class="f"><label>Do you have, or have you had, any of these? (tap all that apply)</label>' + chips("conditions", CONDITIONS) + '</div>' +
+      '<div class="g2">' + txt("anyOther", "Any other condition") + txt("medicines", "Medicines you take regularly") + '</div>' +
+      '<div class="f"><label>Allergies (tap all that apply)</label>' + chips("allergies", ALLERGIES_LIST) + '</div>' +
+      txt("otherAllergy", "Any other allergy") +
+      '<div class="g2">' +
+        '<div class="f"><label>Pregnant</label>' + yn("pregnant") + '</div>' +
+        (state.F.pregnant === "Yes" ? txt("dueDate", "Expected Due Date") : '<div class="f"><label>Feeding Mother</label>' + yn("feedingMother") + '</div>') +
+      '</div>' +
+      (state.F.pregnant === "Yes" ? '<div class="f"><label>Feeding Mother</label>' + yn("feedingMother") + '</div>' : "") +
+      '<h2>Habits</h2>' +
+      '<div class="g2">' +
+        '<div class="f"><label>Smoking / Beedi</label>' + yn("smoke") + '</div>' +
+        (state.F.smoke === "Yes" ? txt("smokeFreq", "How many per day") : "<div></div>") +
+      '</div>' +
+      '<div class="g2">' +
+        '<div class="f"><label>Pan Masala</label>' + yn("panMasala") + '</div>' +
+        (state.F.panMasala === "Yes" ? txt("panFreq", "How many per day") : "<div></div>") +
+      '</div>' +
+      '<div class="g2">' +
+        '<div class="f"><label>Tobacco / Gutkha</label>' + yn("tobacco") + '</div>' +
+        (state.F.tobacco === "Yes" ? txt("tobaccoFreq", "How many per day") : "<div></div>") +
+      '</div>' +
+      '<div class="g2">' +
+        '<div class="f"><label>Alcohol</label>' + yn("alcohol") + '</div>' +
+        (state.F.alcohol === "Yes" ? txt("alcoholFreq", "How many times per week") : "<div></div>") +
+      '</div>' +
+    '</div>' +
+    '<div class="card">' +
+      '<h2>Dental Information</h2>' +
+      '<div class="f"><label>How did you come to know about us?</label>' + chips("howKnown", HOW_KNOWN) + '</div>' +
+      txt("complaint", "What brings you in today? (Chief Complaint) *", { area: true }) +
+      '<h2>Pain</h2>' +
+      '<div class="f"><label>Are you in pain right now? *</label>' + yn("inPain") +
+        (state.errors.inPain ? '<div style="font-size:12px;color:#c0392b;margin-top:3px">⚠ ' + esc(state.errors.inPain) + '</div>' : "") + '</div>' +
+      (state.F.inPain === "Yes"
+        ? '<div class="f"><label>How bad is it? (0 = no pain, 10 = unimaginable)</label><div class="pain">' +
+            PAIN_L.map(function (_, i) {
+              return '<button type="button" data-pain="' + i + '" class="' + (state.F.painLevel === i ? "on" : "") + '">' + i + '</button>';
+            }).join("") + '</div>' +
+            (state.F.painLevel !== null ? '<div style="font-size:14px;color:#0078B4;font-weight:600;margin-top:8px">' + state.F.painLevel + ' — ' + esc(PAIN_L[state.F.painLevel]) + '</div>' : "") +
+          '</div>'
+        : "") +
+    '</div>' +
+    '<div class="card">' +
+      '<h2>General Consent</h2>' +
+      '<div class="consent">' +
+        '<p>I desire to avail dental services at this facility and give my agreement to accept their services related to diagnosis and care of my dental condition.</p>' +
+        '<p>I understand that this consent is a general consent and it includes routine procedures and treatments such as physical examination, drawing blood for lab tests, medication administration, taking x-rays, use of local anaesthesia and conduct any non-invasive procedure etc.</p>' +
+        '<p>I also understand that in case a high risk or invasive procedure is required to be done, whether for investigation or treatment, I will be asked to sign a separate consent form.</p>' +
+        '<p>I acknowledge that results of the treatment in this clinic are not guaranteed and I cannot hold the clinic or its doctor or any other staff liable for the outcome, unless and until it is because of negligence.</p>' +
+        '<p>I also authorize the clinic to collect and maintain a record of my basic information and medical information. I understand that this information is confidential and will be shared only with healthcare providers at K. B. Dental Clinic and used only for my treatment purpose.</p>' +
+        '<p>I assume full responsibility for my personal belongings and valuables and the clinic will not be responsible for loss of any personal item.</p>' +
+        '<p>I undertake that I will abide by the rules and byelaws of the clinic.</p>' +
+      '</div>' +
+      '<span class="chip' + (state.F.consent ? " on" : "") + '" id="consent-chip" style="font-size:15px;padding:12px 18px">' +
+        (state.F.consent ? "✓ " : "") + 'I have read and agree to the above</span>' +
+      (state.errors.consent ? '<div style="font-size:13px;color:#c0392b;margin-top:8px">⚠ ' + esc(state.errors.consent) + '</div>' : "") +
+      '<div style="margin-top:18px"><button class="btn" id="submit"' + (state.saving ? " disabled" : "") + '>' +
+        (state.saving ? "Submitting..." : "Submit Registration") + '</button></div>' +
+    '</div>';
+  wireForm();
+}
+
+function renderDone() {
+  app.innerHTML =
+    '<div class="card center">' +
+      '<div class="big">✓</div>' +
+      '<div style="font-size:19px;font-weight:700;color:#059669;margin-bottom:8px">Thank you, ' + esc(state.record.name) + '</div>' +
+      '<div style="font-size:15px;color:#555;margin-bottom:14px">Your registration is complete.</div>' +
+      '<div style="font-size:12px;color:#666">Your UHID</div>' +
+      '<div class="uhid">' + esc(state.uhid) + '</div>' +
+      '<div style="font-size:14px;color:#666;margin-top:18px">Please hand the iPad back to the front desk.</div>' +
+    '</div>';
+}
+
+// ── wiring ───────────────────────────────────────────────────────
+// Inputs write straight to state without a re-render so typing never loses
+// focus or the caret; only the controls that change the form's shape (Yes/No
+// answers, chips, pain level) trigger one.
+function wireForm() {
+  app.querySelectorAll("[data-f]").forEach(function (el) {
+    el.oninput = function () { state.F[el.getAttribute("data-f")] = el.value; };
+  });
+  app.querySelectorAll("[data-yn]").forEach(function (el) {
+    el.onclick = function () {
+      var f = el.getAttribute("data-yn");
+      state.F[f] = el.getAttribute("data-val");
+      if (f === "inPain" && state.F.inPain === "No") state.F.painLevel = null;
+      delete state.errors[f];
+      render();
+    };
+  });
+  app.querySelectorAll("[data-multi]").forEach(function (el) {
+    el.onclick = function () {
+      var f = el.getAttribute("data-multi"), v = el.getAttribute("data-val");
+      var arr = state.F[f], i = arr.indexOf(v);
+      if (i >= 0) arr.splice(i, 1); else arr.push(v);
+      render();
+    };
+  });
+  app.querySelectorAll("[data-pain]").forEach(function (el) {
+    el.onclick = function () { state.F.painLevel = Number(el.getAttribute("data-pain")); render(); };
+  });
+  var cc = document.getElementById("consent-chip");
+  if (cc) cc.onclick = function () { state.F.consent = !state.F.consent; delete state.errors.consent; render(); };
+  var sb = document.getElementById("submit");
+  if (sb) sb.onclick = submit;
+}
+
+// ── record loading ───────────────────────────────────────────────
+function loadRecord() {
+  state.screen = "loading"; render();
+  api("patientLookup", { uhid: state.uhid, mobile: state.mobile }).then(function (res) {
+    if (!res.success || !res.patient) {
+      state.screen = "gate";
+      state.message = res.error || "We could not match those details. Please check with the front desk.";
+      render(); return;
+    }
+    state.message = "";
+    adoptRecord(res.patient);
+  });
+}
+
+// Pre-fill whatever the record already holds so the patient only fills gaps.
+function adoptRecord(p) {
+  state.record = { name: p.name || "", dob: p.dob || "", mobile: p.mobile || state.mobile };
+  var F = state.F;
+  ["gender", "bloodGroup", "occupation", "maritalStatus", "address", "email",
+   "referredBy", "emergencyName", "emergencyRelation", "emergencyContact",
+   "medicines", "complaint"].forEach(function (k) { F[k] = p[k] || ""; });
+  F.whatsapp = p.whatsapp || state.record.mobile;
+  // Stored as a comma-joined string; keep only values this form still offers,
+  // so an unrecognised legacy entry can't render as a chip that does nothing.
+  F.conditions = splitKnown(p.conditions, CONDITIONS);
+  F.allergies  = splitKnown(p.allergies, ALLERGIES_LIST);
+  state.screen = "form"; render();
+}
+
+function splitKnown(raw, list) {
+  var parsed = String(raw || "");
+  if (parsed.charAt(0) === "[") { try { parsed = JSON.parse(parsed).join(", "); } catch (e) {} }
+  return parsed.split(/,\s*/).filter(function (c) { return list.indexOf(c) >= 0; });
+}
+
+// ── submit ───────────────────────────────────────────────────────
+function validate() {
+  var F = state.F, e = {};
+  var req = {
+    gender: "Please select your gender", bloodGroup: "Please select your blood group",
+    occupation: "Occupation is required", maritalStatus: "Please select your marital status",
+    address: "Address is required", whatsapp: "WhatsApp number is required",
+    email: "Email is required", emergencyName: "Emergency contact name is required",
+    emergencyRelation: "Relation is required", emergencyContact: "Emergency contact number is required",
+    complaint: "Please tell us what brings you in today"
+  };
+  Object.keys(req).forEach(function (k) { if (!String(F[k]).trim()) e[k] = req[k]; });
+  if (!e.whatsapp && digits(F.whatsapp).length !== 10) e.whatsapp = "Enter a 10-digit number";
+  if (!e.emergencyContact && digits(F.emergencyContact).length < 10) e.emergencyContact = "Enter a 10-digit number";
+  if (!e.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(F.email.trim())) e.email = "Enter a valid email address";
+  if (!F.inPain) e.inPain = "Please tell us if you are in pain";
+  if (!F.consent) e.consent = "Please read and accept the consent to continue";
+  return e;
+}
+
+function submit() {
+  var e = validate();
+  state.errors = e;
+  if (Object.keys(e).length) { render(); return; }
+  var F = state.F;
+  state.saving = true; render();
+  api("patientCompleteRegistration", {
+    uhid: state.uhid,
+    mobile: state.mobile,
+    gender: F.gender,
+    bloodGroup: F.bloodGroup,
+    occupation: F.occupation,
+    maritalStatus: F.maritalStatus,
+    address: F.address,
+    whatsapp: digits(F.whatsapp),
+    email: F.email.trim(),
+    referredBy: F.referredBy,
+    emergencyName: F.emergencyName,
+    emergencyRelation: F.emergencyRelation,
+    emergencyContact: digits(F.emergencyContact),
+    conditions: F.conditions.join(", "),
+    medicines: [F.medicines, F.anyOther ? "Other: " + F.anyOther : ""].filter(Boolean).join(" | "),
+    allergies: F.allergies.concat(F.otherAllergy ? [F.otherAllergy] : []).join(", "),
+    habits: [
+      F.smoke === "Yes" ? "Smoking" + (F.smokeFreq ? " (" + F.smokeFreq + "/day)" : "") : "",
+      F.panMasala === "Yes" ? "Pan Masala" + (F.panFreq ? " (" + F.panFreq + "/day)" : "") : "",
+      F.tobacco === "Yes" ? "Tobacco" + (F.tobaccoFreq ? " (" + F.tobaccoFreq + "/day)" : "") : "",
+      F.alcohol === "Yes" ? "Alcohol" + (F.alcoholFreq ? " (" + F.alcoholFreq + "/week)" : "") : "",
+      F.pregnant === "Yes" ? "Pregnant" + (F.dueDate ? " (due " + F.dueDate + ")" : "") : "",
+      F.feedingMother === "Yes" ? "Feeding Mother" : ""
+    ].filter(Boolean).join(", "),
+    howKnown: F.howKnown.join(", "),
+    complaint: F.complaint.trim(),
+    painLevel: F.inPain === "Yes" && F.painLevel !== null ? F.painLevel + "/10 — " + PAIN_L[F.painLevel] : "",
+    consent: "Accepted"
+  }).then(function (res) {
+    state.saving = false;
+    if (!res.success) {
+      state.errors = {};
+      state.screen = "form";
+      render();
+      alert("We could not submit the form: " + (res.error || "unknown error") + "\nPlease try again or hand the iPad to the front desk.");
+      return;
+    }
+    state.screen = "done"; render();
+  });
+}
+
+// ── start ────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
