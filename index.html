@@ -19534,15 +19534,33 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid }) {
   const [loading, setLoading] = React.useState(true);
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
+  const [note, setNote] = React.useState("");
 
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true); setErr(""); setData(null);
-    api("getClinicalSheets", { uhid, sheetType }).then(res => {
+    // getClinicalSheets matches the Sheet Type column exactly, so a row saved
+    // under a slightly different label — "Crown & Bridge" against the expected
+    // "Crown Bridge", a stray space, a rename — is invisible and reports as no
+    // record at all, with the data plainly sitting in the sheet. Ask again
+    // without the filter: if the patient has a row under another label, show
+    // it and say which, rather than denying the record exists.
+    api("getClinicalSheets", { uhid, sheetType }).then(async res => {
+      if (cancelled) return;
+      if (!res.success) { setLoading(false); setErr(res.error || "Failed to load records"); return; }
+      if (res.allTeeth) { setLoading(false); setData(res.allTeeth); return; }
+      const any = await api("getClinicalSheets", { uhid });
       if (cancelled) return;
       setLoading(false);
-      if (res.success) setData(res.allTeeth || null);
-      else setErr(res.error || "Failed to load records");
+      if (any && any.success && any.allTeeth) {
+        setData(any.allTeeth);
+        setNote("This record is filed under \u201C" + (any.sheetType || "(blank)") +
+                "\u201D but this form looks for \u201C" + sheetType +
+                "\u201D. Showing it anyway \u2014 tell your developer so the label can be corrected.");
+      } else {
+        setData(null);
+        setNote("");
+      }
     }).catch(e => { if (!cancelled) { setLoading(false); setErr(String(e)); } });
     return () => { cancelled = true; };
   }, [uhid, sheetType]);
@@ -19561,7 +19579,10 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid }) {
   if (loading) return React.createElement("div", { style:{ padding:40, textAlign:"center", color:"#888", fontSize:13 } }, "Loading saved record...");
   if (err) return React.createElement("div", { style:{ padding:40, textAlign:"center", color:"#e24b4a", fontSize:13 } }, "⚠️ " + err);
   if (!data) return React.createElement("div", { style:{ padding:40, textAlign:"center", color:"#888", fontSize:13 } },
-    "No saved record found for this patient in " + (sheetType || formId) + " yet.");
+    React.createElement("div", null, "No record found for UHID ", React.createElement("b", null, uhid),
+      " under \u201C", React.createElement("b", null, sheetType || formId), "\u201D."),
+    React.createElement("div", { style:{ marginTop:8, fontSize:12, color:"#aaa" } },
+      "Records appear here once the form is saved. Anything entered before this was stored only in that computer\u2019s browser and never reached Google Sheets."));
 
   if (cfg.mode === "entries") {
     const entries = data.entries || [];
@@ -19621,6 +19642,8 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid }) {
       React.createElement("td", { colSpan: cols, style: cell }, data[k])));
 
   return React.createElement("div", { style:{ padding:"20px 28px" } },
+    note && React.createElement("div", { style:{ background:"#fff8ed", border:"1px solid #f59e0b", borderRadius:8,
+      padding:"9px 14px", marginBottom:12, fontSize:12.5, color:"#92400e" } }, "\u26A0 ", note),
     React.createElement("div", { className:"kb-noprint", style:{ display:"flex", justifyContent:"flex-end", marginBottom:12 } },
       React.createElement("button", {
         onClick: () => printClinicalRecord(cfg, data, items, sheetType),
