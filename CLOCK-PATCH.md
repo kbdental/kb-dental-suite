@@ -1,6 +1,26 @@
 # Apps Script — stamp times in the clinic's timezone
 
-## The problem
+## Status: checked, and currently correct
+
+Verified 20 Aug 2026 by running `checkClocks` (below):
+
+```
+Spreadsheet timezone : Asia/Calcutta
+Script timezone      : Asia/Kolkata
+Time the app stamps  : 13:25
+Time in sheet's zone : 13:25
+Correct IST time     : 13:25
+```
+
+`Asia/Calcutta` and `Asia/Kolkata` are the same zone under an old and a
+current name, so there is no offset between them and the stamped times are
+right. **Nothing is broken today.**
+
+The replacement below is therefore optional hardening, not a fix: it removes
+the dependency on the two settings happening to agree, so a future change to
+the script project's timezone cannot silently shift every recorded time.
+
+## The risk it removes
 
 `fmtTime` reads the hour off the raw `Date`:
 
@@ -17,7 +37,7 @@ In Chair and Completed on the Daysheet — it can be hours out.
 The same class of bug already bit `formatDOB`, which now formats explicitly in
 the spreadsheet's timezone. This does the same for times.
 
-## Check first
+## Re-checking later
 
 Paste this at the bottom of `Code.gs`, save, select `checkClocks` from the
 function dropdown, press Run, open **Execution log**:
@@ -34,12 +54,9 @@ function checkClocks() {
 }
 ```
 
-Writes nothing to the sheet. If "Time the app stamps" already matches the
-clock on the wall, the fix below changes nothing — apply it anyway, so it
-stays correct if the project timezone is ever changed.
-
-If "Spreadsheet timezone" is not `Asia/Calcutta` / `Asia/Kolkata`, fix that
-too: in the Sheet, **File → Settings → Time zone**.
+Writes nothing to the sheet. Worth re-running if the clinic ever moves the
+script or sheet between Google accounts, since a new project picks up the
+creating account's timezone.
 
 ## Replace `fmtTime` with this
 
