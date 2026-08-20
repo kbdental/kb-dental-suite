@@ -4359,6 +4359,9 @@ function TreatmentPlan({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [apiMsg, setApiMsg] = useState("");
+  // Reports the Care Plan hand-off in the page itself. Guessing at why a plan
+  // looked empty cost three rounds; this states what happened.
+  const [seedMsg, setSeedMsg] = useState(null);
   const masterPricesRef = useRef({});
   // Seeding rows from the Care Plan needs the master fee list, but both are
   // fetched on mount — holding the promise (not just the result) lets the seed
@@ -4408,11 +4411,15 @@ function TreatmentPlan({
         gid: r.gid || null
       })));
       setSaved(true);
+      setSeedMsg(null);
     } else {
       // Nothing costed yet — seed the plan from the Care Plan's treatment
       // sheet so the same procedures don't have to be typed a second time.
       const seeded = await carePlanRows(p.uhid);
       setTpRows(seeded.length ? seeded : [mkRow("Phase 1")]);
+      setSeedMsg(seeded.length
+        ? { ok: true, text: seeded.length + " procedure(s) brought in from this patient's Care Plan, ticked and ready to price." }
+        : { ok: false, text: "Nothing on this patient's Care Plan page 4 (Treatment Plan) to bring in — add the procedures there, or enter them here." });
     }
   };
   // Care Plan page 4 lists tooth / department / procedure with no costing;
@@ -4428,9 +4435,15 @@ function TreatmentPlan({
       const cpRes = await api("getCarePlan", { uhid });
       rows = cpRes.success && cpRes.page4 && cpRes.page4.rows ? cpRes.page4.rows : [];
     }
+    // Ticked on arrival. The estimate renders only ticked rows, so seeding them
+    // unticked left Document 2 saying "No procedures selected" however full
+    // Document 1 was — the link appeared not to work at all. These came from
+    // the clinician's own care plan, so treatment is intended; anything the
+    // patient declines gets unticked, which is the rarer case.
     return rows.filter(r => r && r.procedure && String(r.procedure).trim()).map(r =>
-      mkRow("Phase 1", r.tooth, r.dept, r.procedure,
-            masterPricesRef.current[r.procedure] || PRICES[r.procedure] || "", 1));
+      ({ ...mkRow("Phase 1", r.tooth, r.dept, r.procedure,
+                  masterPricesRef.current[r.procedure] || PRICES[r.procedure] || "", 1),
+         selected: true }));
   };
   // For a plan that already exists: pull in any Care Plan procedure not
   // already on it, matched on tooth + procedure so re-pulling adds nothing
@@ -4453,6 +4466,7 @@ function TreatmentPlan({
     }
     setTpRows(prev => [...prev, ...fresh]);
     setSaved(false);
+    setSeedMsg({ ok: true, text: fresh.length + " procedure(s) added from the Care Plan." });
   };
   const loadPat = () => {
     const uhid = uhidInput.trim();
@@ -4961,7 +4975,17 @@ function TreatmentPlan({
       color: "#555",
       marginTop: 3
     }
-  }, pat.name)))), view === "estimate" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, pat.name)))), seedMsg && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: seedMsg.ok ? "#f0fdf6" : "#fff8ed",
+      border: `1px solid ${seedMsg.ok ? "#059669" : "#f59e0b"}`,
+      borderRadius: 8,
+      padding: "9px 14px",
+      marginBottom: 14,
+      fontSize: 12.5,
+      color: seedMsg.ok ? "#065f46" : "#92400e"
+    }
+  }, seedMsg.ok ? "\u2713 " : "\u26A0 ", seedMsg.text), view === "estimate" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       background: BGS,
       border: `1px solid ${BORDER}`,
