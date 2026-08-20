@@ -1533,7 +1533,15 @@ function Registration({
     }
     setDup(null);
     const uhidRes = await api("getNextUHID");
-    const newUhid = uhidRes.success ? uhidRes.uhid : "AL" + String(Date.now()).slice(-4);
+    // No locally minted fallback. A UHID is <year letters><month><number for
+    // that month>, so "AL" + four timestamp digits reads as a perfectly valid
+    // 2026 UHID in an impossible month, and would sit outside the sequence the
+    // next real patient is about to be given.
+    if (!uhidRes.success || !uhidRes.uhid) {
+      alert("Could not generate a UHID: " + (uhidRes.error || "the server did not return one") + "\n\nPlease retry — do not write a UHID by hand.");
+      return;
+    }
+    const newUhid = uhidRes.uhid;
     setUhid(newUhid);
     setP(prev => ({
       ...prev,
