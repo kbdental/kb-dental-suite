@@ -6291,6 +6291,9 @@ function Daysheet({ globalPat, setGlobalPat }) {
   const [appts, setAppts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showWalkIn, setShowWalkIn] = useState(false);
+  // The register is written up from the same desk that works the Daysheet, so
+  // it opens here rather than sending staff off to Records mid-visit.
+  const [tab, setTab] = useState("daysheet");
   const doctors = getDoctors();
 
   const load = async () => {
@@ -6322,8 +6325,22 @@ function Daysheet({ globalPat, setGlobalPat }) {
     checkedOut: filtered.filter(a=>a.status==="Completed").length
   };
 
+  const tabBar = React.createElement("div", { style:{ display:"flex", gap:8, marginBottom:14 } },
+    [["daysheet","🗓 Daysheet"],["register","📋 Daily Register"]].map(([k,label])=>
+      React.createElement("button", { key:k, onClick:()=>setTab(k),
+        style:{ padding:"7px 16px", fontSize:12.5, borderRadius:7, cursor:"pointer", fontWeight:700,
+          border:`1px solid ${tab===k?T:BORDER}`, background:tab===k?T:"#fff", color:tab===k?"#fff":"#555" } }, label))
+  );
+
+  // No ClinicHeader here — DailyRegister renders its own, and two would stack.
+  if (tab === "register") return React.createElement("div", null,
+    tabBar,
+    React.createElement(DailyRegister, { globalPat, setGlobalPat })
+  );
+
   return React.createElement("div", null,
     React.createElement(ClinicHeader, null),
+    tabBar,
     React.createElement("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 } },
       React.createElement("div", { style:{ fontSize:17, fontWeight:700 } }, "🗓 Daysheet"),
       React.createElement("button", { onClick:()=>setShowWalkIn(true),
@@ -10705,6 +10722,11 @@ function DailyRegister({ globalPat, setGlobalPat }) {
   // already been seen.
   const [nWalkIn, setNWalkIn] = React.useState(nowHHMM());
   const [nConsult, setNConsult] = React.useState(nowHHMM());
+  // Carried on the register row itself, prefilled from the patient record but
+  // editable — a phone given at the desk today may be newer than the one on
+  // file, and the register is the document that has to be right.
+  const [nAge, setNAge] = React.useState("");
+  const [nPhone, setNPhone] = React.useState("");
   const [nErrors, setNErrors] = React.useState({});
   const [nSaving, setNSaving] = React.useState(false);
 
@@ -10715,18 +10737,24 @@ function DailyRegister({ globalPat, setGlobalPat }) {
     const res = await api("getPatient", { uhid });
     setNLooking(false);
     if (res.success && res.patient) {
-      setNPat({
+      // getPatient returns a date of birth, never an "Age" field — reading one
+      // left the register's Age column blank on every entry. Derive it.
+      const dob = res.patient.dob || res.patient.DOB || res.patient["Date of Birth"] || "";
+      const found = {
         uhid, name: res.patient["Full Name"] || res.patient.name || uhid,
         phone: res.patient["Mobile"] || res.patient.mobile || "",
-        age: res.patient["Age"] || res.patient.age || ""
-      });
+        age: res.patient["Age"] || res.patient.age || (dob ? String(calcAge(dob)) : "")
+      };
+      setNPat(found);
+      setNAge(found.age);
+      setNPhone(found.phone);
     } else { setNPat(null); setNNotFound(true); }
   };
 
   const resetAddForm = () => {
     setNUhid(""); setNPat(null); setNNotFound(false); setNDate(todayISO);
     setNToothNo(""); setNProcedureDone(""); setNWorkDone(""); setNPayMode(""); setNErrors({});
-    setNWalkIn(nowHHMM()); setNConsult(nowHHMM());
+    setNWalkIn(nowHHMM()); setNConsult(nowHHMM()); setNAge(""); setNPhone("");
   };
 
   const saveNewEntry = async () => {
@@ -10738,7 +10766,7 @@ function DailyRegister({ globalPat, setGlobalPat }) {
     if (Object.keys(e).length > 0) return;
     setNSaving(true);
     const res = await api("saveToDailyRegister", {
-      date: nDate, uhid: nPat.uhid, patientName: nPat.name, phoneNo: nPat.phone, age: nPat.age,
+      date: nDate, uhid: nPat.uhid, patientName: nPat.name, phoneNo: nPhone, age: nAge,
       procedureDone: nProcedureDone, toothNo: nToothNo, workDone: nWorkDone,
       operatingDoctor: nDoctor, modeOfPayment: nPayMode,
       timeWalkIn: nWalkIn, consultationTime: nConsult, tat: tatBetween(nWalkIn, nConsult)
@@ -10748,7 +10776,27 @@ function DailyRegister({ globalPat, setGlobalPat }) {
     else alert("Save error: " + (res.error || "Unknown"));
   };
 
-  React.useEffect(()=>{ loadEntries(); },[fromDate,toDate]);
+  React.useEffect(()=>{ loadEntries(); loadApptTimes(); },[fromDate,toDate]);
+
+  // Check-in / engaged / check-out live on the Appointments sheet, stamped by
+  // the Daysheet as the patient moves through the visit. They are matched onto
+  // register rows here rather than copied into the register, so the two can
+  // never drift apart and no new sheet columns are needed.
+  const [apptTimes, setApptTimes] = React.useState({});
+  const apptKey = (uhid, date) => String(uhid||"").trim().toUpperCase() + "|" + String(date||"").trim();
+  const loadApptTimes = async()=>{
+    const res = await api("getAppointments",{fromDate,toDate});
+    const map = {};
+    if(res.success && res.appointments){
+      res.appointments.forEach(a=>{
+        if(!a.uhid) return;
+        map[apptKey(a.uhid,a.date)] = {
+          checkin: a.checkinTime||"", engaged: a.engagedTime||"", checkout: a.checkoutTime||""
+        };
+      });
+    }
+    setApptTimes(map);
+  };
 
   const loadEntries = async()=>{
     setLoading(true); setApiMsg("");
@@ -10771,8 +10819,8 @@ function DailyRegister({ globalPat, setGlobalPat }) {
   const doPrint = ()=>{
     const logo=window.LOGO_B64;
     const dateStr=fmtDMY(new Date());
-    const rows=filtered.map((e,i)=>`<tr><td style="text-align:center">${i+1}</td><td style="font-weight:700;color:#0078B4">${e.uhid||"—"}</td><td>${e.patientName||"—"}</td><td>${e.date?fmtDMY(e.date+"T00:00:00"):""}</td><td>${e.procedureDone||"—"}</td><td style="text-align:center">${e.toothNo||"—"}</td><td style="font-size:8.5pt;line-height:1.4">${e.workDone||"—"}</td><td>${e.operatingDoctor||"—"}</td><td style="text-align:center">${e.timeWalkIn||"—"}</td><td style="text-align:center">${e.consultationTime||"—"}</td><td style="text-align:center;font-weight:700;color:#059669">${e.tat||"—"}</td></tr>`).join("");
-    const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>@page{size:A4 landscape;margin:8mm 10mm}*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Arial,sans-serif;font-size:9pt}table{width:100%;border-collapse:collapse}th{background:#0078B4;color:#fff;padding:4pt 5pt;font-size:8pt;font-weight:700;border:0.5pt solid #005f99}td{padding:4pt 5pt;border:0.5pt solid #ddd;vertical-align:top}tr:nth-child(even)td{background:#f8fbfe}.hdr{border-bottom:1.5pt solid #0078B4;padding-bottom:5pt;margin-bottom:6pt;text-align:center}.cares{font-size:12pt;font-weight:800;color:#C0392B;letter-spacing:.1em}.tagline{font-size:7pt;font-weight:700;color:#0078B4}.sub{font-size:7pt;color:#555}.dtitle{font-size:11pt;font-weight:800;color:#0078B4;margin:5pt 0 4pt;text-transform:uppercase}</style></head><body><div class="hdr"><div class="cares">C. A. R. E. S.</div><div class="tagline">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div><div class="sub">BLOCK R-74B, DILSHAD GARDEN, DELHI-110095 | 7866939786, 9319990912</div></div><div class="dtitle">Daily Register</div><div style="font-size:9pt;margin-bottom:5pt;color:#555">Date Range: ${fmtDMY(fromDate)} to ${fmtDMY(toDate)} &nbsp;|&nbsp; ${filtered.length} entries &nbsp;|&nbsp; Printed: ${dateStr}</div><table><thead><tr><th style="width:22pt">S.No.</th><th style="width:50pt">UHID</th><th style="width:90pt">Patient Name</th><th style="width:56pt">Date</th><th style="width:100pt">Procedure Done</th><th style="width:40pt">Tooth No.</th><th>Work Done</th><th style="width:90pt">Doctor</th><th style="width:50pt">Walk-in</th><th style="width:50pt">Consult</th><th style="width:40pt">TAT</th></tr></thead><tbody>${rows}</tbody></table><div style="margin-top:6pt;border-top:0.5pt solid #ddd;padding-top:3pt;display:flex;justify-content:space-between;font-size:7pt;color:#888"><span>KBDC/FORMS/DR-01</span><span>K.B. Dental Clinic · kbdentaldelhi@gmail.com</span></div></body></html>`;
+    const rows=filtered.map((e,i)=>{const at=apptTimes[apptKey(e.uhid,e.date)]||{};return `<tr><td style="text-align:center">${i+1}</td><td style="font-weight:700;color:#0078B4">${e.uhid||"—"}</td><td>${e.patientName||"—"}</td><td style="text-align:center">${e.age||"—"}</td><td>${e.phoneNo||"—"}</td><td>${e.date?fmtDMY(e.date+"T00:00:00"):""}</td><td>${e.procedureDone||"—"}</td><td style="text-align:center">${e.toothNo||"—"}</td><td style="font-size:8.5pt;line-height:1.4">${e.workDone||"—"}</td><td>${e.operatingDoctor||"—"}</td><td style="text-align:center">${e.timeWalkIn||"—"}</td><td style="text-align:center">${e.consultationTime||"—"}</td><td style="text-align:center;font-weight:700;color:#059669">${e.tat||"—"}</td><td style="text-align:center">${at.checkin||"—"}</td><td style="text-align:center">${at.engaged||"—"}</td><td style="text-align:center">${at.checkout||"—"}</td></tr>`}).join("");
+    const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>@page{size:A4 landscape;margin:8mm 10mm}*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Arial,sans-serif;font-size:9pt}table{width:100%;border-collapse:collapse}th{background:#0078B4;color:#fff;padding:4pt 5pt;font-size:8pt;font-weight:700;border:0.5pt solid #005f99}td{padding:4pt 5pt;border:0.5pt solid #ddd;vertical-align:top}tr:nth-child(even)td{background:#f8fbfe}.hdr{border-bottom:1.5pt solid #0078B4;padding-bottom:5pt;margin-bottom:6pt;text-align:center}.cares{font-size:12pt;font-weight:800;color:#C0392B;letter-spacing:.1em}.tagline{font-size:7pt;font-weight:700;color:#0078B4}.sub{font-size:7pt;color:#555}.dtitle{font-size:11pt;font-weight:800;color:#0078B4;margin:5pt 0 4pt;text-transform:uppercase}</style></head><body><div class="hdr"><div class="cares">C. A. R. E. S.</div><div class="tagline">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div><div class="sub">BLOCK R-74B, DILSHAD GARDEN, DELHI-110095 | 7866939786, 9319990912</div></div><div class="dtitle">Daily Register</div><div style="font-size:9pt;margin-bottom:5pt;color:#555">Date Range: ${fmtDMY(fromDate)} to ${fmtDMY(toDate)} &nbsp;|&nbsp; ${filtered.length} entries &nbsp;|&nbsp; Printed: ${dateStr}</div><table><thead><tr><th style="width:20pt">S.No.</th><th style="width:46pt">UHID</th><th style="width:80pt">Patient Name</th><th style="width:24pt">Age</th><th style="width:56pt">Phone</th><th style="width:50pt">Date</th><th style="width:88pt">Procedure Done</th><th style="width:34pt">Tooth</th><th>Work Done</th><th style="width:78pt">Doctor</th><th style="width:40pt">Walk-in</th><th style="width:40pt">Consult</th><th style="width:34pt">TAT</th><th style="width:40pt">Check-in</th><th style="width:40pt">Engaged</th><th style="width:42pt">Check-out</th></tr></thead><tbody>${rows}</tbody></table><div style="margin-top:6pt;border-top:0.5pt solid #ddd;padding-top:3pt;display:flex;justify-content:space-between;font-size:7pt;color:#888"><span>KBDC/FORMS/DR-01</span><span>K.B. Dental Clinic · kbdentaldelhi@gmail.com</span></div></body></html>`;
     const w=window.open("","_blank"); w.document.write(html); w.document.close(); setTimeout(()=>w.print(),600);
   };
 
@@ -10824,6 +10872,18 @@ function DailyRegister({ globalPat, setGlobalPat }) {
       React.createElement("div",{style:{marginBottom:12}},
         React.createElement(Lbl,{c:"Work Done / Clinical Notes"}),
         React.createElement("textarea",{style:{...ta,minHeight:70},value:nWorkDone,onChange:e=>setNWorkDone(e.target.value),placeholder:"Describe what was done..."})
+      ),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}},
+        React.createElement("div",null,
+          React.createElement(Lbl,{c:"Age"}),
+          React.createElement("input",{style:inp,value:nAge,inputMode:"numeric",
+            onChange:e=>setNAge(e.target.value.replace(/\D/g,"").slice(0,3)),placeholder:"years"})
+        ),
+        React.createElement("div",null,
+          React.createElement(Lbl,{c:"Phone Number"}),
+          React.createElement("input",{style:inp,value:nPhone,inputMode:"numeric",
+            onChange:e=>setNPhone(e.target.value.replace(/\D/g,"").slice(0,10)),placeholder:"10-digit number"})
+        )
       ),
       React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}},
         React.createElement("div",null,
@@ -10878,7 +10938,7 @@ function DailyRegister({ globalPat, setGlobalPat }) {
           )
         ),
         React.createElement("div",{style:{display:"flex",gap:6}},
-          React.createElement("button",{onClick:loadEntries,style:{padding:"8px 14px",fontSize:12,border:`1px solid ${BORDER}`,borderRadius:6,cursor:"pointer",background:"#fff",color:"#555"}},"🔄 Refresh"),
+          React.createElement("button",{onClick:()=>{loadEntries();loadApptTimes();},style:{padding:"8px 14px",fontSize:12,border:`1px solid ${BORDER}`,borderRadius:6,cursor:"pointer",background:"#fff",color:"#555"}},"🔄 Refresh"),
           React.createElement("button",{onClick:doPrint,style:{padding:"8px 16px",fontSize:12,border:"none",borderRadius:6,cursor:"pointer",background:T,color:"#fff",fontWeight:700}},"🖨 Print")
         )
       )
@@ -10899,25 +10959,35 @@ function DailyRegister({ globalPat, setGlobalPat }) {
     loading&&React.createElement("div",{style:{textAlign:"center",padding:"20px",color:"#888",fontSize:13}},"⏳ Loading..."),
     !loading&&filtered.length===0&&React.createElement("div",{style:{background:BGS,borderRadius:8,padding:"28px",textAlign:"center",color:"#aaa",fontSize:13,border:`1px dashed ${BORDER}`}},"No entries found for this date range."),
     !loading&&filtered.length>0&&React.createElement("div",{style:{border:`1px solid ${BORDER}`,borderRadius:8,overflow:"hidden"}},
-      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"36px 80px 1fr 80px 130px 60px 1fr 120px 70px 70px 60px",background:T,color:"#fff",padding:"7px 10px",fontSize:10,fontWeight:700,gap:6}},
-        ["S.No.","UHID","Patient","Date","Procedure","Tooth","Work Done","Doctor","Walk-in","Consult","TAT"].map((h,i)=>React.createElement("div",{key:i},h))
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"32px 74px 1fr 74px 118px 52px 1fr 104px 58px 58px 52px 58px 58px 58px",background:T,color:"#fff",padding:"7px 10px",fontSize:10,fontWeight:700,gap:6}},
+        ["S.No.","UHID","Patient","Date","Procedure","Tooth","Work Done","Doctor","Walk-in","Consult","TAT","Check-in","Engaged","Check-out"].map((h,i)=>React.createElement("div",{key:i},h))
       ),
-      filtered.map((e,i)=>React.createElement("div",{key:i,
-        style:{display:"grid",gridTemplateColumns:"36px 80px 1fr 80px 130px 60px 1fr 120px 70px 70px 60px",gap:6,padding:"7px 10px",
-          borderTop:`0.5px solid ${BORDER}`,alignItems:"start",background:i%2===0?"#fff":BGS}
-      },
-        React.createElement("div",{style:{fontSize:11,fontWeight:700,color:T,textAlign:"center"}},i+1),
-        React.createElement("div",{style:{fontSize:11,fontWeight:600,color:T}},e.uhid||"—"),
-        React.createElement("div",{style:{fontSize:12,fontWeight:600}},e.patientName||"—"),
-        React.createElement("div",{style:{fontSize:11,color:"#555"}},e.date?fmtDMY(e.date+"T00:00:00"):"—"),
-        React.createElement("div",{style:{fontSize:11}},e.procedureDone||"—"),
-        React.createElement("div",{style:{fontSize:12,fontWeight:600,textAlign:"center"}},e.toothNo||"—"),
-        React.createElement("div",{style:{fontSize:11,lineHeight:1.5}},e.workDone||"—"),
-        React.createElement("div",{style:{fontSize:11}},e.operatingDoctor||"—"),
-        React.createElement("div",{style:{fontSize:10.5,color:"#555"}},e.timeWalkIn||"—"),
-        React.createElement("div",{style:{fontSize:10.5,color:"#555"}},e.consultationTime||"—"),
-        React.createElement("div",{style:{fontSize:10.5,fontWeight:600,color:"#059669"}},e.tat||"—")
-      ))
+      filtered.map((e,i)=>{
+        const at = apptTimes[apptKey(e.uhid,e.date)] || {};
+        return React.createElement("div",{key:i,
+          style:{display:"grid",gridTemplateColumns:"32px 74px 1fr 74px 118px 52px 1fr 104px 58px 58px 52px 58px 58px 58px",gap:6,padding:"7px 10px",
+            borderTop:`0.5px solid ${BORDER}`,alignItems:"start",background:i%2===0?"#fff":BGS}
+        },
+          React.createElement("div",{style:{fontSize:11,fontWeight:700,color:T,textAlign:"center"}},i+1),
+          React.createElement("div",{style:{fontSize:11,fontWeight:600,color:T}},e.uhid||"—"),
+          React.createElement("div",null,
+            React.createElement("div",{style:{fontSize:12,fontWeight:600}},e.patientName||"—"),
+            (e.age||e.phoneNo)&&React.createElement("div",{style:{fontSize:10,color:"#888",marginTop:1}},
+              [e.age?e.age+"y":"",e.phoneNo||""].filter(Boolean).join(" · "))
+          ),
+          React.createElement("div",{style:{fontSize:11,color:"#555"}},e.date?fmtDMY(e.date+"T00:00:00"):"—"),
+          React.createElement("div",{style:{fontSize:11}},e.procedureDone||"—"),
+          React.createElement("div",{style:{fontSize:12,fontWeight:600,textAlign:"center"}},e.toothNo||"—"),
+          React.createElement("div",{style:{fontSize:11,lineHeight:1.5}},e.workDone||"—"),
+          React.createElement("div",{style:{fontSize:11}},e.operatingDoctor||"—"),
+          React.createElement("div",{style:{fontSize:10.5,color:"#555"}},e.timeWalkIn||"—"),
+          React.createElement("div",{style:{fontSize:10.5,color:"#555"}},e.consultationTime||"—"),
+          React.createElement("div",{style:{fontSize:10.5,fontWeight:600,color:"#059669"}},e.tat||"—"),
+          React.createElement("div",{style:{fontSize:10.5,color:"#0078B4"}},at.checkin||"—"),
+          React.createElement("div",{style:{fontSize:10.5,color:"#D97706"}},at.engaged||"—"),
+          React.createElement("div",{style:{fontSize:10.5,color:"#6B7280"}},at.checkout||"—")
+        );
+      })
     )
   );
 }
