@@ -19628,6 +19628,19 @@ async function mergeClinicalSheet(d) {
   const all = [...prevItems, ...added].map((it, i) => ({ ...it, n: i + 1 }));
   return { ...fresh, [itemsKey]: all };
 }
+// The flat sheet tab that holds each form's historical rows — the ones the
+// backend's setupClinicalRecordTabs created "purely for pasting in historical
+// records with real columns". Nothing in the app read them, so records typed
+// or pasted straight into the sheet never showed anywhere.
+const CS_RECORD_TAB = {
+  rct:         { tab: "RCT",                col: "Tooth No.",     date: "Visit Date" },
+  imp_surgery: { tab: "Implant Surgery",    col: "Implant Site",  date: "Visit Date" },
+  imp_prosth:  { tab: "Implant Prosthetic", col: "Implant Site",  date: "Visit Date" },
+  crown:       { tab: "Crown & Bridge",     col: "Tooth No.",     date: "Visit Date" }
+};
+// Identity columns belong in the header block, not as rows of the table.
+const CS_SKIP_COLS = ["Timestamp","UHID","UHID No.","Patient Name","Name of Patient","Age","Gender","_rowIndex"];
+
 const CS_FORM_CONFIG = {
   rct: {
     mode: "entries",
@@ -19690,6 +19703,8 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [note, setNote] = React.useState("");
+  const [sheetRows, setSheetRows] = React.useState([]);
+  const [sheetCols, setSheetCols] = React.useState([]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -19717,10 +19732,52 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
         setNote("");
       }
     }).catch(e => { if (!cancelled) { setLoading(false); setErr(String(e)); } });
+    // Historical rows live in a separate flat tab, keyed by the same UHID.
+    const tabCfg = CS_RECORD_TAB[formId];
+    if (tabCfg) {
+      api("getClinicalRecords", { tabName: tabCfg.tab, uhid }).then(res => {
+        if (cancelled || !res || !res.success) return;
+        setSheetRows(res.records || []);
+        setSheetCols(res.headers || []);
+      }).catch(() => {});
+    }
     return () => { cancelled = true; };
-  }, [uhid, sheetType]);
+  }, [uhid, sheetType, formId]);
 
   const cfg = CS_FORM_CONFIG[formId] || {};
+  const tabCfg = CS_RECORD_TAB[formId] || {};
+
+  // One column per historical row, laid out like the rest of the record.
+  const sheetTable = () => {
+    if (!sheetRows.length) return null;
+    const cols = sheetRows;
+    const labels = sheetCols.filter(h =>
+      CS_SKIP_COLS.indexOf(h) < 0 && h !== tabCfg.col && h !== tabCfg.date &&
+      cols.some(r => r[h] && String(r[h]).trim() && String(r[h]) !== "—"));
+    const C = "1px solid #000";
+    const cell = { border:C, padding:"3px 6px", fontSize:11, lineHeight:1.5, verticalAlign:"top" };
+    const lblCell = { ...cell, fontWeight:600, width:190, background:"#fafafa" };
+    const secCell = { ...cell, fontWeight:800, fontSize:10.5, background:"#E0F7FA", color:"#0B2D4E", textTransform:"uppercase" };
+    const r = (label, get, bold) => React.createElement("tr", { key:"s-"+label },
+      React.createElement("td", { style:lblCell }, label),
+      cols.map((row,i) => React.createElement("td", { key:i, style: bold ? { ...cell, fontWeight:700 } : cell }, get(row) || "")));
+    return React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10,
+        padding:"14px 18px", marginBottom:14, overflowX:"auto" } },
+      React.createElement("table", { style:{ borderCollapse:"collapse", width:"100%" } },
+        React.createElement("tbody", null,
+          React.createElement("tr", null, React.createElement("td", { colSpan: cols.length + 1, style: secCell },
+            "Recorded in the sheet \u2014 " + tabCfg.tab)),
+          r(tabCfg.col || "Tooth", row => row[tabCfg.col], true),
+          r("Date", row => { const v = row[tabCfg.date]; return v ? fmtDMY(v) : ""; }, true),
+          // Any column that holds a date is shown dd/mm/yyyy like the rest of
+          // the record, rather than however the sheet happens to store it.
+          ...labels.map(h => r(h, row => {
+            const v = row[h];
+            if (!v || String(v) === "—") return "";
+            return /date/i.test(h) ? fmtDMY(v) : String(v);
+          }))
+        )));
+  };
 
   const FRow = (label, val) => {
     if (val === undefined || val === null || val === "" || val === "—") return null;
@@ -19735,6 +19792,13 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
   if (err) return React.createElement("div", { style:{ padding:40, textAlign:"center", color:"#e24b4a", fontSize:13 } }, "⚠️ " + err);
   // An empty record is the normal state for a patient who has not had this
   // treatment yet, so say what to do rather than only what is missing.
+  if (!data && sheetRows.length) return React.createElement("div", { style:{ padding:"20px 28px" } },
+    React.createElement("div", { className:"kb-noprint", style:{ display:"flex", justifyContent:"flex-end", marginBottom:12 } },
+      React.createElement("button", {
+        onClick: () => printSheetRecord(tabCfg, sheetRows, sheetCols, uhid),
+        style:{ padding:"7px 16px", fontSize:12, fontWeight:700, border:"none", borderRadius:7,
+                cursor:"pointer", background:T, color:"#fff" } }, "\uD83D\uDDA8 Print Clinical Record")),
+    sheetTable());
   if (!data) return React.createElement("div", { style:{ padding:"40px 28px", textAlign:"center" } },
     React.createElement("div", { style:{ fontSize:15, fontWeight:700, color:"#444", marginBottom:6 } },
       "Nothing recorded yet for this patient"),
@@ -19824,6 +19888,7 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
       FRow("Age / Gender", [data.age, data.gender].filter(v => v && v !== "—").join(" / ")),
       FRow("Doctor", data.doctor)
     ),
+    sheetTable(),
     React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10, padding:"14px 18px", overflowX:"auto" } },
       React.createElement("table", { style:{ borderCollapse:"collapse", width:"100%" } },
         React.createElement("tbody", null,
@@ -19837,6 +19902,44 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
       )
     )
   );
+}
+
+// Prints the historical rows held in the flat sheet tab, same layout.
+function printSheetRecord(tabCfg, rows, cols, uhid) {
+  const esc = v => String(v == null ? "" : v).replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
+  const td = "border:1px solid #000;padding:3pt 5pt;font-size:9pt;vertical-align:top;line-height:1.45;";
+  const lbl = td + "font-weight:700;width:150pt;background:#fafafa;";
+  const sec = "border:1px solid #000;padding:4pt 6pt;font-weight:800;font-size:8.5pt;background:#E0F7FA;color:#0B2D4E;text-transform:uppercase;";
+  const labels = cols.filter(h => CS_SKIP_COLS.indexOf(h) < 0 && h !== tabCfg.col && h !== tabCfg.date &&
+    rows.some(r => r[h] && String(r[h]).trim() && String(r[h]) !== "\u2014"));
+  const line = (label, get, bold) => `<tr><td style="${lbl}">${esc(label)}</td>` +
+    rows.map(r => `<td style="${td}${bold ? "font-weight:700;" : ""}">${esc(get(r))}</td>`).join("") + `</tr>`;
+  const first = rows[0] || {};
+  let body = `<tr><td colspan="${rows.length + 1}" style="${sec}">${esc(tabCfg.tab)} \u2014 Clinical Record</td></tr>`;
+  body += line(tabCfg.col || "Tooth", r => r[tabCfg.col] || "", true);
+  body += line("Date", r => r[tabCfg.date] ? fmtDMY(r[tabCfg.date]) : "", true);
+  labels.forEach(h => { body += line(h, r => {
+    const v = r[h];
+    if (!v || String(v) === "\u2014") return "";
+    return /date/i.test(h) ? fmtDMY(v) : String(v);
+  }); });
+  const name = first["Patient Name"] || first["Name of Patient"] || "";
+  const head =
+    `<div style="text-align:center;border-bottom:1.5pt solid #0078B4;padding-bottom:5pt;margin-bottom:7pt;">` +
+    `<div style="font-size:13pt;font-weight:800;color:#C0392B;letter-spacing:.1em;text-decoration:underline;">C. A. R. E. S.</div>` +
+    `<div style="font-size:8pt;font-weight:700;color:#0078B4;">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div>` +
+    `<div style="font-size:8pt;color:#555;">BLOCK R-74B, DILSHAD GARDEN, DELHI-110095 | 7866939786, 9319990912</div></div>` +
+    `<table style="width:100%;border-collapse:collapse;margin-bottom:6pt;"><tr>` +
+    `<td style="${lbl}">Patient</td><td style="${td}">${esc(name)}</td>` +
+    `<td style="${lbl}">UHID</td><td style="${td}">${esc(uhid)}</td></tr></table>`;
+  const w = window.open("", "_blank");
+  if (!w) { alert("Your browser blocked the print window. Allow pop-ups for this site and try again."); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Clinical Record</title>` +
+    `<style>@page{size:A4 landscape;margin:10mm;}body{font-family:'Segoe UI',Arial,sans-serif;}` +
+    `table{width:100%;border-collapse:collapse;}</style></head><body>` + head +
+    `<table><tbody>${body}</tbody></table></body></html>`);
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 250);
 }
 
 // Prints the clinical record on its own, in the same column-per-tooth layout
