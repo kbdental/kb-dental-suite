@@ -1266,6 +1266,18 @@ function Err({
     }
   }, "\u26A0 ", msg) : null;
 }
+// checkDuplicate matches on MOBILE and answers with existingUHID/existingName,
+// but the panel that renders the warning reads .uhid/.name — so a real hit used
+// to display a blank UHID and "Open Existing Record" fetched undefined. It also
+// compares against whatever mobile it is given, so calling it without one
+// matches any row whose mobile cell is blank; a hit carrying no UHID is that
+// false positive, not a duplicate.
+function normaliseDup(res, inputName) {
+  if (!res || !res.success || !res.duplicate) return null;
+  const uhid = String(res.existingUHID || res.uhid || "").trim();
+  if (!uhid) return null;
+  return { uhid: uhid, name: String(res.existingName || res.name || "").trim(), inputName: inputName };
+}
 function Registration({
   globalPat,
   onPatientRegistered,
@@ -1411,9 +1423,10 @@ function Registration({
     setQBusy(true);
     setDup(null);
     setApiMsg("Checking for duplicate...");
-    const dupRes = await api("checkDuplicate", { name: q.name.trim(), dob: q.dob });
-    if (dupRes.success && dupRes.duplicate) {
-      setDup({ ...dupRes, inputName: q.name.trim() });
+    const dupRes = await api("checkDuplicate", { name: q.name.trim(), dob: q.dob, mobile: mob });
+    const dupHit = normaliseDup(dupRes, q.name.trim());
+    if (dupHit) {
+      setDup(dupHit);
       setQBusy(false);
       setApiMsg("");
       window.scrollTo(0, 0);
@@ -1508,15 +1521,14 @@ function Registration({
     setApiMsg("Checking for duplicate...");
     const dupRes = await api("checkDuplicate", {
       name: pat.name,
-      dob: pat.dob || ""
+      dob: pat.dob || "",
+      mobile: pat.mobile || ""
     });
     setLoadingList(false);
     setApiMsg("");
-    if (dupRes.success && dupRes.duplicate) {
-      setDup({
-        ...dupRes,
-        inputName: pat.name
-      });
+    const dupHit = normaliseDup(dupRes, pat.name);
+    if (dupHit) {
+      setDup(dupHit);
       return;
     }
     setDup(null);

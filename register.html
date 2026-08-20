@@ -67,9 +67,11 @@ textarea{resize:vertical;min-height:70px}
 // is filled in the rest of the way — on this visit or any later one — and it
 // writes back to the SAME UHID rather than creating a second patient.
 //
-// It is a public page (no staff token), so it is deliberately narrow: it only
-// ever touches the one UHID in the link, and it will not show any patient
-// detail until the person confirms the mobile number already on the record.
+// It is a public page (no staff token), so it talks to two dedicated backend
+// actions rather than the staff ones: patientLookup and
+// patientCompleteRegistration. Both require the patient's own mobile number to
+// match the record, return only what this form needs, and cannot create a
+// patient or change UHID, name or DOB. Nothing is shown until that match.
 var SCRIPT_URL = "https://script.google.com/macros/s/AKfycby-OX-qvGE2U9Zt3b-_rpFqc5WQxRT5WMn1A030IcQIKXEaso36cMTbJ6c5xiP5O_6Zvg/exec";
 
 function api(action, data) {
@@ -110,8 +112,9 @@ function qs(name) { return new URLSearchParams(location.search).get(name) || "";
 var app = document.getElementById("app");
 var state = {
   uhid: qs("uhid").trim().toUpperCase(),
-  record: null,      // the row as stored, once the mobile is confirmed
-  screen: "loading", // loading | lookup | verify | form | done | error
+  mobile: "",
+  record: null,      // the row as stored, once the backend confirms the mobile
+  screen: "gate",    // gate | loading | form | done
   message: "",
   saving: false,
   F: {
@@ -130,53 +133,39 @@ var state = {
 // ── screens ──────────────────────────────────────────────────────
 function render() {
   var s = state.screen;
-  if (s === "loading") app.innerHTML = '<div class="card center" style="color:#888">Loading your record...</div>';
-  else if (s === "error") app.innerHTML = '<div class="card"><div class="err">' + esc(state.message) + '</div>' +
-    '<button class="btn2" onclick="location.href=location.pathname">Try another UHID</button></div>';
-  else if (s === "lookup") renderLookup();
-  else if (s === "verify") renderVerify();
+  if (s === "loading") app.innerHTML = '<div class="card center" style="color:#888">Checking your details...</div>';
+  else if (s === "gate") renderGate();
   else if (s === "form") renderForm();
   else if (s === "done") renderDone();
   window.scrollTo(0, 0);
 }
 
-function renderLookup() {
+// One gate for both cases: opened from the front desk's link (UHID in the URL)
+// or typed in cold. The mobile number is checked by the backend against the
+// record, so a guessed UHID reveals nothing on its own.
+function renderGate() {
+  var fromLink = !!qs("uhid");
   app.innerHTML =
     '<div class="card">' +
       '<h2>Complete Your Registration</h2>' +
-      '<div class="note">Please enter the UHID printed on your prescription or file. The front desk can read it out for you.</div>' +
+      '<div class="note">Please confirm the mobile number you gave at the front desk. ' +
+        (fromLink ? '' : 'You will also need the UHID from your prescription or file — the front desk can read it out for you.') +
+      '</div>' +
       (state.message ? '<div class="err">' + esc(state.message) + '</div>' : "") +
-      '<div class="f"><label>UHID</label><input id="lk-uhid" value="' + esc(state.uhid) + '" placeholder="e.g. AL0123" autocapitalize="characters"/></div>' +
-      '<button class="btn" id="lk-go">Continue</button>' +
+      '<div class="f"><label>UHID</label><input id="g-uhid" value="' + esc(state.uhid) + '"' +
+        (fromLink ? ' class="ro" readonly' : ' placeholder="e.g. AL0123" autocapitalize="characters"') + '/></div>' +
+      '<div class="f"><label>Mobile Number</label><input id="g-mob" inputmode="numeric" maxlength="10" placeholder="10-digit number"/></div>' +
+      '<button class="btn" id="g-go">Continue</button>' +
     '</div>';
-  document.getElementById("lk-go").onclick = function () {
-    var v = document.getElementById("lk-uhid").value.trim().toUpperCase();
-    if (!v) { state.message = "Please enter your UHID."; render(); return; }
-    state.uhid = v; state.message = ""; loadRecord();
-  };
-}
-
-// The mobile check is what keeps a guessed UHID from exposing someone else's
-// details: nothing about the patient is shown until it matches.
-function renderVerify() {
-  app.innerHTML =
-    '<div class="card">' +
-      '<h2>Confirm It\'s You</h2>' +
-      '<div class="note">For your privacy, please enter the mobile number you gave at the front desk for UHID <strong>' + esc(state.uhid) + '</strong>.</div>' +
-      (state.message ? '<div class="err">' + esc(state.message) + '</div>' : "") +
-      '<div class="f"><label>Mobile Number</label><input id="vf-mob" inputmode="numeric" maxlength="10" placeholder="10-digit number"/></div>' +
-      '<button class="btn" id="vf-go">Continue</button>' +
-    '</div>';
-  document.getElementById("vf-go").onclick = function () {
-    var entered = digits(document.getElementById("vf-mob").value);
-    var onFile = digits(pick(state.pendingRecord, "mobile", "Mobile", "whatsapp", "WhatsApp"));
-    if (entered.length !== 10) { state.message = "Please enter the full 10-digit number."; render(); return; }
-    if (!onFile || entered !== onFile.slice(-10)) {
-      state.message = "That number does not match our records. Please check with the front desk.";
-      render(); return;
-    }
+  document.getElementById("g-go").onclick = function () {
+    var u = document.getElementById("g-uhid").value.trim().toUpperCase();
+    var m = digits(document.getElementById("g-mob").value);
+    if (!u) { state.message = "Please enter your UHID."; render(); return; }
+    if (m.length !== 10) { state.message = "Please enter the full 10-digit mobile number."; render(); return; }
+    state.uhid = u;
+    state.mobile = m;
     state.message = "";
-    adoptRecord(state.pendingRecord);
+    loadRecord();
   };
 }
 
@@ -349,43 +338,36 @@ function wireForm() {
 // ── record loading ───────────────────────────────────────────────
 function loadRecord() {
   state.screen = "loading"; render();
-  api("getPatient", { uhid: state.uhid }).then(function (res) {
+  api("patientLookup", { uhid: state.uhid, mobile: state.mobile }).then(function (res) {
     if (!res.success || !res.patient) {
-      state.screen = state.uhid ? "lookup" : "lookup";
-      state.message = "We could not find UHID " + state.uhid + ". Please check with the front desk.";
+      state.screen = "gate";
+      state.message = res.error || "We could not match those details. Please check with the front desk.";
       render(); return;
     }
-    state.pendingRecord = res.patient;
-    state.screen = "verify"; state.message = ""; render();
+    state.message = "";
+    adoptRecord(res.patient);
   });
 }
 
 // Pre-fill whatever the record already holds so the patient only fills gaps.
 function adoptRecord(p) {
-  state.record = {
-    name: pick(p, "name", "Full Name", "Name"),
-    dob: pick(p, "dob", "DOB", "Date of Birth"),
-    mobile: pick(p, "mobile", "Mobile")
-  };
+  state.record = { name: p.name || "", dob: p.dob || "", mobile: p.mobile || state.mobile };
   var F = state.F;
-  F.gender = pick(p, "gender", "Gender");
-  F.bloodGroup = pick(p, "bloodGroup", "Blood Group");
-  F.occupation = pick(p, "occupation", "Occupation");
-  F.maritalStatus = pick(p, "maritalStatus", "Marital Status");
-  F.address = pick(p, "address", "Address");
-  F.whatsapp = pick(p, "whatsapp", "WhatsApp") || state.record.mobile;
-  F.email = pick(p, "email", "Email");
-  F.referredBy = pick(p, "referredBy", "Referred By");
-  F.emergencyName = pick(p, "emergencyName", "Emergency Name");
-  F.emergencyRelation = pick(p, "emergencyRelation", "Emergency Relation");
-  F.emergencyContact = pick(p, "emergencyContact", "Emergency Contact");
-  F.medicines = pick(p, "medicines", "Medicines");
-  F.complaint = pick(p, "complaint", "Chief Complaint");
-  var cond = pick(p, "conditions", "Medical Conditions");
-  F.conditions = cond ? cond.split(", ").filter(Boolean).filter(function (c) { return CONDITIONS.indexOf(c) >= 0; }) : [];
-  var alg = pick(p, "allergies", "Allergies");
-  F.allergies = alg ? alg.split(", ").filter(Boolean).filter(function (c) { return ALLERGIES_LIST.indexOf(c) >= 0; }) : [];
+  ["gender", "bloodGroup", "occupation", "maritalStatus", "address", "email",
+   "referredBy", "emergencyName", "emergencyRelation", "emergencyContact",
+   "medicines", "complaint"].forEach(function (k) { F[k] = p[k] || ""; });
+  F.whatsapp = p.whatsapp || state.record.mobile;
+  // Stored as a comma-joined string; keep only values this form still offers,
+  // so an unrecognised legacy entry can't render as a chip that does nothing.
+  F.conditions = splitKnown(p.conditions, CONDITIONS);
+  F.allergies  = splitKnown(p.allergies, ALLERGIES_LIST);
   state.screen = "form"; render();
+}
+
+function splitKnown(raw, list) {
+  var parsed = String(raw || "");
+  if (parsed.charAt(0) === "[") { try { parsed = JSON.parse(parsed).join(", "); } catch (e) {} }
+  return parsed.split(/,\s*/).filter(function (c) { return list.indexOf(c) >= 0; });
 }
 
 // ── submit ───────────────────────────────────────────────────────
@@ -412,13 +394,11 @@ function submit() {
   var e = validate();
   state.errors = e;
   if (Object.keys(e).length) { render(); return; }
-  var F = state.F, r = state.record;
+  var F = state.F;
   state.saving = true; render();
-  api("saveRegistration", {
+  api("patientCompleteRegistration", {
     uhid: state.uhid,
-    name: r.name,
-    dob: r.dob,
-    mobile: r.mobile,
+    mobile: state.mobile,
     gender: F.gender,
     bloodGroup: F.bloodGroup,
     occupation: F.occupation,
@@ -430,9 +410,9 @@ function submit() {
     emergencyName: F.emergencyName,
     emergencyRelation: F.emergencyRelation,
     emergencyContact: digits(F.emergencyContact),
-    conditions: F.conditions,
+    conditions: F.conditions.join(", "),
     medicines: [F.medicines, F.anyOther ? "Other: " + F.anyOther : ""].filter(Boolean).join(" | "),
-    allergies: F.allergies.concat(F.otherAllergy ? [F.otherAllergy] : []),
+    allergies: F.allergies.concat(F.otherAllergy ? [F.otherAllergy] : []).join(", "),
     habits: [
       F.smoke === "Yes" ? "Smoking" + (F.smokeFreq ? " (" + F.smokeFreq + "/day)" : "") : "",
       F.panMasala === "Yes" ? "Pan Masala" + (F.panFreq ? " (" + F.panFreq + "/day)" : "") : "",
@@ -444,8 +424,7 @@ function submit() {
     howKnown: F.howKnown.join(", "),
     complaint: F.complaint.trim(),
     painLevel: F.inPain === "Yes" && F.painLevel !== null ? F.painLevel + "/10 — " + PAIN_L[F.painLevel] : "",
-    consent: "Accepted",
-    regStatus: "Complete"
+    consent: "Accepted"
   }).then(function (res) {
     state.saving = false;
     if (!res.success) {
@@ -460,7 +439,7 @@ function submit() {
 }
 
 // ── start ────────────────────────────────────────────────────────
-if (state.uhid) loadRecord(); else { state.screen = "lookup"; render(); }
+render();
 </script>
 </body>
 </html>
