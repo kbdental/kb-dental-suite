@@ -62,6 +62,27 @@ function getDoctors() {
 function saveDoctorsLS(arr) {
   try { localStorage.setItem("kbdc_doctors", JSON.stringify(arr)); } catch(e) {}
 }
+// Wall-clock "HH:MM" from the machine making the entry. Times are taken here
+// rather than server-side because Apps Script stamps in the script project's
+// timezone, which is not necessarily the clinic's — the front desk's own clock
+// is the one staff are reading off the wall.
+function nowHHMM() {
+  const d = new Date();
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+// Turnaround time between walk-in and consultation, as HH:MM. A consultation
+// time earlier than walk-in means the visit ran past midnight, so add a day
+// rather than reporting a negative TAT.
+function tatBetween(fromHHMM, toHHMM) {
+  const m = t => {
+    const p = /^(\d{1,2}):(\d{2})$/.exec(String(t || "").trim());
+    return p ? Number(p[1]) * 60 + Number(p[2]) : null;
+  };
+  const a = m(fromHHMM), b = m(toHHMM);
+  if (a === null || b === null) return "";
+  const mins = (b - a + 1440) % 1440;
+  return String(Math.floor(mins / 60)).padStart(2, "0") + ":" + String(mins % 60).padStart(2, "0");
+}
 const PAYMENT_MODES = ["Cash", "UPI / GPay", "Card", "Net Banking", "Cheque", "N/A"];
 // Patient documents are private in Drive and are fetched as bytes through the
 // authenticated backend, so they are rendered from an in-memory blob URL rather
@@ -10622,6 +10643,11 @@ function DailyRegister({ globalPat, setGlobalPat }) {
   const [nWorkDone, setNWorkDone] = React.useState("");
   const [nDoctor, setNDoctor] = React.useState(getDoctors()[0] || "");
   const [nPayMode, setNPayMode] = React.useState("");
+  // Prefilled with the current time so the common case is one glance and no
+  // typing, but editable — an entry is often written up after the patient has
+  // already been seen.
+  const [nWalkIn, setNWalkIn] = React.useState(nowHHMM());
+  const [nConsult, setNConsult] = React.useState(nowHHMM());
   const [nErrors, setNErrors] = React.useState({});
   const [nSaving, setNSaving] = React.useState(false);
 
@@ -10643,6 +10669,7 @@ function DailyRegister({ globalPat, setGlobalPat }) {
   const resetAddForm = () => {
     setNUhid(""); setNPat(null); setNNotFound(false); setNDate(todayISO);
     setNToothNo(""); setNProcedureDone(""); setNWorkDone(""); setNPayMode(""); setNErrors({});
+    setNWalkIn(nowHHMM()); setNConsult(nowHHMM());
   };
 
   const saveNewEntry = async () => {
@@ -10656,7 +10683,8 @@ function DailyRegister({ globalPat, setGlobalPat }) {
     const res = await api("saveToDailyRegister", {
       date: nDate, uhid: nPat.uhid, patientName: nPat.name, phoneNo: nPat.phone, age: nPat.age,
       procedureDone: nProcedureDone, toothNo: nToothNo, workDone: nWorkDone,
-      operatingDoctor: nDoctor, modeOfPayment: nPayMode
+      operatingDoctor: nDoctor, modeOfPayment: nPayMode,
+      timeWalkIn: nWalkIn, consultationTime: nConsult, tat: tatBetween(nWalkIn, nConsult)
     });
     setNSaving(false);
     if (res.success) { setShowAdd(false); resetAddForm(); loadEntries(); }
@@ -10739,6 +10767,20 @@ function DailyRegister({ globalPat, setGlobalPat }) {
       React.createElement("div",{style:{marginBottom:12}},
         React.createElement(Lbl,{c:"Work Done / Clinical Notes"}),
         React.createElement("textarea",{style:{...ta,minHeight:70},value:nWorkDone,onChange:e=>setNWorkDone(e.target.value),placeholder:"Describe what was done..."})
+      ),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}},
+        React.createElement("div",null,
+          React.createElement(Lbl,{c:"Time of Walk-in"}),
+          React.createElement("input",{type:"time",style:inp,value:nWalkIn,onChange:e=>setNWalkIn(e.target.value)})
+        ),
+        React.createElement("div",null,
+          React.createElement(Lbl,{c:"Consultation Time"}),
+          React.createElement("input",{type:"time",style:inp,value:nConsult,onChange:e=>setNConsult(e.target.value)})
+        ),
+        React.createElement("div",null,
+          React.createElement(Lbl,{c:"TAT (auto)"}),
+          React.createElement("input",{style:{...inp,background:BGS,color:"#555",fontWeight:700},value:tatBetween(nWalkIn,nConsult)||"—",readOnly:true})
+        )
       ),
       React.createElement("div",{style:{marginBottom:16}},
         React.createElement(Lbl,{c:"Mode of Payment"}),
