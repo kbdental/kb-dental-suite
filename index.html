@@ -3090,6 +3090,21 @@ const emptyRow = () => ({
 const emptyCP4 = {
   rows: [emptyRow(), emptyRow(), emptyRow(), emptyRow(), emptyRow()]
 };
+// The care plan only reaches the sheet when staff press Save, but the treatment
+// plan is normally opened straight after filling page 4 in — so reading the
+// sheet alone finds nothing and the procedures have to be typed again. Page 4
+// is mirrored here as it is edited, so the hand-off works within the session
+// whether or not the care plan has been saved yet.
+const carePlanDraft = { uhid: "", rows: [] };
+function rememberCarePlanRows(uhid, rows) {
+  if (!uhid) return;
+  carePlanDraft.uhid = String(uhid).trim().toUpperCase();
+  carePlanDraft.rows = (rows || []).filter(r => r && r.procedure && String(r.procedure).trim());
+}
+function recallCarePlanRows(uhid) {
+  if (!uhid || carePlanDraft.uhid !== String(uhid).trim().toUpperCase()) return [];
+  return carePlanDraft.rows;
+}
 function CarePlan({
   globalPat,
   setGlobalPat,
@@ -3111,6 +3126,9 @@ function CarePlan({
   // Same fix as TreatmentPlan: `pat` starts out equal to globalPat, so the
   // old test could never be true on mount and an already-saved care plan was
   // never fetched — opening the tab for a selected patient showed blank pages.
+  useEffect(() => {
+    if (pat && pat.uhid) rememberCarePlanRows(pat.uhid, p4.rows);
+  }, [p4, pat]);
   const loadedUhidRef = useRef("");
   useEffect(() => {
     if (!globalPat || !globalPat.uhid) return;
@@ -4376,9 +4394,13 @@ function TreatmentPlan({
       uhid: p.uhid
     });
     setApiMsg("");
-    if (res.success && res.rows && res.rows.length) {
+    // A plan saved as nothing but empty rows — easy to create by opening this
+    // tab and pressing Save — used to count as "already has a plan" and blocked
+    // the Care Plan seeding for good.
+    const savedRows = (res.success && res.rows || []).filter(r => r && r.procedure && String(r.procedure).trim());
+    if (savedRows.length) {
       let rid2 = rowId;
-      setTpRows(res.rows.map(r => ({
+      setTpRows(savedRows.map(r => ({
         ...r,
         id: ++rid2,
         selected: r.selected || false,
@@ -4399,8 +4421,13 @@ function TreatmentPlan({
   // procedure is in neither — blank is honest, 0 is not.
   const carePlanRows = async uhid => {
     await (masterPricesReady.current || Promise.resolve({}));
-    const cpRes = await api("getCarePlan", { uhid });
-    const rows = cpRes.success && cpRes.page4 && cpRes.page4.rows ? cpRes.page4.rows : [];
+    // What is on screen in the Care Plan wins over what was last saved: staff
+    // routinely fill page 4 and come straight here without pressing Save.
+    let rows = recallCarePlanRows(uhid);
+    if (!rows.length) {
+      const cpRes = await api("getCarePlan", { uhid });
+      rows = cpRes.success && cpRes.page4 && cpRes.page4.rows ? cpRes.page4.rows : [];
+    }
     return rows.filter(r => r && r.procedure && String(r.procedure).trim()).map(r =>
       mkRow("Phase 1", r.tooth, r.dept, r.procedure,
             masterPricesRef.current[r.procedure] || PRICES[r.procedure] || "", 1));
