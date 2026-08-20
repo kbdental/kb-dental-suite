@@ -19685,7 +19685,7 @@ const CS_FORM_CONFIG = {
 };
 
 // ── Read-only saved-record viewer for RCT/Implant Surgery/Implant Prosthetic/Crown & Bridge ──
-function ClinicalSheetRecordView({ formId, sheetType, uhid }) {
+function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
   const [loading, setLoading] = React.useState(true);
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -19733,11 +19733,24 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid }) {
 
   if (loading) return React.createElement("div", { style:{ padding:40, textAlign:"center", color:"#888", fontSize:13 } }, "Loading saved record...");
   if (err) return React.createElement("div", { style:{ padding:40, textAlign:"center", color:"#e24b4a", fontSize:13 } }, "⚠️ " + err);
-  if (!data) return React.createElement("div", { style:{ padding:40, textAlign:"center", color:"#888", fontSize:13 } },
-    React.createElement("div", null, "No record found for UHID ", React.createElement("b", null, uhid),
-      " under \u201C", React.createElement("b", null, sheetType || formId), "\u201D."),
-    React.createElement("div", { style:{ marginTop:8, fontSize:12, color:"#aaa" } },
-      "Records appear here once the form is saved. Anything entered before this was stored only in that computer\u2019s browser and never reached Google Sheets."));
+  // An empty record is the normal state for a patient who has not had this
+  // treatment yet, so say what to do rather than only what is missing.
+  if (!data) return React.createElement("div", { style:{ padding:"40px 28px", textAlign:"center" } },
+    React.createElement("div", { style:{ fontSize:15, fontWeight:700, color:"#444", marginBottom:6 } },
+      "Nothing recorded yet for this patient"),
+    React.createElement("div", { style:{ fontSize:13, color:"#888", marginBottom:4 } },
+      "No ", React.createElement("b", null, sheetType || formId), " record is on file for UHID ",
+      React.createElement("b", null, uhid), "."),
+    React.createElement("div", { style:{ fontSize:12.5, color:"#888", maxWidth:560, margin:"0 auto 18px" } },
+      "To start one: open ", React.createElement("b", null, "New Entry"), ", fill the form and press ",
+      React.createElement("b", null, "Save"), ". It is stored against the patient and appears here from then on, on every computer."),
+    onNewEntry && React.createElement("button", {
+      onClick: onNewEntry,
+      style:{ padding:"9px 22px", fontSize:13, fontWeight:700, border:"none", borderRadius:8,
+              cursor:"pointer", background:T, color:"#fff" }
+    }, "\uD83D\uDCDD Start a New Entry"),
+    React.createElement("div", { style:{ fontSize:11.5, color:"#bbb", maxWidth:560, margin:"18px auto 0" } },
+      "Work saved on these forms before this update never reached Google Sheets \u2014 it was held in one computer\u2019s browser only, so it does not appear here."));
 
   if (cfg.mode === "entries") {
     const entries = data.entries || [];
@@ -21151,7 +21164,8 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
           ? React.createElement("div", { style:{ flex:1, overflowY:"auto", background:BGS } },
               React.createElement(ClinicalSheetRecordView, {
                 key: form.id + "_" + globalPat.uhid,
-                formId: form.id, sheetType: form.sheetType, uhid: globalPat.uhid
+                formId: form.id, sheetType: form.sheetType, uhid: globalPat.uhid,
+                onNewEntry: () => setViewMode("form")
               })
             )
           : viewMode === "records" && globalPat && globalPat.uhid && form.tabName
