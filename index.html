@@ -19583,34 +19583,119 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid }) {
     );
   }
 
-  // flat mode — imp_surgery / imp_prosth / crown
+  // flat mode — imp_surgery / imp_prosth / crown.
+  // Laid out like the RCT clinical record: field labels down the left, one
+  // column per implant or tooth, so a patient's whole history reads across the
+  // page in one table instead of as a stack of separate cards.
   const items = cfg.itemsKey ? (data[cfg.itemsKey] || []) : [];
+  const C = `1px solid #000`;
+  const cell = { border:C, padding:"3px 6px", fontSize:11, lineHeight:1.5, verticalAlign:"top" };
+  const lblCell = { ...cell, fontWeight:600, width:190, background:"#fafafa" };
+  const secCell = { ...cell, fontWeight:800, fontSize:10.5, background:"#E0F7FA", color:"#0B2D4E",
+                    textTransform:"uppercase", letterSpacing:".04em" };
+  const cols = Math.max(items.length, 1);
+
+  const section = label => React.createElement("tr", { key:"sec-"+label },
+    React.createElement("td", { colSpan: cols + 1, style: secCell }, label));
+
+  const row = (label, get, bold) => React.createElement("tr", { key:"row-"+label },
+    React.createElement("td", { style: lblCell }, label),
+    items.length
+      ? items.map((it, i) => React.createElement("td", { key:i, style: bold ? { ...cell, fontWeight:700 } : cell },
+          get(it, i) || ""))
+      : React.createElement("td", { style: cell }, "")
+  );
+
+  // Rows with nothing in any column are dropped — an empty grid of dashes is
+  // harder to read than a short record.
+  const itemRows = (cfg.itemFields || [])
+    // site/tooth is already the column heading, so skip repeating it as a row
+    .filter(([k]) => k !== "site" && k !== "tooth")
+    .filter(([k]) => items.some(it => it[k] && it[k] !== "—"))
+    .map(([k,l]) => row(l, it => (it[k] && it[k] !== "—") ? it[k] : ""));
+
+  const sharedRows = (cfg.topFields || [])
+    .filter(([k]) => data[k] && data[k] !== "—")
+    .map(([k,l]) => React.createElement("tr", { key:"shared-"+k },
+      React.createElement("td", { style: lblCell }, l),
+      React.createElement("td", { colSpan: cols, style: cell }, data[k])));
+
   return React.createElement("div", { style:{ padding:"20px 28px" } },
+    React.createElement("div", { className:"kb-noprint", style:{ display:"flex", justifyContent:"flex-end", marginBottom:12 } },
+      React.createElement("button", {
+        onClick: () => printClinicalRecord(cfg, data, items, sheetType),
+        style:{ padding:"7px 16px", fontSize:12, fontWeight:700, border:"none", borderRadius:7,
+                cursor:"pointer", background:T, color:"#fff" }
+      }, "🖨 Print Clinical Record")),
     React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10, padding:"14px 18px", marginBottom:14 } },
       FRow("Patient", data.pName),
       FRow("UHID", data.pId),
       FRow("Age / Gender", [data.age, data.gender].filter(v => v && v !== "—").join(" / ")),
-      FRow("Doctor", data.doctor),
-      FRow("Date", data.date ? fmtDMY(data.date) : data.date),
-      (cfg.topFields || []).map(([k,l]) => FRow(l, data[k]))
+      FRow("Doctor", data.doctor)
     ),
-    items.length > 0 && React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10, padding:"14px 18px" } },
-      React.createElement("div", { style:{ fontSize:11, fontWeight:700, color:T, marginBottom:10, textTransform:"uppercase", letterSpacing:".04em" } },
-        cfg.itemLabel + " Details"),
-      items.map((it, i) => React.createElement("div", { key:i,
-        style:{ padding:"9px 0", borderBottom: i < items.length - 1 ? `1px solid ${BORDER}` : "none" } },
-        React.createElement("div", { style:{ fontWeight:700, fontSize:12, color:"#111", marginBottom:4 } },
-          "#" + (it.n || i+1) + " — " + (it.site || it.tooth || "—")),
-        React.createElement("div", { style:{ display:"flex", flexWrap:"wrap", gap:10 } },
-          (cfg.itemFields || []).map(([k,l]) => (it[k] && it[k] !== "—")
-            ? React.createElement("span", { key:k, style:{ fontSize:11, color:"#555" } },
-                React.createElement("span", { style:{ color:"#888" } }, l + ": "), it[k])
-            : null)
+    React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10, padding:"14px 18px", overflowX:"auto" } },
+      React.createElement("table", { style:{ borderCollapse:"collapse", width:"100%" } },
+        React.createElement("tbody", null,
+          section(cfg.itemLabel + " Record"),
+          row(cfg.itemLabel, (it, i) => it.site || it.tooth || String(it.n || i+1), true),
+          row("Date", it => it.date ? fmtDMY(it.date) : "", true),
+          ...itemRows,
+          sharedRows.length ? section("Case Details") : null,
+          ...sharedRows
         )
-      ))
+      )
     )
   );
 }
+
+// Prints the clinical record on its own, in the same column-per-tooth layout
+// the RCT record uses, on the clinic's letterhead.
+function printClinicalRecord(cfg, data, items, sheetType) {
+  const esc = v => String(v == null ? "" : v).replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
+  const cols = Math.max(items.length, 1);
+  const td = "border:1px solid #000;padding:3pt 5pt;font-size:9pt;vertical-align:top;line-height:1.45;";
+  const lbl = td + "font-weight:700;width:150pt;background:#fafafa;";
+  const sec = "border:1px solid #000;padding:4pt 6pt;font-weight:800;font-size:8.5pt;background:#E0F7FA;color:#0B2D4E;text-transform:uppercase;";
+  const row = (label, vals, bold) =>
+    `<tr><td style="${lbl}">${esc(label)}</td>` +
+    vals.map(v => `<td style="${td}${bold ? "font-weight:700;" : ""}">${esc(v)}</td>`).join("") + `</tr>`;
+  let body = `<tr><td colspan="${cols + 1}" style="${sec}">${esc(cfg.itemLabel)} Record</td></tr>`;
+  body += row(cfg.itemLabel, items.length ? items.map((it,i) => it.site || it.tooth || (it.n || i+1)) : [""], true);
+  body += row("Date", items.length ? items.map(it => it.date ? fmtDMY(it.date) : "") : [""], true);
+  (cfg.itemFields || []).forEach(([k,l]) => {
+    if (k === "site" || k === "tooth") return;
+    if (!items.some(it => it[k] && it[k] !== "—")) return;
+    body += row(l, items.map(it => (it[k] && it[k] !== "—") ? it[k] : ""));
+  });
+  const shared = (cfg.topFields || []).filter(([k]) => data[k] && data[k] !== "—");
+  if (shared.length) {
+    body += `<tr><td colspan="${cols + 1}" style="${sec}">Case Details</td></tr>`;
+    shared.forEach(([k,l]) => {
+      body += `<tr><td style="${lbl}">${esc(l)}</td><td colspan="${cols}" style="${td}">${esc(data[k])}</td></tr>`;
+    });
+  }
+  const head =
+    `<div style="text-align:center;border-bottom:1.5pt solid #0078B4;padding-bottom:5pt;margin-bottom:7pt;">` +
+    `<div style="font-size:13pt;font-weight:800;color:#C0392B;letter-spacing:.1em;text-decoration:underline;">C. A. R. E. S.</div>` +
+    `<div style="font-size:8pt;font-weight:700;color:#0078B4;">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div>` +
+    `<div style="font-size:8pt;color:#555;">BLOCK R-74B, DILSHAD GARDEN, DELHI-110095 | 7866939786, 9319990912</div></div>` +
+    `<div style="text-align:center;font-size:11pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:6pt;">` +
+    `${esc(sheetType || "")} — Clinical Record</div>` +
+    `<table style="width:100%;border-collapse:collapse;margin-bottom:6pt;"><tr>` +
+    `<td style="${lbl}">Patient</td><td style="${td}">${esc(data.pName)}</td>` +
+    `<td style="${lbl}">UHID</td><td style="${td}">${esc(data.pId)}</td>` +
+    `<td style="${lbl}">Doctor</td><td style="${td}">${esc(data.doctor)}</td></tr></table>`;
+  const w = window.open("", "_blank");
+  if (!w) { alert("Your browser blocked the print window. Allow pop-ups for this site and try again."); return; }
+  w.document.write(
+    `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Clinical Record</title>` +
+    `<style>@page{size:A4 landscape;margin:10mm;}body{font-family:'Segoe UI',Arial,sans-serif;}` +
+    `table{width:100%;border-collapse:collapse;}</style></head><body>` +
+    head + `<table><tbody>${body}</tbody></table></body></html>`);
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 250);
+}
+
 
 // ── Read-only saved-record viewer for standalone iframe forms that save via saveXXX()/getClinicalRecords (tabName-based) ──
 function GenericRecordsView({ tabName, uhid }) {
@@ -22606,7 +22691,11 @@ function App() {
           // record. Merge instead: the new visit's items are appended to what
           // is already on file, and the header fields take the latest values.
           const merged = await mergeClinicalSheet(d);
-          const res = await api("saveClinicalSheets", {
+          // POST, not GET: api() puts the whole payload in the query string,
+          // and a clinical record grows with every visit until it outgrows the
+          // URL limit and the save starts failing for the longest-standing
+          // patients — exactly the ones whose record matters most.
+          const res = await apiPost("saveClinicalSheets", {
             uhid: d.uhid,
             patientName: d.patientName || "",
             sheetType: d.sheetType || "",
