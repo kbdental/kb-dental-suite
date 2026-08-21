@@ -3123,6 +3123,7 @@ function CarePlan({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [apiMsg, setApiMsg] = useState("");
+  const [loadErr, setLoadErr] = useState("");
   // Same fix as TreatmentPlan: `pat` starts out equal to globalPat, so the
   // old test could never be true on mount and an already-saved care plan was
   // never fetched — opening the tab for a selected patient showed blank pages.
@@ -3140,10 +3141,21 @@ function CarePlan({
   }, [globalPat]);
   const loadFromPat = async p => {
     setApiMsg("Loading care plan...");
+    setLoadErr("");
     const res = await api("getCarePlan", {
       uhid: p.uhid
     });
     setApiMsg("");
+    // A failed read used to leave the form at its blank defaults, identical to
+    // a patient who has no care plan yet. Saving from that state overwrites all
+    // four pages with blanks — the existing plan is destroyed. Record the
+    // failure so saving can be blocked until the plan has actually been read.
+    if (!res || !res.success) {
+      setLoadErr("Could not read this patient's existing care plan: " +
+                 ((res && res.error) || "no response from the server") +
+                 ". Saving is disabled until it loads, so an existing plan is not overwritten with a blank one. Please retry.");
+      return;
+    }
     if (res.success && (res.page1 || res.page2 || res.page3 || res.page4)) {
       if (res.page1 && Object.keys(res.page1).length > 2) setP1(prev => ({
         ...prev,
@@ -3205,6 +3217,12 @@ function CarePlan({
   const saveCP = async () => {
     if (!pat) {
       alert("Load a patient first.");
+      return;
+    }
+    // Saving replaces all four pages. Doing that on top of a plan that was
+    // never successfully read would wipe whatever is already on file.
+    if (loadErr) {
+      alert("This patient's existing care plan could not be read, so saving now could overwrite it with a blank one.\n\nReload the patient and try again.");
       return;
     }
     setSaving(true);
@@ -3409,7 +3427,17 @@ function CarePlan({
       fontSize: 12,
       color: T
     }
-  }, "\u23F3 ", apiMsg), /*#__PURE__*/React.createElement("div", {
+  }, "\u23F3 ", apiMsg), loadErr && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#fff2f0",
+      border: "1px solid #e24b4a",
+      borderRadius: 6,
+      padding: "8px 13px",
+      marginBottom: 10,
+      fontSize: 12,
+      color: "#a12e2e"
+    }
+  }, "\u26A0 ", loadErr), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
@@ -4359,6 +4387,7 @@ function TreatmentPlan({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [apiMsg, setApiMsg] = useState("");
+  const [loadErr, setLoadErr] = useState("");
   // Reports the Care Plan hand-off in the page itself. Guessing at why a plan
   // looked empty cost three rounds; this states what happened.
   const [seedMsg, setSeedMsg] = useState(null);
@@ -4393,10 +4422,20 @@ function TreatmentPlan({
   }, [globalPat]);
   const loadFromPat = async p => {
     setApiMsg("Loading treatment plan...");
+    setLoadErr("");
     const res = await api("getTreatmentPlan", {
       uhid: p.uhid
     });
     setApiMsg("");
+    // A failed read leaves this tab looking like a patient with no plan, and
+    // the seeding path below then fills it from the Care Plan. Saving that
+    // replaces the real plan — and its agreed prices — with a fresh one.
+    if (!res || !res.success) {
+      setLoadErr("Could not read this patient's existing treatment plan: " +
+                 ((res && res.error) || "no response from the server") +
+                 ". Saving is disabled until it loads, so an existing plan and its prices are not overwritten. Please retry.");
+      return;
+    }
     // A plan saved as nothing but empty rows — easy to create by opening this
     // tab and pressing Save — used to count as "already has a plan" and blocked
     // the Care Plan seeding for good.
@@ -4499,6 +4538,12 @@ function TreatmentPlan({
   const saveTP = async () => {
     if (!pat) {
       alert("Load a patient first.");
+      return;
+    }
+    // Saving replaces the whole plan and its estimate. Doing that on top of a
+    // plan that was never read would discard the prices already agreed.
+    if (loadErr) {
+      alert("This patient's existing treatment plan could not be read, so saving now could overwrite it and the prices already agreed.\n\nReload the patient and try again.");
       return;
     }
     setSaving(true);
@@ -4790,7 +4835,17 @@ function TreatmentPlan({
       fontSize: 12,
       color: T
     }
-  }, "\u23F3 ", apiMsg), /*#__PURE__*/React.createElement("div", {
+  }, "\u23F3 ", apiMsg), loadErr && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#fff2f0",
+      border: "1px solid #e24b4a",
+      borderRadius: 6,
+      padding: "8px 13px",
+      marginBottom: 10,
+      fontSize: 12,
+      color: "#a12e2e"
+    }
+  }, "\u26A0 ", loadErr), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 4,
@@ -5510,30 +5565,42 @@ function Appointments({ globalPat, setGlobalPat }) {
     loadBlocks(selDate);
   }, [selDate, viewMode]);
 
+  // Every load below reports failure rather than falling back to an empty
+  // list: an empty schedule and a schedule that could not be read look
+  // identical on screen, and the difference decides whether staff trust it.
+  const loadFailed = (res, what) =>
+    setApiMsg("Could not load " + what + ": " + ((res && res.error) || "no response from the server") +
+              " — this is not an empty schedule. Please retry.");
+
   const loadTodaySidebar = async () => {
     const res = await api("getAppointments", { date: todayISO });
-    if (res.success && res.appointments) setTodayAppts(res.appointments.filter(a=>a.status!=="Cancelled"));
+    if (res && res.success && res.appointments) setTodayAppts(res.appointments.filter(a=>a.status!=="Cancelled"));
+    else { setTodayAppts([]); loadFailed(res, "today's appointments"); }
   };
 
   const loadAppts = async (date) => {
     setLoading(true); setApiMsg("");
     const res = await api("getAppointments", { date });
     setLoading(false);
-    if (res.success && res.appointments) setAppts(res.appointments);
-    else setAppts([]);
+    if (res && res.success && res.appointments) setAppts(res.appointments);
+    else { setAppts([]); loadFailed(res, "appointments for " + date); }
   };
 
   const loadRange = async (fromDate, toDate) => {
     setRangeLoading(true); setApiMsg("");
     const res = await api("getAppointments", { fromDate, toDate });
     setRangeLoading(false);
-    if (res.success && res.appointments) setRangeAppts(res.appointments);
-    else setRangeAppts([]);
+    if (res && res.success && res.appointments) setRangeAppts(res.appointments);
+    else { setRangeAppts([]); loadFailed(res, "appointments for " + fromDate + " to " + toDate); }
   };
 
+  // Blocked slots decide whether a time is bookable. Failing to load them
+  // silently leaves every blocked slot looking free, so a booking can be taken
+  // over a block that is really there — worth saying out loud, not swallowing.
   const loadBlocks = async (date) => {
     const res = await api("getBlockedSlots", { date });
-    if (res.success && res.blocks) setBlocks(res.blocks);
+    if (res && res.success && res.blocks) setBlocks(res.blocks);
+    else { setBlocks([]); loadFailed(res, "blocked slots — times that are blocked may show as free"); }
   };
 
   const refreshAll = () => {
@@ -6364,11 +6431,15 @@ function Daysheet({ globalPat, setGlobalPat }) {
   const [statusErr, setStatusErr] = useState("");
 
   const load = async () => {
-    setLoading(true);
+    setLoading(true); setStatusErr("");
     const res = await api("getAppointments", { date: visitDate });
     setLoading(false);
-    if (res.success && res.appointments) setAppts(res.appointments);
-    else setAppts([]);
+    if (res && res.success && res.appointments) setAppts(res.appointments);
+    else {
+      setAppts([]);
+      setStatusErr("Could not load the daysheet: " + ((res && res.error) || "no response from the server") +
+                   " — this is not an empty day. Please retry.");
+    }
   };
   useEffect(() => { load(); }, [visitDate]);
 
@@ -9772,6 +9843,7 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
   const [tab, setTab] = useState(initialTab || "procedure"); // "procedure" | "progress" | "feesheet"
   const [entries, setEntries] = useState([]);
   const [apiMsg, setApiMsg] = useState("");
+  const [loadErr, setLoadErr] = useState("");
   const [preview, setPreview] = useState(false);
   const [previewHTML, setPreviewHTML] = useState("");
   const [showSettings, setShowSettings] = useState(false);
@@ -9795,12 +9867,18 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
 
   const loadEntries = async (p) => {
     setApiMsg("Loading treatment history...");
+    setLoadErr("");
     const res = await api("getTreatmentProgress", { uhid: p.uhid });
     setApiMsg("");
-    if (res.success && res.entries && res.entries.length) {
-      setEntries(res.entries);
+    if (res && res.success) {
+      setEntries((res.entries && res.entries.length) ? res.entries : []);
     } else {
+      // An unread history and a genuinely empty one look the same on screen;
+      // for a treatment record that difference matters.
       setEntries([]);
+      setLoadErr("Could not load this patient's treatment history: " +
+                 ((res && res.error) || "no response from the server") +
+                 " — this is not an empty history. Please retry.");
     }
   };
 
@@ -9809,10 +9887,17 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
   // via getTreatmentProgress above); fees come from Finance receipts.
   const [receipts, setReceipts] = useState([]);
 
+  // Fees drive what the patient is told they owe, so a failed read must never
+  // pass for "nothing paid" — that understates payments already made.
   const loadFeeEntries = async (p) => {
     const res = await api("getReceipts", { uhid: p.uhid });
-    if (res.success && res.receipts) setReceipts(res.receipts);
-    else setReceipts([]);
+    if (res && res.success && res.receipts) setReceipts(res.receipts);
+    else {
+      setReceipts([]);
+      setLoadErr("Could not load this patient's receipts: " +
+                 ((res && res.error) || "no response from the server") +
+                 " — amounts shown may be incomplete. Please retry before quoting a balance.");
+    }
   };
 
   const printFeeSheet = () => {
@@ -10062,6 +10147,7 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
     }),
     notFound && React.createElement("div", { style:{ background:"#fff0f0", border:"1px solid #e24b4a", borderRadius:6, padding:"8px 14px", marginBottom:12, fontSize:12, color:"#c0392b" } }, "UHID not found."),
     apiMsg && React.createElement("div", { style:{ background:TL, border:`1px solid ${TM}`, borderRadius:6, padding:"7px 12px", marginBottom:10, fontSize:12, color:T } }, "⏳ ", apiMsg),
+    loadErr && React.createElement("div", { style:{ background:"#fff2f0", border:"1px solid #e24b4a", borderRadius:6, padding:"8px 13px", marginBottom:10, fontSize:12, color:"#a12e2e" } }, "⚠ ", loadErr),
 
     // Tab bar + action buttons
     React.createElement("div", { style:{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:8 } },
@@ -10795,6 +10881,7 @@ function DailyRegister({ globalPat, setGlobalPat }) {
   const [filterProc, setFilterProc] = React.useState("");
   const [searchQ, setSearchQ] = React.useState("");
   const [apiMsg, setApiMsg] = React.useState("");
+  const [loadErr, setLoadErr] = React.useState("");
 
   // ── Add New Entry — this is now the primary place new procedures/visits get
   // recorded; Treatment Progress and the Procedure & Fee Sheet just read this data.
@@ -10915,23 +11002,35 @@ function DailyRegister({ globalPat, setGlobalPat }) {
   const loadApptTimes = async()=>{
     const res = await api("getAppointments",{fromDate,toDate});
     const map = {};
-    if(res.success && res.appointments){
+    if(res && res.success && res.appointments){
       res.appointments.forEach(a=>{
         if(!a.uhid) return;
         map[apptKey(a.uhid,a.date)] = {
           checkin: a.checkinTime||"", engaged: a.engagedTime||"", checkout: a.checkoutTime||""
         };
       });
+      setApptTimes(map);
+    } else {
+      // These only decorate register rows with visit times, so a failure is
+      // noted rather than shouted — but blank times should not read as "the
+      // patient was never checked in".
+      setApptTimes({});
+      setLoadErr("Check-in/check-out times could not be loaded, so those columns are blank: " +
+                 ((res && res.error) || "no response from the server"));
     }
-    setApptTimes(map);
   };
 
   const loadEntries = async()=>{
-    setLoading(true); setApiMsg("");
+    setLoading(true); setApiMsg(""); setLoadErr("");
     const res = await api("getDailyRegister",{fromDate,toDate});
     setLoading(false);
-    if(res.success&&res.entries) setEntries(res.entries);
-    else setEntries([]);
+    if(res && res.success && res.entries) setEntries(res.entries);
+    else {
+      setEntries([]);
+      setLoadErr("Could not load the register for this date range: " +
+                 ((res && res.error) || "no response from the server") +
+                 " — this is not an empty register. Please retry.");
+    }
   };
 
   const filtered = entries.filter(e=>{
@@ -11079,6 +11178,7 @@ function DailyRegister({ globalPat, setGlobalPat }) {
     ),
 
     apiMsg&&React.createElement("div",{style:{background:TL,border:`1px solid ${TM}`,borderRadius:6,padding:"7px 12px",marginBottom:10,fontSize:12,color:T}},"⏳ ",apiMsg),
+    loadErr&&React.createElement("div",{style:{background:"#fff2f0",border:"1px solid #e24b4a",borderRadius:6,padding:"8px 13px",marginBottom:10,fontSize:12,color:"#a12e2e"}},"⚠ ",loadErr),
 
     // Stats
     React.createElement("div",{style:{display:"flex",gap:10,marginBottom:14}},
