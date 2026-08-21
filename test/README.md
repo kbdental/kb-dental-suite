@@ -1,14 +1,13 @@
 # Tests
 
-No build step and no network: both suites read `index.html` directly, and
-neither talks to Google Sheets. They cover the client-side behaviour that runs
+No build step and no network: all three suites read `index.html` directly,
+and none of them talks to Google Sheets. They cover the client-side behaviour that runs
 before any save.
 
-    npm install playwright        # once
-    node test/prefill.test.js
-    node test/templates.test.js
+    npm install                   # once
+    npm test
 
-`templates.test.js` needs Chromium. It uses Playwright's own copy by default
+`templates.test.js` and `register-questions.test.js` need Chromium. It uses Playwright's own copy by default
 (`npx playwright install chromium`); where one is already on the machine, point
 `CHROME_PATH` at it instead:
 
@@ -21,6 +20,18 @@ Register entry. Each form names its fields for its own sheet tab, so this
 checks the real field names every save action sends — plus the form-label
 fallback, whitespace-only fields, and a missing UHID, which must offer no
 register entry at all.
+
+## register-questions.test.js
+
+"Initial Assessment Done" and "Care Plan Documented" used to be answered `Yes`
+by the backend whenever the app omitted them — which no caller sent, so every
+register row claimed both without anyone having said so. The app now asks.
+
+This mounts the real `RegisterConfirm` out of `index.html` against a stubbed
+`api()` and checks what reaches the wire: unanswered travels as `""` (present
+on the payload, not absent, and not `"Yes"`), `Yes` and `No` travel as given,
+`No` is not mistaken for unset, and an answer that is taken back returns to
+unanswered.
 
 ## templates.test.js
 

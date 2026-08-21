@@ -114,16 +114,17 @@ Change both `|| "Yes"` to `|| ""`:
 
 Rows already in the sheet keep whatever they say — this only affects new ones.
 
-### What this leaves behind, and the obvious follow-up
+### The app now asks both questions
 
-Nothing in the app sends either field today, so from this point both columns
-will be **blank on every new row**. That is honest where "Yes" was not, but it
-does mean the two columns record nothing at all until someone can answer them.
+Both the Daily Register prompt and **Add New Entry** carry these two questions,
+defaulting to *not answered*, and send whatever was chosen — including nothing.
+So after this patch a register row records exactly what the person filling it
+in said.
 
-Neither the register prompt nor Add New Entry has these questions on it. Adding
-them — two Yes/No controls, defaulting to unanswered — is a small change to
-`index.html` and needs nothing further from `Code.gs`, since both actions
-already accept `initialAssessment` and `carePlanDocumented`. Say the word.
+**Until this patch is deployed** the app's side works only partly: answering
+*Yes* or *No* is stored correctly, but leaving a question **unanswered still
+lands in the sheet as "Yes"**, because that fallback lives in `Code.gs`. That
+is the whole reason this change is on the required list.
 
 ---
 

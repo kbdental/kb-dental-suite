@@ -2,9 +2,11 @@
   "name": "kb-dental-suite",
   "private": true,
   "scripts": {
-    "test": "node test/prefill.test.js && node test/templates.test.js"
+    "test": "node test/prefill.test.js && node test/register-questions.test.js && node test/templates.test.js"
   },
   "devDependencies": {
-    "playwright": "^1.56.0"
+    "playwright": "^1.56.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   }
 }
