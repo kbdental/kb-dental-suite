@@ -5647,8 +5647,13 @@ function Appointments({ globalPat, setGlobalPat }) {
     } else { setApiMsg("Error: " + (res.error||"Unknown")); }
   };
 
+  // These three used to discard the result and update the screen regardless,
+  // so a rejected save — expired session, sheet error, appointment not found —
+  // showed as done while the sheet still said otherwise. The screen must only
+  // change once the sheet actually has.
   const updateStatus = async (apptId, status) => {
-    await api("updateAppointmentStatus", { apptId, status });
+    const res = await api("updateAppointmentStatus", { apptId, status });
+    if (!res || !res.success) { setApiMsg("Could not update status: " + ((res && res.error) || "Unknown error")); return; }
     setAppts(prev => prev.map(a => a.id===apptId ? {...a, status} : a));
     setRangeAppts(prev => prev.map(a => a.id===apptId ? {...a, status} : a));
     setSelectedAppt(null);
@@ -5656,14 +5661,16 @@ function Appointments({ globalPat, setGlobalPat }) {
 
   const confirmCancel = async () => {
     if (!selectedAppt) return;
-    await api("updateAppointmentStatus", { apptId: selectedAppt.id, status: "Cancelled", cancelReason });
+    const res = await api("updateAppointmentStatus", { apptId: selectedAppt.id, status: "Cancelled", cancelReason });
+    if (!res || !res.success) { setApiMsg("Could not cancel the appointment: " + ((res && res.error) || "Unknown error")); return; }
     setAppts(prev => prev.map(a => a.id===selectedAppt.id ? {...a, status:"Cancelled", cancelReason} : a));
     setSelectedAppt(null); setPopupMode("view");
   };
 
   const deleteAppt = async () => {
     if (!selectedAppt) return;
-    await api("deleteAppointment", { apptId: selectedAppt.id });
+    const res = await api("deleteAppointment", { apptId: selectedAppt.id });
+    if (!res || !res.success) { setApiMsg("Could not delete the appointment: " + ((res && res.error) || "Unknown error")); return; }
     setAppts(prev => prev.filter(a => a.id!==selectedAppt.id));
     setSelectedAppt(null); setPopupMode("view");
   };
@@ -6354,6 +6361,8 @@ function Daysheet({ globalPat, setGlobalPat }) {
   const [tab, setTab] = useState("daysheet");
   const doctors = getDoctors();
 
+  const [statusErr, setStatusErr] = useState("");
+
   const load = async () => {
     setLoading(true);
     const res = await api("getAppointments", { date: visitDate });
@@ -6363,8 +6372,13 @@ function Daysheet({ globalPat, setGlobalPat }) {
   };
   useEffect(() => { load(); }, [visitDate]);
 
+  // A discarded result meant a failed check-in/in-chair/check-out still moved
+  // the patient along on screen while the sheet kept the old status — the
+  // Daysheet and the record then disagree for the rest of the day.
   const updateStatus = async (apptId, status) => {
-    await api("updateAppointmentStatus", { apptId, status });
+    setStatusErr("");
+    const res = await api("updateAppointmentStatus", { apptId, status });
+    if (!res || !res.success) { setStatusErr("Could not update status: " + ((res && res.error) || "Unknown error")); return; }
     setAppts(prev => prev.map(a => a.id===apptId ? {...a, status} : a));
   };
 
@@ -6399,6 +6413,8 @@ function Daysheet({ globalPat, setGlobalPat }) {
   return React.createElement("div", null,
     React.createElement(ClinicHeader, null),
     tabBar,
+    statusErr && React.createElement("div", { style:{ background:"#fff2f0", border:"1px solid #e24b4a", borderRadius:8,
+      padding:"9px 14px", marginBottom:12, fontSize:12.5, color:"#a12e2e" } }, "⚠ " + statusErr),
     React.createElement("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 } },
       React.createElement("div", { style:{ fontSize:17, fontWeight:700 } }, "🗓 Daysheet"),
       React.createElement("button", { onClick:()=>setShowWalkIn(true),
