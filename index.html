@@ -10911,6 +10911,10 @@ function DailyRegister({ globalPat, setGlobalPat }) {
   // columns stay empty. Ticking this puts them on the Daysheet as a walk-in,
   // checked in, so the rest of the visit is tracked like anyone else's.
   const [nAddToDaysheet, setNAddToDaysheet] = React.useState(true);
+  // Both start unanswered: the register should record what the person
+  // filling it in actually said, not a default standing in for them.
+  const [nInitialAssessment, setNInitialAssessment] = React.useState("");
+  const [nCarePlanDocumented, setNCarePlanDocumented] = React.useState("");
   const [nErrors, setNErrors] = React.useState({});
   const [nSaving, setNSaving] = React.useState(false);
 
@@ -10969,6 +10973,7 @@ function DailyRegister({ globalPat, setGlobalPat }) {
     setNToothNo(""); setNProcedureDone(""); setNWorkDone(""); setNPayMode(""); setNErrors({});
     setNWalkIn(nowHHMM()); setNConsult(nowHHMM()); setNAge(""); setNPhone("");
     setNAddToDaysheet(true);
+    setNInitialAssessment(""); setNCarePlanDocumented("");
   };
 
   const saveNewEntry = async () => {
@@ -10983,7 +10988,10 @@ function DailyRegister({ globalPat, setGlobalPat }) {
       date: nDate, uhid: nPat.uhid, patientName: nPat.name, phoneNo: nPhone, age: nAge,
       procedureDone: nProcedureDone, toothNo: nToothNo, workDone: nWorkDone,
       operatingDoctor: nDoctor, modeOfPayment: nPayMode,
-      timeWalkIn: nWalkIn, consultationTime: nConsult, tat: tatBetween(nWalkIn, nConsult)
+      timeWalkIn: nWalkIn, consultationTime: nConsult, tat: tatBetween(nWalkIn, nConsult),
+      // Sent even when blank, so an unanswered question is recorded as
+      // unanswered rather than filled in by the backend's old default.
+      initialAssessment: nInitialAssessment, carePlanDocumented: nCarePlanDocumented
     });
     if (res.success && nAddToDaysheet) await ensureDaysheetVisit();
     setNSaving(false);
@@ -11138,6 +11146,20 @@ function DailyRegister({ globalPat, setGlobalPat }) {
           React.createElement("option",{value:""},"— none —"),
           PAYMENT_MODES.map(m=>React.createElement("option",{key:m,value:m},m))
         )
+      ),
+      // Two compliance questions the register used to answer by itself. Left
+      // unanswered they stay blank in the sheet, which is the honest record.
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}},
+        [["Initial Assessment Done", nInitialAssessment, setNInitialAssessment],
+         ["Care Plan Documented",    nCarePlanDocumented, setNCarePlanDocumented]
+        ].map(([label, val, setter]) => React.createElement("div",{key:label},
+          React.createElement(Lbl,{c:label}),
+          React.createElement("select",{style:inp,value:val,onChange:e=>setter(e.target.value)},
+            React.createElement("option",{value:""},"— not answered —"),
+            React.createElement("option",{value:"Yes"},"Yes"),
+            React.createElement("option",{value:"No"},"No")
+          )
+        ))
       ),
       React.createElement("div",{style:{display:"flex",gap:10}},
         React.createElement("button",{onClick:saveNewEntry,disabled:nSaving,
@@ -23672,7 +23694,11 @@ function RegisterConfirm({ entry, onCancel, onSaved }) {
     const res = await api("saveToDailyRegister", {
       date: e.date, uhid: e.uhid, patientName: e.patientName, age: e.age,
       procedureDone: e.procedureDone, toothNo: e.toothNo, workDone: e.workDone,
-      operatingDoctor: e.operatingDoctor
+      operatingDoctor: e.operatingDoctor,
+      // Sent even when blank so the register records what was actually
+      // answered — see the note on YesNoRow below.
+      initialAssessment: e.initialAssessment || "",
+      carePlanDocumented: e.carePlanDocumented || ""
     });
     setSaving(false);
     if (res && res.success) onSaved();
@@ -23690,6 +23716,25 @@ function RegisterConfirm({ entry, onCancel, onSaved }) {
     })
   );
 
+  // Two questions the register used to answer on the clinic's behalf. They
+  // start unanswered on purpose — a compliance answer should come from the
+  // person filling the register in, not from a default.
+  const yesNo = (label, key) => React.createElement("div", { key, style:{ flex:1, minWidth:190 } },
+    React.createElement("div", { style:{ fontSize:10.5, fontWeight:700, color:"#666", textTransform:"uppercase",
+      letterSpacing:".04em", marginBottom:4 } }, label),
+    React.createElement("div", { style:{ display:"flex", gap:6 } },
+      [["", "Not answered"], ["Yes", "Yes"], ["No", "No"]].map(([val, text]) =>
+        React.createElement("button", {
+          key: val || "blank", type:"button", onClick: () => setE(prev => ({ ...prev, [key]: val })),
+          style:{ flex:1, padding:"6px 4px", fontSize:11.5, borderRadius:6, cursor:"pointer",
+            fontWeight: (e[key] || "") === val ? 700 : 500,
+            border: (e[key] || "") === val ? `1px solid ${T}` : `1px solid ${BORDER}`,
+            background: (e[key] || "") === val ? TL : "#fff",
+            color: (e[key] || "") === val ? T : "#777" }
+        }, text))
+    )
+  );
+
   return React.createElement("div", { style:{ position:"fixed", inset:0, background:"rgba(15,23,42,.45)",
       display:"flex", alignItems:"center", justifyContent:"center", zIndex:9000, padding:20 } },
     React.createElement("div", { style:{ background:"#fff", borderRadius:12, width:"100%", maxWidth:520,
@@ -23704,6 +23749,10 @@ function RegisterConfirm({ entry, onCancel, onSaved }) {
       row("Tooth No. / Site", "toothNo"),
       row("Work Done", "workDone", { area:true }),
       row("Operating Doctor", "operatingDoctor"),
+      React.createElement("div", { style:{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:12 } },
+        yesNo("Initial Assessment Done", "initialAssessment"),
+        yesNo("Care Plan Documented", "carePlanDocumented")
+      ),
       err && React.createElement("div", { style:{ background:"#fff2f0", border:"1px solid #e24b4a", borderRadius:6,
         padding:"8px 12px", marginBottom:10, fontSize:12, color:"#a12e2e" } }, "⚠ " + err),
       React.createElement("div", { style:{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:4 } },
