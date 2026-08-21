@@ -19906,8 +19906,9 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
   // Rows with nothing in any column are dropped — an empty grid of dashes is
   // harder to read than a short record.
   const itemFieldsUsed = (cfg.itemFields || [])
-    // site/tooth is already the column heading, so skip repeating it as a row
-    .filter(([k]) => k !== "site" && k !== "tooth")
+    // site/tooth is already the column heading and date already has its own
+    // row above, so skip repeating either as a duplicate row
+    .filter(([k]) => k !== "site" && k !== "tooth" && k !== "date")
     .filter(([k]) => items.some(it => it[k] && it[k] !== "—"));
 
   const sharedRows = (cfg.topFields || [])
@@ -19955,21 +19956,84 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
   );
 }
 
+// A4 landscape record sheet in the clinic's house print style: the same
+// letterhead pH() puts on every other printed document, a document title, the
+// patient block, then the record itself. Each sheet of four teeth is its own
+// page, the letterhead repeats on every page, and the footer carries the form
+// code and a page number — the record is a clinical document and has to read
+// as one on paper.
+const CR_PAGE_CSS = `
+@page{ size:A4 landscape; margin:10mm 12mm 14mm 12mm; }
+*{ box-sizing:border-box; margin:0; padding:0; }
+html,body{ font-family:'Segoe UI',Arial,sans-serif; font-size:9.5pt; color:#111; background:#fff; }
+.sheet{ page-break-after:always; }
+.sheet:last-child{ page-break-after:auto; }
+.hdr{ display:flex; align-items:center; gap:10pt; border-bottom:1.5pt solid #0078B4;
+      padding-bottom:6pt; margin-bottom:7pt; }
+.logo{ width:46pt; height:46pt; object-fit:contain; mix-blend-mode:multiply; }
+.hdr-mid{ flex:1; text-align:center; }
+.cares{ font-size:13pt; font-weight:800; color:#C0392B; letter-spacing:.12em;
+        text-decoration:underline; margin-bottom:1pt; }
+.tagline{ font-size:7.5pt; font-weight:700; color:#0078B4; }
+.sub{ font-size:7.5pt; color:#555; }
+.dtitle{ text-align:center; font-size:12pt; font-weight:800; color:#0078B4;
+         text-transform:uppercase; letter-spacing:.07em; margin-bottom:6pt; }
+table{ width:100%; border-collapse:collapse; table-layout:fixed; }
+.pat{ margin-bottom:6pt; }
+.pat td{ border:0.5pt solid #bbb; padding:3pt 6pt; font-size:9pt; }
+.pat td.k{ font-weight:700; background:#f4f4f0; width:52pt; }
+.rec td{ border:0.6pt solid #000; padding:3pt 6pt; font-size:9pt;
+         vertical-align:top; line-height:1.45; word-wrap:break-word; }
+.rec td.l{ font-weight:700; width:120pt; background:#fafafa; }
+.rec td.b{ font-weight:700; }
+.rec td.sec{ font-weight:800; font-size:8.5pt; background:#E0F7FA; color:#0B2D4E;
+             text-transform:uppercase; letter-spacing:.05em; }
+.foot{ display:flex; justify-content:space-between; border-top:0.5pt solid #ddd;
+       padding-top:4pt; margin-top:7pt; font-size:7.5pt; color:#888; }
+`;
+function crEscape(v) {
+  return String(v == null ? "" : v).replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
+}
+function crPage(title, patientRow, bodyRows, formCode, page, pages) {
+  return `<div class="sheet">` +
+    pH(window.LOGO_B64, formCode) +
+    `<div class="dtitle">${crEscape(title)}</div>` +
+    `<table class="pat"><tbody>${patientRow}</tbody></table>` +
+    `<table class="rec"><tbody>${bodyRows}</tbody></table>` +
+    `<div class="foot"><span>${crEscape(formCode)}</span>` +
+    `<span>K.B. Dental Clinic &middot; kbdentaldelhi@gmail.com</span>` +
+    `<span>Page ${page} of ${pages}</span></div></div>`;
+}
+function crOpenPrint(pagesHtml) {
+  const w = window.open("", "_blank");
+  if (!w) { alert("Your browser blocked the print window. Allow pop-ups for this site and try again."); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/>` +
+    `<title>Clinical Record</title><style>${CR_PAGE_CSS}</style></head><body>${pagesHtml}</body></html>`);
+  w.document.close();
+  // Give the letterhead image a moment to decode, or the first page prints
+  // without it.
+  setTimeout(() => { w.focus(); w.print(); }, 400);
+}
+
 // Prints the historical rows held in the flat sheet tab, same layout.
 function printSheetRecord(tabCfg, rows, cols, uhid) {
-  const esc = v => String(v == null ? "" : v).replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
-  const td = "border:1px solid #000;padding:3pt 5pt;font-size:9pt;vertical-align:top;line-height:1.45;";
-  const lbl = td + "font-weight:700;width:150pt;background:#fafafa;";
-  const sec = "border:1px solid #000;padding:4pt 6pt;font-weight:800;font-size:8.5pt;background:#E0F7FA;color:#0B2D4E;text-transform:uppercase;";
+  const esc = crEscape;
   const labels = cols.filter(h => CS_SKIP_COLS.indexOf(h) < 0 && h !== tabCfg.col && h !== tabCfg.date &&
     rows.some(r => r[h] && String(r[h]).trim() && String(r[h]) !== "\u2014"));
   const first = rows[0] || {};
+  const name = first["Patient Name"] || first["Name of Patient"] || "";
+  const age = first["Age"] || "", gender = first["Gender"] || "", doctor = first["Doctor"] || "";
+  const patientRow =
+    `<tr><td class="k">Patient</td><td>${esc(name)}</td>` +
+    `<td class="k">UHID</td><td>${esc(uhid)}</td>` +
+    `<td class="k">Age / Sex</td><td>${esc([age, gender].filter(Boolean).join(" / "))}</td>` +
+    `<td class="k">Doctor</td><td>${esc(doctor)}</td></tr>`;
   const groups = csSheets(rows);
-  const tables = groups.map((group, gi) => {
-    const line = (label, get, bold) => `<tr><td style="${lbl}">${esc(label)}</td>` +
-      group.map(r => `<td style="${td}${bold ? "font-weight:700;" : ""}">${r ? esc(get(r)) : ""}</td>`).join("") + `</tr>`;
-    let body = `<tr><td colspan="${CS_COLS_PER_SHEET + 1}" style="${sec}">${esc(tabCfg.tab)} \u2014 Clinical Record` +
-      (groups.length > 1 ? ` (sheet ${gi + 1} of ${groups.length})` : "") + `</td></tr>`;
+  const code = "KBDC/FORMS/" + (tabCfg.tab || "REC").toUpperCase().replace(/[^A-Z]+/g, "-");
+  const html = groups.map((group, gi) => {
+    const line = (label, get, bold) => `<tr><td class="l">${esc(label)}</td>` +
+      group.map(r => `<td class="${bold ? "b" : ""}">${r ? esc(get(r)) : ""}</td>`).join("") + `</tr>`;
+    let body = `<tr><td class="sec" colspan="${CS_COLS_PER_SHEET + 1}">${esc(tabCfg.tab)} Record</td></tr>`;
     body += line(tabCfg.col || "Tooth", r => r[tabCfg.col] || "", true);
     body += line("Date", r => r[tabCfg.date] ? fmtDMY(r[tabCfg.date]) : "", true);
     labels.forEach(h => { body += line(h, r => {
@@ -19977,77 +20041,45 @@ function printSheetRecord(tabCfg, rows, cols, uhid) {
       if (!v || String(v) === "\u2014") return "";
       return /date/i.test(h) ? fmtDMY(v) : String(v);
     }); });
-    // Each sheet of four starts a fresh page, as the paper record does.
-    return `<table${gi ? ' style="page-break-before:always;"' : ""}><tbody>${body}</tbody></table>`;
+    return crPage((tabCfg.tab || "") + " — Clinical Record", patientRow, body, code, gi + 1, groups.length);
   }).join("");
-  const name = first["Patient Name"] || first["Name of Patient"] || "";
-  const head =
-    `<div style="text-align:center;border-bottom:1.5pt solid #0078B4;padding-bottom:5pt;margin-bottom:7pt;">` +
-    `<div style="font-size:13pt;font-weight:800;color:#C0392B;letter-spacing:.1em;text-decoration:underline;">C. A. R. E. S.</div>` +
-    `<div style="font-size:8pt;font-weight:700;color:#0078B4;">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div>` +
-    `<div style="font-size:8pt;color:#555;">BLOCK R-74B, DILSHAD GARDEN, DELHI-110095 | 7866939786, 9319990912</div></div>` +
-    `<table style="width:100%;border-collapse:collapse;margin-bottom:6pt;"><tr>` +
-    `<td style="${lbl}">Patient</td><td style="${td}">${esc(name)}</td>` +
-    `<td style="${lbl}">UHID</td><td style="${td}">${esc(uhid)}</td></tr></table>`;
-  const w = window.open("", "_blank");
-  if (!w) { alert("Your browser blocked the print window. Allow pop-ups for this site and try again."); return; }
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Clinical Record</title>` +
-    `<style>@page{size:A4 landscape;margin:10mm;}body{font-family:'Segoe UI',Arial,sans-serif;}` +
-    `table{width:100%;border-collapse:collapse;table-layout:fixed;}</style></head><body>` + head + tables + `</body></html>`);
-  w.document.close();
-  setTimeout(() => { w.focus(); w.print(); }, 250);
+  crOpenPrint(html);
 }
 
-// Prints the clinical record on its own, in the same column-per-tooth layout
-// the RCT record uses, on the clinic's letterhead.
+// Prints the record saved from the forms, same A4 house layout.
 function printClinicalRecord(cfg, data, items, sheetType) {
-  const esc = v => String(v == null ? "" : v).replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
+  const esc = crEscape;
+  const patientRow =
+    `<tr><td class="k">Patient</td><td>${esc(data.pName)}</td>` +
+    `<td class="k">UHID</td><td>${esc(data.pId)}</td>` +
+    `<td class="k">Age / Sex</td><td>${esc([data.age, data.gender].filter(v => v && v !== "\u2014").join(" / "))}</td>` +
+    `<td class="k">Doctor</td><td>${esc(data.doctor)}</td></tr>`;
+  const shared = (cfg.topFields || []).filter(([k]) => data[k] && data[k] !== "\u2014");
   const groups = csSheets(items);
-  const td = "border:1px solid #000;padding:3pt 5pt;font-size:9pt;vertical-align:top;line-height:1.45;";
-  const lbl = td + "font-weight:700;width:150pt;background:#fafafa;";
-  const sec = "border:1px solid #000;padding:4pt 6pt;font-weight:800;font-size:8.5pt;background:#E0F7FA;color:#0B2D4E;text-transform:uppercase;";
-  const shared = (cfg.topFields || []).filter(([k]) => data[k] && data[k] !== "—");
-  const tables = groups.map((group, gi) => {
-    const row = (label, get, bold) =>
-      `<tr><td style="${lbl}">${esc(label)}</td>` +
-      group.map((it, i) => `<td style="${td}${bold ? "font-weight:700;" : ""}">${it ? esc(get(it, i)) : ""}</td>`).join("") + `</tr>`;
-    let body = `<tr><td colspan="${CS_COLS_PER_SHEET + 1}" style="${sec}">${esc(cfg.itemLabel)} Record` +
-      (groups.length > 1 ? ` (sheet ${gi + 1} of ${groups.length})` : "") + `</td></tr>`;
-    body += row(cfg.itemLabel, (it, i) => it.site || it.tooth || (it.n || i+1), true);
-    body += row("Date", it => it.date ? fmtDMY(it.date) : "", true);
-    (cfg.itemFields || []).forEach(([k,l]) => {
-      if (k === "site" || k === "tooth") return;
-      if (!items.some(it => it[k] && it[k] !== "—")) return;
-      body += row(l, it => (it[k] && it[k] !== "—") ? it[k] : "");
+  const code = "KBDC/FORMS/" + String(sheetType || "REC").toUpperCase().replace(/[^A-Z]+/g, "-");
+  const html = groups.map((group, gi) => {
+    const line = (label, get, bold) => `<tr><td class="l">${esc(label)}</td>` +
+      group.map((it, i) => `<td class="${bold ? "b" : ""}">${it ? esc(get(it, i)) : ""}</td>`).join("") + `</tr>`;
+    let body = `<tr><td class="sec" colspan="${CS_COLS_PER_SHEET + 1}">${esc(cfg.itemLabel)} Record</td></tr>`;
+    body += line(cfg.itemLabel, (it, i) => it.site || it.tooth || (it.n || i + 1), true);
+    body += line("Date", it => it.date ? fmtDMY(it.date) : "", true);
+    (cfg.itemFields || []).forEach(([k, l]) => {
+      if (k === "site" || k === "tooth" || k === "date") return;
+      if (!items.some(it => it[k] && it[k] !== "\u2014")) return;
+      body += line(l, it => (it[k] && it[k] !== "\u2014") ? it[k] : "");
     });
+    // Case details describe the case, not one tooth, so they close the record
+    // on its last page rather than repeating on every sheet.
     if (gi === groups.length - 1 && shared.length) {
-      body += `<tr><td colspan="${CS_COLS_PER_SHEET + 1}" style="${sec}">Case Details</td></tr>`;
-      shared.forEach(([k,l]) => {
-        body += `<tr><td style="${lbl}">${esc(l)}</td><td colspan="${CS_COLS_PER_SHEET}" style="${td}">${esc(data[k])}</td></tr>`;
+      body += `<tr><td class="sec" colspan="${CS_COLS_PER_SHEET + 1}">Case Details</td></tr>`;
+      shared.forEach(([k, l]) => {
+        body += `<tr><td class="l">${esc(l)}</td>` +
+                `<td colspan="${CS_COLS_PER_SHEET}">${esc(data[k])}</td></tr>`;
       });
     }
-    return `<table${gi ? ' style="page-break-before:always;"' : ""}><tbody>${body}</tbody></table>`;
+    return crPage((sheetType || "") + " — Clinical Record", patientRow, body, code, gi + 1, groups.length);
   }).join("");
-  const head =
-    `<div style="text-align:center;border-bottom:1.5pt solid #0078B4;padding-bottom:5pt;margin-bottom:7pt;">` +
-    `<div style="font-size:13pt;font-weight:800;color:#C0392B;letter-spacing:.1em;text-decoration:underline;">C. A. R. E. S.</div>` +
-    `<div style="font-size:8pt;font-weight:700;color:#0078B4;">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div>` +
-    `<div style="font-size:8pt;color:#555;">BLOCK R-74B, DILSHAD GARDEN, DELHI-110095 | 7866939786, 9319990912</div></div>` +
-    `<div style="text-align:center;font-size:11pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:6pt;">` +
-    `${esc(sheetType || "")} — Clinical Record</div>` +
-    `<table style="width:100%;border-collapse:collapse;margin-bottom:6pt;"><tr>` +
-    `<td style="${lbl}">Patient</td><td style="${td}">${esc(data.pName)}</td>` +
-    `<td style="${lbl}">UHID</td><td style="${td}">${esc(data.pId)}</td>` +
-    `<td style="${lbl}">Doctor</td><td style="${td}">${esc(data.doctor)}</td></tr></table>`;
-  const w = window.open("", "_blank");
-  if (!w) { alert("Your browser blocked the print window. Allow pop-ups for this site and try again."); return; }
-  w.document.write(
-    `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Clinical Record</title>` +
-    `<style>@page{size:A4 landscape;margin:10mm;}body{font-family:'Segoe UI',Arial,sans-serif;}` +
-    `table{width:100%;border-collapse:collapse;table-layout:fixed;}</style></head><body>` +
-    head + tables + `</body></html>`);
-  w.document.close();
-  setTimeout(() => { w.focus(); w.print(); }, 250);
+  crOpenPrint(html);
 }
 
 
