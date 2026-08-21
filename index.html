@@ -19746,10 +19746,11 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
   const [note, setNote] = React.useState("");
   const [sheetRows, setSheetRows] = React.useState([]);
   const [sheetCols, setSheetCols] = React.useState([]);
+  const [sheetRowsErr, setSheetRowsErr] = React.useState("");
 
   React.useEffect(() => {
     let cancelled = false;
-    setLoading(true); setErr(""); setData(null);
+    setLoading(true); setErr(""); setData(null); setSheetRowsErr("");
     // getClinicalSheets matches the Sheet Type column exactly, so a row saved
     // under a slightly different label — "Crown & Bridge" against the expected
     // "Crown Bridge", a stray space, a rename — is invisible and reports as no
@@ -19777,10 +19778,17 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
     const tabCfg = CS_RECORD_TAB[formId];
     if (tabCfg) {
       api("getClinicalRecords", { tabName: tabCfg.tab, uhid }).then(res => {
-        if (cancelled || !res || !res.success) return;
+        if (cancelled) return;
+        if (!res || !res.success) {
+          // This used to fail silently — an auth rejection, a network hiccup,
+          // or a backend error looked exactly like "no historical rows",
+          // hiding real data (or a real problem) with no clue why.
+          setSheetRowsErr((res && res.error) || "Could not load past records from the sheet.");
+          return;
+        }
         setSheetRows(res.records || []);
         setSheetCols(res.headers || []);
-      }).catch(() => {});
+      }).catch(e => { if (!cancelled) setSheetRowsErr(String((e && e.message) || e)); });
     }
     return () => { cancelled = true; };
   }, [uhid, sheetType, formId]);
@@ -19837,7 +19845,11 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
   if (err) return React.createElement("div", { style:{ padding:40, textAlign:"center", color:"#e24b4a", fontSize:13 } }, "⚠️ " + err);
   // An empty record is the normal state for a patient who has not had this
   // treatment yet, so say what to do rather than only what is missing.
+  const sheetErrBanner = sheetRowsErr && React.createElement("div", { style:{ background:"#fff2f0", border:"1px solid #e24b4a",
+    borderRadius:8, padding:"9px 14px", marginBottom:12, fontSize:12.5, color:"#a12e2e" } },
+    "Could not load this patient's historical " + (sheetType || formId) + " rows from the sheet: " + sheetRowsErr);
   if (!data && sheetRows.length) return React.createElement("div", { style:{ padding:"20px 28px" } },
+    sheetErrBanner,
     React.createElement("div", { className:"kb-noprint", style:{ display:"flex", justifyContent:"flex-end", marginBottom:12 } },
       React.createElement("button", {
         onClick: () => printSheetRecord(tabCfg, sheetRows, sheetCols, uhid),
@@ -19845,6 +19857,7 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
                 cursor:"pointer", background:T, color:"#fff" } }, "\uD83D\uDDA8 Print Clinical Record")),
     sheetTable());
   if (!data) return React.createElement("div", { style:{ padding:"40px 28px", textAlign:"center" } },
+    sheetErrBanner,
     React.createElement("div", { style:{ fontSize:15, fontWeight:700, color:"#444", marginBottom:6 } },
       "Nothing recorded yet for this patient"),
     React.createElement("div", { style:{ fontSize:13, color:"#888", marginBottom:4 } },
