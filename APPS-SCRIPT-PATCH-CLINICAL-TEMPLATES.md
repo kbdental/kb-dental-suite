@@ -1,10 +1,18 @@
-# Apps Script — what the clinical-template change needs from `Code.gs`
+# Apps Script — changes to make in `Code.gs`
 
-Short answer: **two lines.** The work was deliberately built to fit the backend
-you already have, so nothing else needs touching.
+**Four edited lines across three functions**, in two unrelated repairs:
 
-This supersedes `CLINICAL-FORMS-PATCH.md` — same two lines, but they have gone
-from *worth fixing* to *required*, and the reason is below.
+| | Function | Change |
+|---|---|---|
+| 1 | `savePathology` | store the `remarks` it currently discards |
+| 2 | `saveRadiology` | same |
+| 3 | `saveToDailyRegister` | stop answering two compliance questions by itself |
+
+(1) and (2) supersede `CLINICAL-FORMS-PATCH.md` — the same two lines, which
+have gone from *worth fixing* to *required*; the reason is below. (3) is
+unrelated to the template work and was turned up while checking it.
+
+Everything else the template change needs, the backend already does.
 
 ---
 
@@ -61,14 +69,9 @@ before, so a **Remarks** column appears at the far right of the **Pathology**
 and **Radiology** tabs on the next save. Older rows stay blank under it.
 Nothing to add by hand.
 
-### Deploy
-
-**Ctrl+S**, then **Deploy → Manage deployments → pencil → New version → Deploy.**
-Editing the code alone does not change what the `/exec` URL serves.
-
 ---
 
-## Nothing else is needed. Specifically:
+## The template change needs nothing else. Specifically:
 
 **The Daily Register hand-off** uses `saveToDailyRegister` exactly as it
 already exists — `date`, `uhid`, `patientName`, `age`, `procedureDone`,
@@ -85,11 +88,9 @@ three that take every category are filtered in the browser, not the backend.
 
 ---
 
-## Two things to look at, neither a bug in this change
+## Required — stop the register answering two compliance questions by itself
 
-### The register asserts two compliance answers nobody gave
-
-`saveToDailyRegister` defaults these when the caller omits them:
+`saveToDailyRegister` currently fills these in when the caller omits them:
 
 ```javascript
     setBy(row, ["initial assessment done","initial assessment"], p.initialAssessment || "Yes");
@@ -97,19 +98,36 @@ three that take every category are filtered in the browser, not the backend.
 ```
 
 Neither the existing **Add New Entry** form nor the new register prompt sends
-them, so **every** register row records *Initial Assessment Done: Yes* and
-*Care Plan Documented: Yes* without anyone having said so. On a day book that
-may be read as a compliance record, that is a claim the clinic did not make.
+them, so **every** register row has been recording *Initial Assessment Done:
+Yes* and *Care Plan Documented: Yes* without anyone having said so. On a day
+book that may be read as a compliance record, that is a claim the clinic did
+not make.
 
-This predates the change and I have not touched it, because fixing it alters
-the existing manual entry flow too. Three ways out, your call:
+Change both `|| "Yes"` to `|| ""`:
 
-1. drop the `|| "Yes"` so an unanswered field stays blank — most honest, and
-   past rows keep whatever they already say;
-2. put both questions on the register prompt and the Add New Entry form, so
-   the answer is real;
-3. leave it, if the clinic's reading is that these are always true for a
-   recorded visit.
+```javascript
+    // An unanswered question stays blank. These are compliance answers, and
+    // the register should not be giving them on the clinic's behalf.
+    setBy(row, ["initial assessment done","initial assessment"], p.initialAssessment || "");
+    setBy(row, ["care plan documented","care plan"], p.carePlanDocumented || "");
+```
+
+Rows already in the sheet keep whatever they say — this only affects new ones.
+
+### What this leaves behind, and the obvious follow-up
+
+Nothing in the app sends either field today, so from this point both columns
+will be **blank on every new row**. That is honest where "Yes" was not, but it
+does mean the two columns record nothing at all until someone can answer them.
+
+Neither the register prompt nor Add New Entry has these questions on it. Adding
+them — two Yes/No controls, defaulting to unanswered — is a small change to
+`index.html` and needs nothing further from `Code.gs`, since both actions
+already accept `initialAssessment` and `carePlanDocumented`. Say the word.
+
+---
+
+## One more thing, not a bug in this change
 
 ### A corrupted string in `patientCompleteRegistration`
 
@@ -128,13 +146,20 @@ get written. Worth cleaning up before it is relied on:
 
 ---
 
+## Deploy
+
+**Ctrl+S**, then **Deploy → Manage deployments → pencil → New version → Deploy.**
+Editing the code alone does not change what the `/exec` URL serves.
+
 ## After deploying, worth checking on a real patient
 
 1. Open **Pathology**, pick a Work Done template, insert it, save — then look at
    the Pathology tab and confirm a **Remarks** column appeared with the text in
-   it. That is the fix above doing its job.
+   it. That is fix 1 doing its job.
 2. Confirm the Daily Register prompt that follows carries the same text in
    **Work Done**.
+3. Confirm that row's **Initial Assessment Done** and **Care Plan Documented**
+   are now blank rather than "Yes". That is fix 3.
 
 Neither could be tested from where this was written: `script.google.com` is not
 reachable from that environment, so everything above is read off your `Code.gs`
