@@ -10633,6 +10633,7 @@ function ClinicalSheets({ globalPat, setGlobalPat }) {
   // teeth: { rct:[{toothNo,visits:[]}], implant_surgery:[...], ... }
   const [teeth, setTeeth] = React.useState({rct:[],implant_surgery:[],implant_prosthetic:[],crown_bridge:[],restoration:[],pedo:[]});
   const [loadedTabs, setLoadedTabs] = React.useState({});
+  const [tabErr, setTabErr] = React.useState({});
 
   React.useEffect(()=>{
     api("getSignatures").then(res=>{ if(res.success&&res.signatures) setStoredSigs(res.signatures); }).catch(()=>{});
@@ -10653,28 +10654,39 @@ function ClinicalSheets({ globalPat, setGlobalPat }) {
 
   const loadTabData = async(sheetTabId, p)=>{
     setApiMsg("Loading saved records...");
+    setTabErr(prev=>({...prev,[sheetTabId]:""}));
     try {
       let arr = [];
       if (sheetTabId === "restoration") {
         const res = await api("getClinicalRecords", { tabName:"Restoration", uhid:p.uhid });
         if (res.success) arr = mapRestorationData(res.records);
+        // A rejected/failed fetch used to look identical to "no record on
+        // file" — silently emptying the tab instead of saying the load
+        // itself failed. Same fix as the RCT/Implant/Crown & Bridge viewer.
+        else setTabErr(prev=>({...prev,[sheetTabId]: res.error || "Could not load saved records."}));
       } else if (sheetTabId === "pedo") {
         const res = await api("getClinicalRecords", { tabName:"Pedo", uhid:p.uhid });
         if (res.success) arr = mapPedoData(res.records);
+        else setTabErr(prev=>({...prev,[sheetTabId]: res.error || "Could not load saved records."}));
       } else {
         const sheetType = {rct:"RCT", implant_surgery:"Implant Surgery", implant_prosthetic:"Implant Prosthetic", crown_bridge:"Crown Bridge"}[sheetTabId];
         const res = await api("getClinicalSheets", { uhid:p.uhid, sheetType });
-        if (res.success && res.allTeeth) {
-          if (sheetTabId === "rct") arr = mapRCTData(res.allTeeth);
-          else if (sheetTabId === "implant_surgery") arr = mapImplantSurgeryData(res.allTeeth);
-          else if (sheetTabId === "implant_prosthetic") arr = mapImplantProstheticData(res.allTeeth);
-          else if (sheetTabId === "crown_bridge") arr = mapCrownBridgeData(res.allTeeth);
+        if (res.success) {
+          if (res.allTeeth) {
+            if (sheetTabId === "rct") arr = mapRCTData(res.allTeeth);
+            else if (sheetTabId === "implant_surgery") arr = mapImplantSurgeryData(res.allTeeth);
+            else if (sheetTabId === "implant_prosthetic") arr = mapImplantProstheticData(res.allTeeth);
+            else if (sheetTabId === "crown_bridge") arr = mapCrownBridgeData(res.allTeeth);
+          }
+        } else {
+          setTabErr(prev=>({...prev,[sheetTabId]: res.error || "Could not load saved records."}));
         }
       }
       setTeeth(prev=>({...prev,[sheetTabId]:arr}));
       setLoadedTabs(prev=>({...prev,[sheetTabId]:true}));
     } catch(e) {
       setTeeth(prev=>({...prev,[sheetTabId]:[]}));
+      setTabErr(prev=>({...prev,[sheetTabId]: String((e && e.message) || e)}));
     }
     setApiMsg("");
   };
@@ -10736,10 +10748,16 @@ function ClinicalSheets({ globalPat, setGlobalPat }) {
       },"🖨 Print All "+currentTeeth.length+" "+currentTab.itemLabel+(currentTeeth.length!==1?"s":""))
     ),
 
-    // Empty state — this is a read-only report; data comes from the Forms tab, not entered here
+    // Empty state — this is a read-only report; data comes from the Forms tab, not entered here.
+    // A failed load looks exactly like "nothing saved yet" unless the actual
+    // error (auth rejection, network failure, backend error) is shown instead.
     pat&&currentTeeth.length===0&&React.createElement("div",{
-      style:{background:BGS,borderRadius:8,padding:"28px",textAlign:"center",color:"#aaa",fontSize:13,border:`1px dashed ${BORDER}`}
-    },"No saved "+currentTab.label.replace(/^\S+\s/,"")+" records found for this patient yet. Save one from the Clinical Records → Forms tab first."),
+      style:{background: tabErr[tab] ? "#fff2f0" : BGS, borderRadius:8,padding:"28px",textAlign:"center",
+        color: tabErr[tab] ? "#a12e2e" : "#aaa", fontSize:13,
+        border: tabErr[tab] ? "1px solid #e24b4a" : `1px dashed ${BORDER}`}
+    }, tabErr[tab]
+      ? "⚠ Could not load "+currentTab.label.replace(/^\S+\s/,"")+" records: "+tabErr[tab]
+      : "No saved "+currentTab.label.replace(/^\S+\s/,"")+" records found for this patient yet. Save one from the Clinical Records → Forms tab first."),
 
     currentTeeth.map(t=>React.createElement(ToothCard,{
       key:t.toothNo, tooth:t, sheetType:tab, storedSigs,
