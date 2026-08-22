@@ -11,8 +11,7 @@ Download or copy your current `Code.gs` to a file, then:
     node apps-script/apply-patch.js path/to/Code.gs
 
 It writes `Code.patched.gs` beside it. Diff the two before deploying — the
-whole diff should be four changed lines plus two comment lines, and nothing
-else.
+whole diff should be the four edits below and nothing else.
 
 Every anchor must match exactly once. If one does not, **nothing is written**
 and the script says which — a silent near-miss on a live clinic backend is the
@@ -35,10 +34,11 @@ See `../APPS-SCRIPT-PATCH-CLINICAL-TEMPLATES.md` for the reasoning. In short:
    caller sent. Every row carried both without anyone having said so. Both
    become blank unless answered; the app now asks.
 
-The script also points out a corrupted alias string in
-`patientCompleteRegistration` without changing it. It is harmless today —
-the alias before the `|` matches first — so it is not worth bundling into a
-deploy that fixes real data loss.
+4. **`patientCompleteRegistration`** — repairs a corrupted alias string
+   (`"...|Emergency Covar PUBLIC_ACTIONStact"`), a find-and-replace that went
+   through the wrong buffer. Harmless today, since the alias before the `|`
+   matches the real column and is tried first, so nothing behaves differently
+   — but it should not be left in the file.
 
 ## Deploying
 

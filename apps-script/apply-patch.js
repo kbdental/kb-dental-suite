@@ -38,15 +38,15 @@ const EDITS = [
   setBy(row, ["initial assessment done","initial assessment"], p.initialAssessment || "");
   setBy(row, ["care plan documented","care plan"], p.carePlanDocumented || "");`,
   },
+  {
+    // Harmless today — the alias before the | matches the real column and is
+    // tried first — but it is a find-and-replace that went through the wrong
+    // buffer, and it should not be left sitting in the file.
+    name: 'patientCompleteRegistration — repair corrupted alias string',
+    find: '"In Case Of Emergency Contact Number|Emergency Covar PUBLIC_ACTIONStact"',
+    replace: '"In Case Of Emergency Contact Number|Emergency Contact"',
+  },
 ];
-
-// Not applied automatically: it changes nothing today, and a cosmetic edit is
-// not worth bundling into a deploy that fixes real data loss.
-const ADVISORY = {
-  name: 'patientCompleteRegistration — corrupted alias string',
-  find: '"In Case Of Emergency Contact Number|Emergency Covar PUBLIC_ACTIONStact"',
-  suggest: '"In Case Of Emergency Contact Number|Emergency Contact"',
-};
 
 const src = process.argv[2];
 if (!src) {
@@ -59,12 +59,17 @@ const problems = [];
 
 for (const edit of EDITS) {
   const n = text.split(edit.find).length - 1;
-  if (n !== 1) {
-    problems.push(`  ${n === 0 ? 'NOT FOUND' : 'FOUND ' + n + ' TIMES'}: ${edit.name}`);
+  if (n === 0) {
+    // Distinguish "already done" from "this file is not what I expected".
+    // The replacement text is only evidence of the former when the anchor is
+    // gone — some replacements legitimately appear elsewhere in the file, so
+    // testing for it while the anchor is still present would report a false
+    // ALREADY APPLIED and refuse a change that had not been made.
+    problems.push(`  ${text.includes(edit.replace) ? 'ALREADY APPLIED' : 'NOT FOUND'}: ${edit.name}`);
     continue;
   }
-  if (text.includes(edit.replace)) {
-    problems.push(`  ALREADY APPLIED: ${edit.name}`);
+  if (n > 1) {
+    problems.push(`  FOUND ${n} TIMES (expected once): ${edit.name}`);
     continue;
   }
   text = text.replace(edit.find, edit.replace);
@@ -80,13 +85,6 @@ if (problems.length) {
 const out = path.join(path.dirname(src), 'Code.patched.gs');
 fs.writeFileSync(out, text);
 console.log(`\nWrote ${out}`);
-
-if (text.includes(ADVISORY.find)) {
-  console.log(`\nAlso present, not changed — ${ADVISORY.name}:`);
-  console.log(`  ${ADVISORY.find}`);
-  console.log(`  harmless today (the alias before the | matches first); suggested:`);
-  console.log(`  ${ADVISORY.suggest}`);
-}
 
 console.log('\nBefore deploying: diff it against the original, then');
 console.log('Deploy > Manage deployments > pencil > New version > Deploy.');

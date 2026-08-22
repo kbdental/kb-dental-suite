@@ -1,12 +1,13 @@
 # Apps Script — changes to make in `Code.gs`
 
-**Four edited lines across three functions**, in two unrelated repairs:
+**Four functions**, in three unrelated repairs:
 
 | | Function | Change |
 |---|---|---|
 | 1 | `savePathology` | store the `remarks` it currently discards |
 | 2 | `saveRadiology` | same |
 | 3 | `saveToDailyRegister` | stop answering two compliance questions by itself |
+| 4 | `patientCompleteRegistration` | repair a corrupted alias string |
 
 (1) and (2) supersede `CLINICAL-FORMS-PATCH.md` — the same two lines, which
 have gone from *worth fixing* to *required*; the reason is below. (3) is
@@ -128,22 +129,23 @@ is the whole reason this change is on the required list.
 
 ---
 
-## One more thing, not a bug in this change
-
-### A corrupted string in `patientCompleteRegistration`
+## Required — repair the corrupted alias string
 
 ```javascript
     "In Case Of Emergency Contact Number|Emergency Covar PUBLIC_ACTIONStact": p.emergencyContact,
 ```
 
-The text after the `|` looks like a find-and-replace that went through the
-wrong buffer. It is **harmless today** — the part before the `|` matches the
-real column, and that is tried first — so the emergency contact number does
-get written. Worth cleaning up before it is relied on:
+in `patientCompleteRegistration`. The text after the `|` is a find-and-replace
+that went through the wrong buffer. It is **harmless today** — the alias before
+the `|` matches the real column and is tried first, so emergency contact
+numbers do get written — but it should not be left sitting in the file:
 
 ```javascript
     "In Case Of Emergency Contact Number|Emergency Contact": p.emergencyContact,
 ```
+
+Nothing about the behaviour changes. This is tidying, grouped into the same
+deploy rather than left for later.
 
 ---
 
