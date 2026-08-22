@@ -1,6 +1,6 @@
 # Apps Script — changes to make in `Code.gs`
 
-**Six functions**, in four unrelated repairs:
+**Eight changes**, in five unrelated pieces of work:
 
 | | Function | Change |
 |---|---|---|
@@ -10,6 +10,8 @@
 | 4 | `patientCompleteRegistration` | repair a corrupted alias string |
 | 5 | `fmtTime` | format in the spreadsheet's timezone, not the script's |
 | 6 | `getAppointments` | format check-in / engaged / check-out times |
+| 7 | `FINANCE_SHEET_ID_DEFAULT` | point at **K. B. Dental - Finance Sheet PMS** |
+| 8 | `saveReceipt` | write to **Patient Fee Receipt**, mirror into **Working** |
 
 (1) and (2) supersede `CLINICAL-FORMS-PATCH.md` — the same two lines, which
 have gone from *worth fixing* to *required*; the reason is below. (3) is
@@ -170,6 +172,48 @@ hardcoded `+05:30` looks right and is wrong by 8 minutes 50 seconds:
 `05:35:50Z` is **10:57**, not 11:05.
 
 The stored data was never wrong — only the display.
+
+## Finance — connecting the receipt form to the real sheet
+
+The finance sheet is **K. B. Dental - Finance Sheet PMS**
+(`1zi5xjxGaVVtCMNGYiqxNrhppUv1eswPsJGdp4P-DGmM`). Nothing about the sheet is
+changed; the app is pointed at it and taught its existing shape.
+
+New receipts are written to **Patient Fee Receipt** — the clinic's own entry
+tab, and the only one in the receipt chain with no formulas in it. Its
+`Checked` column is left alone, since that is the clinic's reconciliation tick.
+
+### Why the receipt is also written to `Working`
+
+The chain is **Patient Fee Receipt → Working → Receipt No. / E-Receipt / FY
+tabs**, and the app reads back from `Receipt No.`. But `Working` is *not*
+formula-linked to the entry tab — its columns A:H are a static mirror kept
+alongside it. A row written only to the entry tab would save correctly and then
+be invisible in the app.
+
+So both are written. The mirror deliberately stops at column H: `Working`'s
+**Date** and **Time** are an `ARRAYFORMULA` spilling down from row 2, and
+writing into a spilled cell breaks the entire array.
+
+If the entry tab is written but the mirror fails, the save reports a warning
+saying the receipt is recorded but will not appear yet — rather than a clean
+success.
+
+### One limit worth knowing
+
+`Working`'s `ARRAYFORMULA` covers rows 2–1857 and the data currently ends
+around row 1562, so **roughly 295 more receipts** will compute their Date and
+Time before that formula needs extending. `Receipt No.` has formulas to row
+2000. Neither is urgent, but they are finite — when Date/Time start coming up
+blank on new rows, that range is why.
+
+### Expenses
+
+Left pointing at the **`Expenses`** tab, which the app created and owns
+(formula-free, and where the P&L already reads from). The clinic's separate
+**`Expense`** Google Form tab — different columns, currently `#REF!` — is not
+read by the app. Worth deciding later whether the two should be merged; it is
+not something to change silently.
 
 ## Deploy
 

@@ -2289,7 +2289,7 @@ function saveChatbotAppointment(p) {
 // Excel Master File's "Receipt No" sheet pulled from.
 // ════════════════════════════════════════════════════════════
 
-var FINANCE_SHEET_ID_DEFAULT = "1Zdxq3Xf-e41Xak4VDcufrURLkKDAp8MvRCZadC0htUI";
+var FINANCE_SHEET_ID_DEFAULT = "1zi5xjxGaVVtCMNGYiqxNrhppUv1eswPsJGdp4P-DGmM"; // K. B. Dental - Finance Sheet PMS
 
 // Finance sheet ID is controllable from the app's Settings tab — stored in
 // Script Properties, falling back to the hardcoded default if never changed.
@@ -2460,47 +2460,98 @@ function receiptFeeAndMode(r) {
 // workflow (whatever reads "Working" downstream) is not disturbed. If the tab is
 // genuinely empty, a header row matching the Google Form's own field order is
 // created once.
+// Records a payment on the "Patient Fee Receipt" tab — the clinic's own entry
+// sheet, and the only one in the receipt chain with no formulas in it.
+//
+// The chain is: Patient Fee Receipt -> Working -> Receipt No. / E-Receipt / FY
+// tabs. "Working" is NOT formula-linked to the entry tab; columns A:H are a
+// static mirror kept alongside it, and only its Date/Time columns are
+// computed. So a row written to the entry tab alone would never reach
+// "Receipt No.", which is what the app reads back — the receipt would save and
+// then be invisible. Both tabs are written, and the mirror deliberately stops
+// at column H: Date and Time are an ARRAYFORMULA spilling down from row 2, and
+// writing into a spilled cell breaks the whole array.
+var FIN_ENTRY_TAB  = "Patient Fee Receipt";
+var FIN_MIRROR_TAB = "Working";
+
+// Finds a column by header name, tolerating the sheet's own spelling (trailing
+// spaces, "'s", casing). Returns -1 when absent.
+function finCol_(headers, candidates) {
+  var norm = function(x) { return String(x).toLowerCase().replace(/[^a-z0-9]/g, ""); };
+  for (var c = 0; c < candidates.length; c++) {
+    var want = norm(candidates[c]);
+    for (var i = 0; i < headers.length; i++) {
+      if (norm(headers[i]) === want) return i;
+    }
+  }
+  return -1;
+}
+
+// Builds one receipt row against whatever header order the tab actually has,
+// so neither tab depends on a fixed column position.
+function finReceiptRow_(headers, p, stamp) {
+  var row = headers.map(function() { return ""; });
+  var put = function(names, value) {
+    var i = finCol_(headers, names);
+    if (i >= 0) row[i] = value;
+  };
+  // A real Date, not an ISO string: the derived tabs split this into Date and
+  // Time by formula, and text where a date is expected propagates as #VALUE!.
+  put(["Timestamp"], stamp);
+  put(["UHID"], p.uhid || "");
+  put(["Patient's Name", "Patient Name"], p.patientName || "");
+  put(["Nature of Professional Services"], p.service || "");
+  put(["Payment Mode"], p.mode1 || "");
+  put(["Amount"], p.amount1 === "" || p.amount1 === undefined ? "" : Number(p.amount1));
+  put(["Payment Mode (Payment mode is more than one)"], p.mode2 || "");
+  put(["Amount (Payment mode is more than one)"],
+      p.amount2 === "" || p.amount2 === undefined ? "" : Number(p.amount2));
+  put(["Remarks (If any)", "Remarks"], p.remarks || "");
+  // "Checked" is the clinic's own reconciliation tick — left alone.
+  return row;
+}
+
 function saveReceipt(p) {
   try {
-    var sh = getFinanceSheet("Working", true); // the one place allowed to create it
-    if (!sh) return { success: false, error: "Finance 'Working' tab not found" };
-    if (sh.getLastRow() === 0) {
-      sh.appendRow([
-        "Timestamp", "UHID", "Patient's Name", "Nature of Professional Services",
-        "Payment Mode", "Amount",
-        "Payment Mode (Payment mode is more than one)", "Amount (Payment mode is more than one)",
-        "Remarks (If any)"
-      ]);
+    var ss = SpreadsheetApp.openById(getFinanceSheetId());
+
+    var entry = ss.getSheetByName(FIN_ENTRY_TAB);
+    if (!entry) {
+      return { success: false, error: "The '" + FIN_ENTRY_TAB + "' tab was not found in the finance sheet." };
     }
-    var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
-    var now = new Date();
-    var receiptDate = p.date ? new Date(p.date) : now;
-    var row = headers.map(function(h) {
-      var hl = h.trim().toLowerCase();
-      // Must be a real Date, not an ISO string: the "Receipt No." tab derives
-      // its values from this one by formula, and a text timestamp where a date
-      // is expected propagates as #VALUE! down every dependent column.
-      if (hl === "timestamp") return now;
-      if (hl === "date") return receiptDate;
-      if (hl === "time") return now;
-      // Distinguish primary vs "more than one" duplicate headers.
-      // Match on what the header STARTS with, not on substring presence: the
-      // split-payment amount column is literally named
-      //   "Amount (Payment mode is more than one)"
-      // which contains BOTH "amount" and "payment mode". A substring test hits
-      // the payment-mode branch first and writes a mode STRING into the numeric
-      // Amount column, which then breaks every dependent formula as #VALUE!.
-      var isSecondary = hl.indexOf("more than one") >= 0;
-      if (hl.indexOf("amount") === 0) return (isSecondary ? p.amount2 : p.amount1) || "";
-      if (hl.indexOf("payment mode") === 0) return (isSecondary ? p.mode2 : p.mode1) || "";
-      if (hl.indexOf("uhid") >= 0) return p.uhid || "";
-      if (hl.indexOf("patient") >= 0 && hl.indexOf("name") >= 0) return p.patientName || "";
-      if (hl.indexOf("professional services") >= 0 || hl === "service") return p.service || "";
-      if (hl.indexOf("remarks") >= 0) return p.remarks || "";
-      return "";
+
+    // The receipt is dated by the entry the staff member made, not by the
+    // moment the request happened to reach the server.
+    var stamp = p.date ? new Date(p.date) : new Date();
+    if (isNaN(stamp.getTime())) stamp = new Date();
+
+    var entryHeaders = entry.getRange(1, 1, 1, entry.getLastColumn()).getValues()[0].map(String);
+    var entryRow = finReceiptRow_(entryHeaders, p, stamp);
+    entry.appendRow(entryRow);
+
+    // Mirror into Working so the derived tabs pick it up. Failing here does not
+    // lose the receipt — it is already on the entry tab — but it does mean the
+    // app will not show it yet, so say exactly that rather than reporting a
+    // clean save.
+    var mirror = ss.getSheetByName(FIN_MIRROR_TAB);
+    if (!mirror) {
+      return { success: true, mirrored: false,
+        warning: "Receipt recorded on '" + FIN_ENTRY_TAB + "', but the '" + FIN_MIRROR_TAB
+               + "' tab was not found, so it will not appear in the app until it is copied across." };
+    }
+
+    var mirrorHeaders = mirror.getRange(1, 1, 1, mirror.getLastColumn()).getValues()[0].map(String);
+    var dateCol = finCol_(mirrorHeaders, ["Date"]);
+    var timeCol = finCol_(mirrorHeaders, ["Time"]);
+    // Stop before the computed columns; never write into an ARRAYFORMULA spill.
+    var lastWritable = mirrorHeaders.length;
+    [dateCol, timeCol].forEach(function(c) {
+      if (c >= 0 && c < lastWritable) lastWritable = c;
     });
-    sh.appendRow(row);
-    return { success: true };
+    var mirrorRow = finReceiptRow_(mirrorHeaders, p, stamp).slice(0, lastWritable);
+    mirror.getRange(mirror.getLastRow() + 1, 1, 1, mirrorRow.length).setValues([mirrorRow]);
+
+    return { success: true, mirrored: true };
   } catch (e) {
     return { success: false, error: e.message };
   }
