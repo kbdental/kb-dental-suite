@@ -93,8 +93,8 @@ three that take every category are filtered in the browser, not the backend.
 `saveToDailyRegister` currently fills these in when the caller omits them:
 
 ```javascript
-    setBy(row, ["initial assessment done","initial assessment"], p.initialAssessment || "Yes");
-    setBy(row, ["care plan documented","care plan"], p.carePlanDocumented || "Yes");
+  setBy(row, ["initial assessment done","initial assessment"], p.initialAssessment || "Yes");
+  setBy(row, ["care plan documented","care plan"], p.carePlanDocumented || "Yes");
 ```
 
 Neither the existing **Add New Entry** form nor the new register prompt sends
@@ -106,10 +106,10 @@ not make.
 Change both `|| "Yes"` to `|| ""`:
 
 ```javascript
-    // An unanswered question stays blank. These are compliance answers, and
-    // the register should not be giving them on the clinic's behalf.
-    setBy(row, ["initial assessment done","initial assessment"], p.initialAssessment || "");
-    setBy(row, ["care plan documented","care plan"], p.carePlanDocumented || "");
+  // An unanswered question stays blank. These are compliance answers, and
+  // the register should not be giving them on the clinic's behalf.
+  setBy(row, ["initial assessment done","initial assessment"], p.initialAssessment || "");
+  setBy(row, ["care plan documented","care plan"], p.carePlanDocumented || "");
 ```
 
 Rows already in the sheet keep whatever they say — this only affects new ones.

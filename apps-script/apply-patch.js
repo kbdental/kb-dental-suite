@@ -31,12 +31,12 @@ const EDITS = [
   },
   {
     name: 'saveToDailyRegister — stop answering two compliance questions',
-    find: `    setBy(row, ["initial assessment done","initial assessment"], p.initialAssessment || "Yes");
-    setBy(row, ["care plan documented","care plan"], p.carePlanDocumented || "Yes");`,
-    replace: `    // An unanswered question stays blank. These are compliance answers, and
-    // the register should not be giving them on the clinic's behalf.
-    setBy(row, ["initial assessment done","initial assessment"], p.initialAssessment || "");
-    setBy(row, ["care plan documented","care plan"], p.carePlanDocumented || "");`,
+    find: `  setBy(row, ["initial assessment done","initial assessment"], p.initialAssessment || "Yes");
+  setBy(row, ["care plan documented","care plan"], p.carePlanDocumented || "Yes");`,
+    replace: `  // An unanswered question stays blank. These are compliance answers, and
+  // the register should not be giving them on the clinic's behalf.
+  setBy(row, ["initial assessment done","initial assessment"], p.initialAssessment || "");
+  setBy(row, ["care plan documented","care plan"], p.carePlanDocumented || "");`,
   },
 ];
 
