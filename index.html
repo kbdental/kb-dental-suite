@@ -70,6 +70,34 @@ function nowHHMM() {
   const d = new Date();
   return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
 }
+// A visit time as HH:MM, whatever shape it arrives in.
+//
+// Google Sheets turns an "HH:MM" write into a time-of-day cell, which Apps
+// Script reads back as a Date on the 1899-12-30 epoch — so check-in and
+// check-out reached the browser as "1899-12-30T05:35:50.000Z" and were shown
+// to staff exactly like that. The backend now formats these itself; this stays
+// as the safety net, and keeps older data readable.
+//
+// The named zone matters. In 1899 India ran at +05:21:10, not +05:30, so the
+// epoch date carries the historical offset: formatting through Asia/Kolkata
+// recovers the real clock time, while a hardcoded +05:30 would put every
+// stamp 8 minutes 50 seconds late.
+const CLINIC_TZ = "Asia/Kolkata";
+function hhmm(v) {
+  if (v === undefined || v === null || v === "") return "";
+  const s = String(v).trim();
+  if (/^\d{1,2}:\d{2}$/.test(s)) return s;                 // already HH:MM
+  if (/^(\d{1,2}):(\d{2}):\d{2}$/.test(s)) return s.slice(0, 5);
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;                        // leave anything unrecognised alone
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: CLINIC_TZ, hour: "2-digit", minute: "2-digit", hour12: false
+    }).format(d);
+  } catch (e) {
+    return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+}
 // Turnaround time between walk-in and consultation, as HH:MM. A consultation
 // time earlier than walk-in means the visit ran past midnight, so add a day
 // rather than reporting a negative TAT.
@@ -5798,7 +5826,7 @@ function Appointments({ globalPat, setGlobalPat }) {
             ),
             React.createElement("div", { style:{ fontSize:11.5, color:"#888" } },
               "Status: ", React.createElement("span", { style:{ fontWeight:700, color:STATUS_COL[a.status]||"#888" } }, a.status||"Scheduled")),
-            a.checkinTime && React.createElement("div", { style:{ fontSize:11, color:"#888", marginTop:4 } }, "Checked in: "+a.checkinTime),
+            a.checkinTime && React.createElement("div", { style:{ fontSize:11, color:"#888", marginTop:4 } }, "Checked in: "+hhmm(a.checkinTime)),
             a.engagedTime && React.createElement("div", { style:{ fontSize:11, color:"#888" } }, "Engaged: "+a.engagedTime),
             a.checkoutTime && React.createElement("div", { style:{ fontSize:11, color:"#888" } }, "Checked out: "+a.checkoutTime)
           ),
@@ -6530,7 +6558,7 @@ function Daysheet({ globalPat, setGlobalPat }) {
                 React.createElement("td", { style:{ padding:"7px 10px" } },
                   action ? React.createElement("button", { onClick:()=>updateStatus(a.id, action.next),
                     style:{ padding:"5px 12px", fontSize:11, border:"none", borderRadius:6, cursor:"pointer", background:"#059669", color:"#fff", fontWeight:600 } },
-                    action.label) : React.createElement("span", { style:{ fontSize:11, color:STATUS_COL[a.status]||"#888", fontWeight:700 } }, a.checkinTime||a.status)
+                    action.label) : React.createElement("span", { style:{ fontSize:11, color:STATUS_COL[a.status]||"#888", fontWeight:700 } }, hhmm(a.checkinTime)||a.status)
                 ),
                 React.createElement("td", { style:{ padding:"7px 10px" } }, a.engagedTime||"—"),
                 React.createElement("td", { style:{ padding:"7px 10px" } }, a.checkoutTime||"—")
@@ -11014,7 +11042,7 @@ function DailyRegister({ globalPat, setGlobalPat }) {
       res.appointments.forEach(a=>{
         if(!a.uhid) return;
         map[apptKey(a.uhid,a.date)] = {
-          checkin: a.checkinTime||"", engaged: a.engagedTime||"", checkout: a.checkoutTime||""
+          checkin: hhmm(a.checkinTime), engaged: hhmm(a.engagedTime), checkout: hhmm(a.checkoutTime)
         };
       });
       setApptTimes(map);

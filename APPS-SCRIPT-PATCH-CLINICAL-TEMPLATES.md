@@ -1,6 +1,6 @@
 # Apps Script — changes to make in `Code.gs`
 
-**Four functions**, in three unrelated repairs:
+**Six functions**, in four unrelated repairs:
 
 | | Function | Change |
 |---|---|---|
@@ -8,6 +8,8 @@
 | 2 | `saveRadiology` | same |
 | 3 | `saveToDailyRegister` | stop answering two compliance questions by itself |
 | 4 | `patientCompleteRegistration` | repair a corrupted alias string |
+| 5 | `fmtTime` | format in the spreadsheet's timezone, not the script's |
+| 6 | `getAppointments` | format check-in / engaged / check-out times |
 
 (1) and (2) supersede `CLINICAL-FORMS-PATCH.md` — the same two lines, which
 have gone from *worth fixing* to *required*; the reason is below. (3) is
@@ -148,6 +150,26 @@ Nothing about the behaviour changes. This is tidying, grouped into the same
 deploy rather than left for later.
 
 ---
+
+## Required — check-in times showed as `1899-12-30T05:35:50.000Z`
+
+Sheets turns an `"HH:MM"` write into a **time-of-day** cell, which Apps Script
+reads back as a `Date` on the 1899-12-30 epoch. `getAppointments` put `Time`
+through `fmtTime` but returned `CheckinTime`, `EngagedTime` and `CheckoutTime`
+raw, so they reached the browser as ISO strings and the Daysheet printed them
+that way. Those three now go through `fmtTime` too.
+
+`fmtTime` itself also stops using `getHours()`, which reads in the *script's*
+timezone, and formats in the **spreadsheet's** instead. Both are normally IST,
+but nothing enforces it, and a mismatch would shift every stamp silently.
+
+One thing worth knowing if you ever touch this: the 1899 epoch is before India
+moved to +05:30 — it ran at **+05:21:10** then. So the value must be read
+through the named zone `Asia/Kolkata`, which recovers the true clock time. A
+hardcoded `+05:30` looks right and is wrong by 8 minutes 50 seconds:
+`05:35:50Z` is **10:57**, not 11:05.
+
+The stored data was never wrong — only the display.
 
 ## Deploy
 

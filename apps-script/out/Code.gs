@@ -1692,14 +1692,18 @@ function debugSheetHeaders(p) {
 }
 
 function fmtTime(val) {
-  // Handles Date objects, time strings "HH:MM", or full datetime strings
+  // Handles Date objects, time strings "HH:MM", or full datetime strings.
   if (!val) return "";
   try {
     var d = new Date(val);
     if (!isNaN(d.getTime())) {
-      var hh = String(d.getHours()).padStart(2, "0");
-      var mm = String(d.getMinutes()).padStart(2, "0");
-      return hh + ":" + mm;
+      // Format in the SPREADSHEET's timezone rather than via getHours(), which
+      // reads in the script's. The two are normally both IST, but nothing
+      // enforces that — and a time-of-day cell read back from Sheets is a Date
+      // on the 1899-12-30 epoch, so any mismatch silently shifts every
+      // check-in and check-out by the offset.
+      var tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+      return Utilities.formatDate(d, tz, "HH:mm");
     }
     // Already a plain string like "10:30"
     return String(val);
@@ -1836,8 +1840,11 @@ function getAppointments(p) {
         type: row[col("Type")],
         doctor: row[col("Doctor")], chair: row[col("Chair")] || "",
         mobile: row[col("Mobile")], notes: row[col("Notes")], status: row[col("Status")],
-        checkinTime: row[col("CheckinTime")] || "", engagedTime: row[col("EngagedTime")] || "",
-        checkoutTime: row[col("CheckoutTime")] || "", cancelReason: row[col("CancelReason")] || ""
+        // Sheets turns an "HH:MM" write into a time-of-day cell, which reads
+        // back as a Date on the 1899-12-30 epoch. Passed through raw these
+        // reached the browser as "1899-12-30T05:35:50.000Z" instead of a time.
+        checkinTime: fmtTime(row[col("CheckinTime")]), engagedTime: fmtTime(row[col("EngagedTime")]),
+        checkoutTime: fmtTime(row[col("CheckoutTime")]), cancelReason: row[col("CancelReason")] || ""
       });
     }
   }
