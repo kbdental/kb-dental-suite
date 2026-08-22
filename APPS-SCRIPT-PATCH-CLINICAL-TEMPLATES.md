@@ -10,8 +10,8 @@
 | 4 | `patientCompleteRegistration` | repair a corrupted alias string |
 | 5 | `fmtTime` | format in the spreadsheet's timezone, not the script's |
 | 6 | `getAppointments` | format check-in / engaged / check-out times |
-| 7 | `FINANCE_SHEET_ID_DEFAULT` | point at **K. B. Dental - Finance Sheet PMS** |
-| 8 | `saveReceipt` | write to **Patient Fee Receipt**, mirror into **Working** |
+| 7 | `FINANCE_SHEET_ID_DEFAULT` | confirmed pointing at **K. B. Dental - Finance Sheet** (the live one) |
+| 8 | `saveReceipt` | write to **Patient Fee Receipt** only — no mirror write |
 
 (1) and (2) supersede `CLINICAL-FORMS-PATCH.md` — the same two lines, which
 have gone from *worth fixing* to *required*; the reason is below. (3) is
@@ -175,37 +175,57 @@ The stored data was never wrong — only the display.
 
 ## Finance — connecting the receipt form to the real sheet
 
-The finance sheet is **K. B. Dental - Finance Sheet PMS**
-(`1zi5xjxGaVVtCMNGYiqxNrhppUv1eswPsJGdp4P-DGmM`). Nothing about the sheet is
-changed; the app is pointed at it and taught its existing shape.
+The finance sheet is **K. B. Dental - Finance Sheet**
+(`1Zdxq3Xf-e41Xak4VDcufrURLkKDAp8MvRCZadC0htUI`) — the one the clinic actually
+enters into every day: today's receipts, 885 expense rows, the FY tabs and the
+Balance Sheet all live here. **K. B. Dental - Finance Sheet PMS** is a 21-Aug
+copy that fell behind the same day it was made and is not used.
 
 New receipts are written to **Patient Fee Receipt** — the clinic's own entry
 tab, and the only one in the receipt chain with no formulas in it. Its
 `Checked` column is left alone, since that is the clinic's reconciliation tick.
+That is the **only** tab this writes to.
 
-### Why the receipt is also written to `Working`
+### What broke, and why the mirror is gone
 
-The chain is **Patient Fee Receipt → Working → Receipt No. / E-Receipt / FY
-tabs**, and the app reads back from `Receipt No.`. But `Working` is *not*
-formula-linked to the entry tab — its columns A:H are a static mirror kept
-alongside it. A row written only to the entry tab would save correctly and then
-be invisible in the app.
+An earlier version of this also wrote the row into `Working`, reasoning that
+`Working` is a static copy rather than a formula link, so a row written only
+to the entry tab would never reach `Receipt No.` (what the app reads back) and
+would be invisible. That reasoning about the linkage was right; how it wrote
+the mirror was not.
 
-So both are written. The mirror deliberately stops at column H: `Working`'s
-**Date** and **Time** are an `ARRAYFORMULA` spilling down from row 2, and
-writing into a spilled cell breaks the entire array.
+`Working` carries an `ARRAYFORMULA` spilling down its **Date** and **Time**
+columns, and the mirror located its target row with
+`mirror.getLastRow() + 1`. `getLastRow()` counts *anything* on the sheet,
+formula output included — on a tab with a spilled formula it reports a row far
+past the real data. In production this landed the new row **~190 rows past**
+where the real data ended, outside the formula's range, and the resulting gap
+broke the continuity `Receipt No.` depends on: its **E. Receipt No.** column
+(itself formula-driven off `Working`) **restarted counting from 1**, even
+though the clinic had already issued receipts up to **233**.
 
-If the entry tab is written but the mirror fails, the save reports a warning
-saying the receipt is recorded but will not appear yet — rather than a clean
-success.
+The fix removes the mirror write entirely. `saveReceipt` now writes one row,
+to one tab, and stops — the clinic's existing `Patient Fee Receipt` →
+`Working` step (whatever keeps them in sync today, presumably the Google
+Form's own linkage or an existing script) is left to do what it was already
+doing. If a receipt takes a moment to show up in `Receipt No.` after saving,
+that is normal catch-up, not a lost entry.
 
-### One limit worth knowing
+As a second layer of defense against the same class of bug happening again,
+the entry-tab write no longer trusts `getLastRow()` either — a new
+`finFirstFreeRow_()` helper finds the first free row by scanning the
+`Timestamp` column from the bottom up. The entry tab has no formulas today, so
+this was not the cause of the incident, but the incident is exactly the
+failure mode this guards against everywhere it could recur.
 
-`Working`'s `ARRAYFORMULA` covers rows 2–1857 and the data currently ends
-around row 1562, so **roughly 295 more receipts** will compute their Date and
-Time before that formula needs extending. `Receipt No.` has formulas to row
-2000. Neither is urgent, but they are finite — when Date/Time start coming up
-blank on new rows, that range is why.
+### The live sheet still has residue from the incident
+
+The corrupted write reached your actual `K. B. Dental - Finance Sheet` — a
+duplicate/misplaced row was written into `Working` around row 1858, and the
+`Receipt No.` numbering broke as described above. **This has not been cleaned
+up.** Nothing here touches your existing data without you saying so — how you
+want that stray row and the numbering handled is your call, not something to
+silently "fix" on the live sheet.
 
 ### Expenses
 

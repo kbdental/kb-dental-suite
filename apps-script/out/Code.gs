@@ -2289,7 +2289,11 @@ function saveChatbotAppointment(p) {
 // Excel Master File's "Receipt No" sheet pulled from.
 // ════════════════════════════════════════════════════════════
 
-var FINANCE_SHEET_ID_DEFAULT = "1zi5xjxGaVVtCMNGYiqxNrhppUv1eswPsJGdp4P-DGmM"; // K. B. Dental - Finance Sheet PMS
+var FINANCE_SHEET_ID_DEFAULT = "1Zdxq3Xf-e41Xak4VDcufrURLkKDAp8MvRCZadC0htUI"; // K. B. Dental - Finance Sheet
+// The clinic keeps entering in this one, so it is the live record: today's
+// receipts, 885 expense rows, the FY tabs and the Balance Sheet all live here.
+// "K. B. Dental - Finance Sheet PMS" is a 21-Aug copy that fell behind the
+// same day it was made, and is deliberately NOT the target.
 
 // Finance sheet ID is controllable from the app's Settings tab — stored in
 // Script Properties, falling back to the hardcoded default if never changed.
@@ -2461,18 +2465,25 @@ function receiptFeeAndMode(r) {
 // genuinely empty, a header row matching the Google Form's own field order is
 // created once.
 // Records a payment on the "Patient Fee Receipt" tab — the clinic's own entry
-// sheet, and the only one in the receipt chain with no formulas in it.
+// sheet, and the only tab in the receipt chain with no formulas in it.
 //
-// The chain is: Patient Fee Receipt -> Working -> Receipt No. / E-Receipt / FY
-// tabs. "Working" is NOT formula-linked to the entry tab; columns A:H are a
-// static mirror kept alongside it, and only its Date/Time columns are
-// computed. So a row written to the entry tab alone would never reach
-// "Receipt No.", which is what the app reads back — the receipt would save and
-// then be invisible. Both tabs are written, and the mirror deliberately stops
-// at column H: Date and Time are an ARRAYFORMULA spilling down from row 2, and
-// writing into a spilled cell breaks the whole array.
-var FIN_ENTRY_TAB  = "Patient Fee Receipt";
-var FIN_MIRROR_TAB = "Working";
+// This writes THAT TAB AND NOTHING ELSE, on purpose.
+//
+// An earlier version of this function also mirrored the row into "Working",
+// reasoning that Working is a static copy rather than a formula link, so a row
+// written only to the entry tab would not reach "Receipt No." and would be
+// invisible in the app. That reasoning was right about the linkage and badly
+// wrong about the consequence. "Working" carries an ARRAYFORMULA spilling down
+// its Date and Time columns, so appendRow/getLastRow land far below the real
+// data — the row went in ~190 rows past the end, outside the formula range,
+// and the gap restarted the E. Receipt No. sequence at 1 when the clinic had
+// already issued 233. Whatever keeps Working in step with the entry tab today
+// was already doing its job; this function has no business reaching into it.
+//
+// So: one row, one tab, no side effects. If a receipt takes a moment to appear
+// in the app, that is the clinic's existing entry-tab-to-Working step catching
+// up — which is a wait, not a corrupted ledger.
+var FIN_ENTRY_TAB = "Patient Fee Receipt";
 
 // Finds a column by header name, tolerating the sheet's own spelling (trailing
 // spaces, "'s", casing). Returns -1 when absent.
@@ -2487,8 +2498,8 @@ function finCol_(headers, candidates) {
   return -1;
 }
 
-// Builds one receipt row against whatever header order the tab actually has,
-// so neither tab depends on a fixed column position.
+// Builds the row against whatever header order the tab actually has, so it
+// does not depend on a fixed column position.
 function finReceiptRow_(headers, p, stamp) {
   var row = headers.map(function() { return ""; });
   var put = function(names, value) {
@@ -2511,10 +2522,26 @@ function finReceiptRow_(headers, p, stamp) {
   return row;
 }
 
+// The first free row judged by the Timestamp column rather than by
+// getLastRow(). getLastRow() counts anything on the sheet, formula output
+// included, so on a tab carrying a spilled ARRAYFORMULA it points well past
+// the last real entry. The entry tab has no formulas today, but a row landing
+// in the wrong place here is exactly what broke the receipt numbering once
+// already, so it is not left to chance.
+function finFirstFreeRow_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 1) return 2;
+  var stamps = sheet.getRange(1, 1, last, 1).getValues();
+  for (var i = stamps.length - 1; i >= 1; i--) {
+    var v = stamps[i][0];
+    if (v !== "" && v !== null && v !== undefined) return i + 2;
+  }
+  return 2;
+}
+
 function saveReceipt(p) {
   try {
     var ss = SpreadsheetApp.openById(getFinanceSheetId());
-
     var entry = ss.getSheetByName(FIN_ENTRY_TAB);
     if (!entry) {
       return { success: false, error: "The '" + FIN_ENTRY_TAB + "' tab was not found in the finance sheet." };
@@ -2525,33 +2552,12 @@ function saveReceipt(p) {
     var stamp = p.date ? new Date(p.date) : new Date();
     if (isNaN(stamp.getTime())) stamp = new Date();
 
-    var entryHeaders = entry.getRange(1, 1, 1, entry.getLastColumn()).getValues()[0].map(String);
-    var entryRow = finReceiptRow_(entryHeaders, p, stamp);
-    entry.appendRow(entryRow);
+    var headers = entry.getRange(1, 1, 1, entry.getLastColumn()).getValues()[0].map(String);
+    var row = finReceiptRow_(headers, p, stamp);
+    var target = finFirstFreeRow_(entry);
+    entry.getRange(target, 1, 1, row.length).setValues([row]);
 
-    // Mirror into Working so the derived tabs pick it up. Failing here does not
-    // lose the receipt — it is already on the entry tab — but it does mean the
-    // app will not show it yet, so say exactly that rather than reporting a
-    // clean save.
-    var mirror = ss.getSheetByName(FIN_MIRROR_TAB);
-    if (!mirror) {
-      return { success: true, mirrored: false,
-        warning: "Receipt recorded on '" + FIN_ENTRY_TAB + "', but the '" + FIN_MIRROR_TAB
-               + "' tab was not found, so it will not appear in the app until it is copied across." };
-    }
-
-    var mirrorHeaders = mirror.getRange(1, 1, 1, mirror.getLastColumn()).getValues()[0].map(String);
-    var dateCol = finCol_(mirrorHeaders, ["Date"]);
-    var timeCol = finCol_(mirrorHeaders, ["Time"]);
-    // Stop before the computed columns; never write into an ARRAYFORMULA spill.
-    var lastWritable = mirrorHeaders.length;
-    [dateCol, timeCol].forEach(function(c) {
-      if (c >= 0 && c < lastWritable) lastWritable = c;
-    });
-    var mirrorRow = finReceiptRow_(mirrorHeaders, p, stamp).slice(0, lastWritable);
-    mirror.getRange(mirror.getLastRow() + 1, 1, 1, mirrorRow.length).setValues([mirrorRow]);
-
-    return { success: true, mirrored: true };
+    return { success: true, row: target };
   } catch (e) {
     return { success: false, error: e.message };
   }
