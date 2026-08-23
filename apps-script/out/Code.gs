@@ -522,6 +522,12 @@ function route(p) {
       case "saveBlockedSlot":         return saveBlockedSlot(p);
       case "deleteBlockedSlot":       return deleteBlockedSlot(p);
 
+      // ── Multi-visit treatment tracking ──────────────────────
+      case "getProcedureLibrary":     return getProcedureLibrary();
+      case "saveProcedureLibrary":    return saveProcedureLibrary(p);
+      case "getNextVisitSuggestion":  return getNextVisitSuggestion(p);
+      case "resolveVisitException":   return resolveVisitException(p);
+
       // ── Consents ───────────────────────────────────────────
       case "saveConsent":      return saveConsent(p);
 
@@ -1794,9 +1800,13 @@ function saveToDailyRegister(p) {
 // Full header set — auto-extended onto any older sheet that's missing
 // Chair / CheckinTime / EngagedTime / CheckoutTime (added for the chair-based
 // Schedule + Daysheet workflow), so existing rows/columns are never disturbed.
+// CaseId..CaseStatus (the multi-visit treatment fields) are all OPTIONAL —
+// a plain one-off appointment (walk-in, phone consult) simply leaves them
+// blank, exactly like a sheet with no clinical-procedure booking at all.
 var APPOINTMENT_HEADERS = [
   "Date","UHID","Patient Name","Time","Type","Doctor","Chair",
-  "Mobile","Notes","Status","CheckinTime","EngagedTime","CheckoutTime","CancelReason","ID","Saved At"
+  "Mobile","Notes","Status","CheckinTime","EngagedTime","CheckoutTime","CancelReason","ID","Saved At",
+  "CaseId","ProcedureCode","ProcedureName","VisitNo","TotalVisits","StageCode","StageName","IsFinalVisit","CaseStatus"
 ];
 
 function getAppointmentsSheet() {
@@ -1844,7 +1854,15 @@ function getAppointments(p) {
         // back as a Date on the 1899-12-30 epoch. Passed through raw these
         // reached the browser as "1899-12-30T05:35:50.000Z" instead of a time.
         checkinTime: fmtTime(row[col("CheckinTime")]), engagedTime: fmtTime(row[col("EngagedTime")]),
-        checkoutTime: fmtTime(row[col("CheckoutTime")]), cancelReason: row[col("CancelReason")] || ""
+        checkoutTime: fmtTime(row[col("CheckoutTime")]), cancelReason: row[col("CancelReason")] || "",
+        // Multi-visit treatment fields — blank on any appointment that isn't
+        // part of a tracked case, same as every other optional column here.
+        caseId: row[col("CaseId")] || "", procedureCode: row[col("ProcedureCode")] || "",
+        procedureName: row[col("ProcedureName")] || "",
+        visitNo: row[col("VisitNo")] || "", totalVisits: row[col("TotalVisits")] || "",
+        stageCode: row[col("StageCode")] || "", stageName: row[col("StageName")] || "",
+        isFinalVisit: row[col("IsFinalVisit")] === true || String(row[col("IsFinalVisit")]).toUpperCase() === "TRUE",
+        caseStatus: row[col("CaseStatus")] || ""
       });
     }
   }
@@ -1860,7 +1878,13 @@ function saveAppointment(p) {
     "Type": p.type, "Doctor": p.doctor, "Chair": p.chair || "", "Mobile": p.mobile || "",
     "Notes": p.notes || "", "Status": p.status || "Scheduled",
     "CheckinTime": "", "EngagedTime": "", "CheckoutTime": "", "CancelReason": "",
-    "ID": id, "Saved At": new Date().toISOString()
+    "ID": id, "Saved At": new Date().toISOString(),
+    // All optional — a booking with none of these is a plain one-off visit.
+    "CaseId": p.caseId || "", "ProcedureCode": p.procedureCode || "", "ProcedureName": p.procedureName || "",
+    "VisitNo": p.visitNo || "", "TotalVisits": p.totalVisits || "",
+    "StageCode": p.stageCode || "", "StageName": p.stageName || "",
+    "IsFinalVisit": p.isFinalVisit === true || p.isFinalVisit === "true",
+    "CaseStatus": p.caseId ? (p.caseStatus || "in_progress") : ""
   };
   var row = headers.map(function(h) { return values[h] !== undefined ? values[h] : ""; });
   sh.appendRow(row);
@@ -1910,7 +1934,13 @@ function updateAppointment(p) {
     if (String(data[i][col("ID")]).trim() === apptId) {
       var updates = {
         "Date": p.date, "Time": p.time, "Type": p.type, "Doctor": p.doctor,
-        "Chair": p.chair, "Notes": p.notes
+        "Chair": p.chair, "Notes": p.notes,
+        // Multi-visit case fields — only touched when the edit form actually
+        // sent them (a plain one-off appointment's edit never includes these).
+        "CaseId": p.caseId, "ProcedureCode": p.procedureCode, "ProcedureName": p.procedureName,
+        "VisitNo": p.visitNo, "TotalVisits": p.totalVisits,
+        "StageCode": p.stageCode, "StageName": p.stageName,
+        "IsFinalVisit": p.isFinalVisit, "CaseStatus": p.caseStatus
       };
       Object.keys(updates).forEach(function(key) {
         if (updates[key] !== undefined && updates[key] !== null && col(key) >= 0) {
@@ -1934,6 +1964,512 @@ function deleteAppointment(p) {
       sh.deleteRow(i + 1);
       return { success: true };
     }
+  }
+  return { success: false, error: "Appointment not found: " + apptId };
+}
+
+// ════════════════════════════════════════════════════════════
+// PROCEDURE LIBRARY — multi-visit treatment tracking
+//
+// Design principle (deliberately NOT a clinical engine): for any given
+// procedure, this is just an ordered list of stages —
+//   Procedure -> Visit No. -> Stage -> (what must happen) -> Completion
+// Staff never see this table. The appointment form reads it to show one
+// line: "Visit 2 of 3 — Try-in". Adding a procedure or renaming a stage is
+// a row edit here, never a code change.
+// ════════════════════════════════════════════════════════════
+
+var PROCEDURE_LIBRARY_DEFAULTS = [
+  {procedureCode:"NEW_PATIENT_EXAMINATION",procedureName:"New Patient Examination",category:"Diagnostic & Consultation",standardVisits:1,visitNo:1,stageType:"P",stageCode:"EXAMINATION_DIAGNOSIS",stageName:"Examination + Diagnosis",completesTreatment:true},
+  {procedureCode:"EMERGENCY_EXAMINATION",procedureName:"Emergency Examination",category:"Diagnostic & Consultation",standardVisits:1,visitNo:1,stageType:"P/T",stageCode:"ASSESSMENT_EMERGENCY_CARE",stageName:"Assessment + Emergency Care",completesTreatment:true},
+  {procedureCode:"COMPREHENSIVE_DENTAL_EXAMINATION",procedureName:"Comprehensive Dental Examination",category:"Diagnostic & Consultation",standardVisits:1,visitNo:1,stageType:"P",stageCode:"EXAMINATION_RECORDS",stageName:"Examination + Records",completesTreatment:true},
+  {procedureCode:"SECOND_OPINION",procedureName:"Second Opinion",category:"Diagnostic & Consultation",standardVisits:1,visitNo:1,stageType:"P",stageCode:"ASSESSMENT_OPINION",stageName:"Assessment + Opinion",completesTreatment:true},
+  {procedureCode:"TREATMENT_PLANNING",procedureName:"Treatment Planning",category:"Diagnostic & Consultation",standardVisits:1,visitNo:1,stageType:"P",stageCode:"DIAGNOSIS_PLAN",stageName:"Diagnosis + Plan",completesTreatment:true},
+  {procedureCode:"RVG_INTRAORAL_X_RAY",procedureName:"RVG / Intraoral X-ray",category:"Diagnostic & Consultation",standardVisits:1,visitNo:1,stageType:"P",stageCode:"X_RAY_INTERPRETATION",stageName:"X-ray + Interpretation",completesTreatment:true},
+  {procedureCode:"OPG",procedureName:"OPG",category:"Diagnostic & Consultation",standardVisits:1,visitNo:1,stageType:"P",stageCode:"IMAGING_INTERPRETATION",stageName:"Imaging + Interpretation",completesTreatment:true},
+  {procedureCode:"CBCT",procedureName:"CBCT",category:"Diagnostic & Consultation",standardVisits:1,visitNo:1,stageType:"P",stageCode:"IMAGING_ASSESSMENT",stageName:"Imaging + Assessment",completesTreatment:true},
+  {procedureCode:"DIGITAL_SCAN",procedureName:"Digital Scan",category:"Diagnostic & Consultation",standardVisits:1,visitNo:1,stageType:"P/R",stageCode:"SCAN_RECORDS",stageName:"Scan + Records",completesTreatment:true},
+  {procedureCode:"COMPREHENSIVE_SMILE_ASSESSMENT",procedureName:"Comprehensive Smile Assessment",category:"Diagnostic & Consultation",standardVisits:2,visitNo:1,stageType:"P",stageCode:"ASSESSMENT_RECORDS",stageName:"Assessment + Records",completesTreatment:false},
+  {procedureCode:"COMPREHENSIVE_SMILE_ASSESSMENT",procedureName:"Comprehensive Smile Assessment",category:"Diagnostic & Consultation",standardVisits:2,visitNo:2,stageType:"P",stageCode:"SMILE_PLANNING",stageName:"Smile Planning",completesTreatment:true},
+  {procedureCode:"SCALING",procedureName:"Scaling",category:"Preventive Dentistry",standardVisits:1,visitNo:1,stageType:"T",stageCode:"SCALING",stageName:"Scaling",completesTreatment:true},
+  {procedureCode:"SCALING_POLISHING",procedureName:"Scaling + Polishing",category:"Preventive Dentistry",standardVisits:1,visitNo:1,stageType:"T/C",stageCode:"SCALING_POLISHING",stageName:"Scaling + Polishing",completesTreatment:true},
+  {procedureCode:"DEEP_CLEANING_FULL_MOUTH",procedureName:"Deep Cleaning \u2013 Full Mouth",category:"Preventive Dentistry",standardVisits:3,visitNo:1,stageType:"T",stageCode:"FIRST_AREAS",stageName:"First areas",completesTreatment:false},
+  {procedureCode:"DEEP_CLEANING_FULL_MOUTH",procedureName:"Deep Cleaning \u2013 Full Mouth",category:"Preventive Dentistry",standardVisits:3,visitNo:2,stageType:"T",stageCode:"REMAINING_AREAS",stageName:"Remaining areas",completesTreatment:false},
+  {procedureCode:"DEEP_CLEANING_FULL_MOUTH",procedureName:"Deep Cleaning \u2013 Full Mouth",category:"Preventive Dentistry",standardVisits:3,visitNo:3,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"DEEP_CLEANING_SINGLE_AREA",procedureName:"Deep Cleaning \u2013 Single Area",category:"Preventive Dentistry",standardVisits:2,visitNo:1,stageType:"T",stageCode:"TREATMENT",stageName:"Treatment",completesTreatment:false},
+  {procedureCode:"DEEP_CLEANING_SINGLE_AREA",procedureName:"Deep Cleaning \u2013 Single Area",category:"Preventive Dentistry",standardVisits:2,visitNo:2,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"FLUORIDE_APPLICATION",procedureName:"Fluoride Application",category:"Preventive Dentistry",standardVisits:1,visitNo:1,stageType:"T/C",stageCode:"APPLICATION",stageName:"Application",completesTreatment:true},
+  {procedureCode:"PIT_AND_FISSURE_SEALANT",procedureName:"Pit & Fissure Sealant",category:"Preventive Dentistry",standardVisits:1,visitNo:1,stageType:"T/C",stageCode:"PREPARATION_SEALANT",stageName:"Preparation + Sealant",completesTreatment:true},
+  {procedureCode:"ORAL_HYGIENE_INSTRUCTION",procedureName:"Oral Hygiene Instruction",category:"Preventive Dentistry",standardVisits:1,visitNo:1,stageType:"P/T",stageCode:"ASSESSMENT_INSTRUCTION",stageName:"Assessment + Instruction",completesTreatment:true},
+  {procedureCode:"PREVENTIVE_REVIEW",procedureName:"Preventive Review",category:"Preventive Dentistry",standardVisits:1,visitNo:1,stageType:"TI/C",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"COMPOSITE_FILLING_SMALL",procedureName:"Composite Filling \u2013 Small",category:"Restorative Dentistry",standardVisits:1,visitNo:1,stageType:"T/C",stageCode:"PREPARE_FILL",stageName:"Prepare + Fill",completesTreatment:true},
+  {procedureCode:"COMPOSITE_FILLING_LARGE",procedureName:"Composite Filling \u2013 Large",category:"Restorative Dentistry",standardVisits:1,visitNo:1,stageType:"T/C",stageCode:"PREPARE_FILL",stageName:"Prepare + Fill",completesTreatment:true},
+  {procedureCode:"GIC_FILLING",procedureName:"GIC Filling",category:"Restorative Dentistry",standardVisits:1,visitNo:1,stageType:"T/C",stageCode:"PREPARE_FILL",stageName:"Prepare + Fill",completesTreatment:true},
+  {procedureCode:"TEMPORARY_FILLING",procedureName:"Temporary Filling",category:"Restorative Dentistry",standardVisits:1,visitNo:1,stageType:"T/C",stageCode:"PREPARE_FILL",stageName:"Prepare + Fill",completesTreatment:true},
+  {procedureCode:"CORE_BUILD_UP",procedureName:"Core Build-Up",category:"Restorative Dentistry",standardVisits:1,visitNo:1,stageType:"T/C",stageCode:"PREPARATION_BUILD_UP",stageName:"Preparation + Build-Up",completesTreatment:true},
+  {procedureCode:"INLAY",procedureName:"Inlay",category:"Restorative Dentistry",standardVisits:2,visitNo:1,stageType:"R",stageCode:"PREPARATION_SCAN_IMPRESSION",stageName:"Preparation + Scan/Impression",completesTreatment:false},
+  {procedureCode:"INLAY",procedureName:"Inlay",category:"Restorative Dentistry",standardVisits:2,visitNo:2,stageType:"TI/C",stageCode:"TRY_IN_CEMENTATION",stageName:"Try-in + Cementation",completesTreatment:true},
+  {procedureCode:"ONLAY",procedureName:"Onlay",category:"Restorative Dentistry",standardVisits:2,visitNo:1,stageType:"R",stageCode:"PREPARATION_SCAN_IMPRESSION",stageName:"Preparation + Scan/Impression",completesTreatment:false},
+  {procedureCode:"ONLAY",procedureName:"Onlay",category:"Restorative Dentistry",standardVisits:2,visitNo:2,stageType:"TI/C",stageCode:"TRY_IN_CEMENTATION",stageName:"Try-in + Cementation",completesTreatment:true},
+  {procedureCode:"COMPOSITE_INLAY",procedureName:"Composite Inlay",category:"Restorative Dentistry",standardVisits:2,visitNo:1,stageType:"R",stageCode:"PREPARATION_SCAN_IMPRESSION",stageName:"Preparation + Scan/Impression",completesTreatment:false},
+  {procedureCode:"COMPOSITE_INLAY",procedureName:"Composite Inlay",category:"Restorative Dentistry",standardVisits:2,visitNo:2,stageType:"TI/C",stageCode:"TRY_IN_BONDING",stageName:"Try-in + Bonding",completesTreatment:true},
+  {procedureCode:"COMPOSITE_ONLAY",procedureName:"Composite Onlay",category:"Restorative Dentistry",standardVisits:2,visitNo:1,stageType:"R",stageCode:"PREPARATION_SCAN_IMPRESSION",stageName:"Preparation + Scan/Impression",completesTreatment:false},
+  {procedureCode:"COMPOSITE_ONLAY",procedureName:"Composite Onlay",category:"Restorative Dentistry",standardVisits:2,visitNo:2,stageType:"TI/C",stageCode:"TRY_IN_BONDING",stageName:"Try-in + Bonding",completesTreatment:true},
+  {procedureCode:"TOOTH_BUILD_UP",procedureName:"Tooth Build-Up",category:"Restorative Dentistry",standardVisits:1,visitNo:1,stageType:"T/C",stageCode:"BUILD_UP",stageName:"Build-Up",completesTreatment:true},
+  {procedureCode:"REPLACING_OLD_FILLING",procedureName:"Replacing Old Filling",category:"Restorative Dentistry",standardVisits:1,visitNo:1,stageType:"T/C",stageCode:"REMOVE_REPLACE",stageName:"Remove + Replace",completesTreatment:true},
+  {procedureCode:"TEMPORARY_RESTORATION",procedureName:"Temporary Restoration",category:"Restorative Dentistry",standardVisits:1,visitNo:1,stageType:"T/C",stageCode:"PREPARATION_TEMPORARY",stageName:"Preparation + Temporary",completesTreatment:true},
+  {procedureCode:"RCT_ANTERIOR",procedureName:"RCT \u2013 Anterior",category:"Root Canal / Endodontics",standardVisits:3,visitNo:1,stageType:"T",stageCode:"CLEANING",stageName:"Cleaning",completesTreatment:false},
+  {procedureCode:"RCT_ANTERIOR",procedureName:"RCT \u2013 Anterior",category:"Root Canal / Endodontics",standardVisits:3,visitNo:2,stageType:"T",stageCode:"OBTURATION",stageName:"Obturation",completesTreatment:false},
+  {procedureCode:"RCT_ANTERIOR",procedureName:"RCT \u2013 Anterior",category:"Root Canal / Endodontics",standardVisits:3,visitNo:3,stageType:"C",stageCode:"RESTORATION",stageName:"Restoration",completesTreatment:true},
+  {procedureCode:"RCT_PREMOLAR",procedureName:"RCT \u2013 Premolar",category:"Root Canal / Endodontics",standardVisits:3,visitNo:1,stageType:"T",stageCode:"CLEANING",stageName:"Cleaning",completesTreatment:false},
+  {procedureCode:"RCT_PREMOLAR",procedureName:"RCT \u2013 Premolar",category:"Root Canal / Endodontics",standardVisits:3,visitNo:2,stageType:"T",stageCode:"OBTURATION",stageName:"Obturation",completesTreatment:false},
+  {procedureCode:"RCT_PREMOLAR",procedureName:"RCT \u2013 Premolar",category:"Root Canal / Endodontics",standardVisits:3,visitNo:3,stageType:"C",stageCode:"RESTORATION",stageName:"Restoration",completesTreatment:true},
+  {procedureCode:"RCT_MOLAR",procedureName:"RCT \u2013 Molar",category:"Root Canal / Endodontics",standardVisits:4,visitNo:1,stageType:"T",stageCode:"CLEANING",stageName:"Cleaning",completesTreatment:false},
+  {procedureCode:"RCT_MOLAR",procedureName:"RCT \u2013 Molar",category:"Root Canal / Endodontics",standardVisits:4,visitNo:2,stageType:"T",stageCode:"CLEANING_MEDICATION",stageName:"Cleaning/Medication",completesTreatment:false},
+  {procedureCode:"RCT_MOLAR",procedureName:"RCT \u2013 Molar",category:"Root Canal / Endodontics",standardVisits:4,visitNo:3,stageType:"T",stageCode:"OBTURATION",stageName:"Obturation",completesTreatment:false},
+  {procedureCode:"RCT_MOLAR",procedureName:"RCT \u2013 Molar",category:"Root Canal / Endodontics",standardVisits:4,visitNo:4,stageType:"C",stageCode:"RESTORATION",stageName:"Restoration",completesTreatment:true},
+  {procedureCode:"RE_RCT_ANTERIOR",procedureName:"Re-RCT \u2013 Anterior",category:"Root Canal / Endodontics",standardVisits:3,visitNo:1,stageType:"T",stageCode:"RE_TREATMENT",stageName:"Re-treatment",completesTreatment:false},
+  {procedureCode:"RE_RCT_ANTERIOR",procedureName:"Re-RCT \u2013 Anterior",category:"Root Canal / Endodontics",standardVisits:3,visitNo:2,stageType:"T",stageCode:"OBTURATION",stageName:"Obturation",completesTreatment:false},
+  {procedureCode:"RE_RCT_ANTERIOR",procedureName:"Re-RCT \u2013 Anterior",category:"Root Canal / Endodontics",standardVisits:3,visitNo:3,stageType:"C",stageCode:"RESTORATION",stageName:"Restoration",completesTreatment:true},
+  {procedureCode:"RE_RCT_POSTERIOR",procedureName:"Re-RCT \u2013 Posterior",category:"Root Canal / Endodontics",standardVisits:4,visitNo:1,stageType:"T",stageCode:"RE_TREATMENT",stageName:"Re-treatment",completesTreatment:false},
+  {procedureCode:"RE_RCT_POSTERIOR",procedureName:"Re-RCT \u2013 Posterior",category:"Root Canal / Endodontics",standardVisits:4,visitNo:2,stageType:"T",stageCode:"CLEANING_MEDICATION",stageName:"Cleaning/Medication",completesTreatment:false},
+  {procedureCode:"RE_RCT_POSTERIOR",procedureName:"Re-RCT \u2013 Posterior",category:"Root Canal / Endodontics",standardVisits:4,visitNo:3,stageType:"T",stageCode:"OBTURATION",stageName:"Obturation",completesTreatment:false},
+  {procedureCode:"RE_RCT_POSTERIOR",procedureName:"Re-RCT \u2013 Posterior",category:"Root Canal / Endodontics",standardVisits:4,visitNo:4,stageType:"C",stageCode:"RESTORATION",stageName:"Restoration",completesTreatment:true},
+  {procedureCode:"RCT_POST_AND_CORE",procedureName:"RCT + Post & Core",category:"Root Canal / Endodontics",standardVisits:3,visitNo:1,stageType:"T",stageCode:"RCT",stageName:"RCT",completesTreatment:false},
+  {procedureCode:"RCT_POST_AND_CORE",procedureName:"RCT + Post & Core",category:"Root Canal / Endodontics",standardVisits:3,visitNo:2,stageType:"T",stageCode:"COMPLETION",stageName:"Completion",completesTreatment:false},
+  {procedureCode:"RCT_POST_AND_CORE",procedureName:"RCT + Post & Core",category:"Root Canal / Endodontics",standardVisits:3,visitNo:3,stageType:"C",stageCode:"POST_CORE",stageName:"Post/Core",completesTreatment:true},
+  {procedureCode:"RCT_CROWN",procedureName:"RCT + Crown",category:"Root Canal / Endodontics",standardVisits:4,visitNo:1,stageType:"T",stageCode:"RCT",stageName:"RCT",completesTreatment:false},
+  {procedureCode:"RCT_CROWN",procedureName:"RCT + Crown",category:"Root Canal / Endodontics",standardVisits:4,visitNo:2,stageType:"T",stageCode:"RCT_COMPLETION",stageName:"RCT Completion",completesTreatment:false},
+  {procedureCode:"RCT_CROWN",procedureName:"RCT + Crown",category:"Root Canal / Endodontics",standardVisits:4,visitNo:3,stageType:"R",stageCode:"CROWN_PREPARATION",stageName:"Crown Preparation",completesTreatment:false},
+  {procedureCode:"RCT_CROWN",procedureName:"RCT + Crown",category:"Root Canal / Endodontics",standardVisits:4,visitNo:4,stageType:"TI/C",stageCode:"CROWN",stageName:"Crown",completesTreatment:true},
+  {procedureCode:"EMERGENCY_RCT",procedureName:"Emergency RCT",category:"Root Canal / Endodontics",standardVisits:3,visitNo:1,stageType:"T",stageCode:"EMERGENCY_TREATMENT",stageName:"Emergency Treatment",completesTreatment:false},
+  {procedureCode:"EMERGENCY_RCT",procedureName:"Emergency RCT",category:"Root Canal / Endodontics",standardVisits:3,visitNo:2,stageType:"T",stageCode:"COMPLETION",stageName:"Completion",completesTreatment:false},
+  {procedureCode:"EMERGENCY_RCT",procedureName:"Emergency RCT",category:"Root Canal / Endodontics",standardVisits:3,visitNo:3,stageType:"C",stageCode:"RESTORATION",stageName:"Restoration",completesTreatment:true},
+  {procedureCode:"APEXIFICATION",procedureName:"Apexification",category:"Root Canal / Endodontics",standardVisits:4,visitNo:1,stageType:"T",stageCode:"TREATMENT",stageName:"Treatment",completesTreatment:false},
+  {procedureCode:"APEXIFICATION",procedureName:"Apexification",category:"Root Canal / Endodontics",standardVisits:4,visitNo:2,stageType:"T",stageCode:"FOLLOW_UP",stageName:"Follow-up",completesTreatment:false},
+  {procedureCode:"APEXIFICATION",procedureName:"Apexification",category:"Root Canal / Endodontics",standardVisits:4,visitNo:3,stageType:"T",stageCode:"COMPLETION",stageName:"Completion",completesTreatment:false},
+  {procedureCode:"APEXIFICATION",procedureName:"Apexification",category:"Root Canal / Endodontics",standardVisits:4,visitNo:4,stageType:"C",stageCode:"RESTORATION",stageName:"Restoration",completesTreatment:true},
+  {procedureCode:"APICAL_SURGERY",procedureName:"Apical Surgery",category:"Root Canal / Endodontics",standardVisits:2,visitNo:1,stageType:"T",stageCode:"SURGERY",stageName:"Surgery",completesTreatment:false},
+  {procedureCode:"APICAL_SURGERY",procedureName:"Apical Surgery",category:"Root Canal / Endodontics",standardVisits:2,visitNo:2,stageType:"TI/C",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"SINGLE_CROWN",procedureName:"Single Crown",category:"Crowns & Bridges",standardVisits:3,visitNo:1,stageType:"R",stageCode:"PREPARATION_SCAN_IMPRESSION",stageName:"Preparation + Scan/Impression",completesTreatment:false},
+  {procedureCode:"SINGLE_CROWN",procedureName:"Single Crown",category:"Crowns & Bridges",standardVisits:3,visitNo:2,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"SINGLE_CROWN",procedureName:"Single Crown",category:"Crowns & Bridges",standardVisits:3,visitNo:3,stageType:"C",stageCode:"FINAL_FITTING",stageName:"Final Fitting",completesTreatment:true},
+  {procedureCode:"MULTIPLE_CROWNS",procedureName:"Multiple Crowns",category:"Crowns & Bridges",standardVisits:4,visitNo:1,stageType:"R",stageCode:"PREPARATION",stageName:"Preparation",completesTreatment:false},
+  {procedureCode:"MULTIPLE_CROWNS",procedureName:"Multiple Crowns",category:"Crowns & Bridges",standardVisits:4,visitNo:2,stageType:"TI",stageCode:"PROVISIONAL_TRY_IN",stageName:"Provisional/Try-In",completesTreatment:false},
+  {procedureCode:"MULTIPLE_CROWNS",procedureName:"Multiple Crowns",category:"Crowns & Bridges",standardVisits:4,visitNo:3,stageType:"TI",stageCode:"FINAL_TRY_IN",stageName:"Final Try-In",completesTreatment:false},
+  {procedureCode:"MULTIPLE_CROWNS",procedureName:"Multiple Crowns",category:"Crowns & Bridges",standardVisits:4,visitNo:4,stageType:"C",stageCode:"FITTING",stageName:"Fitting",completesTreatment:true},
+  {procedureCode:"CROWN_REPLACEMENT",procedureName:"Crown Replacement",category:"Crowns & Bridges",standardVisits:3,visitNo:1,stageType:"R",stageCode:"REMOVE_PREPARE",stageName:"Remove + Prepare",completesTreatment:false},
+  {procedureCode:"CROWN_REPLACEMENT",procedureName:"Crown Replacement",category:"Crowns & Bridges",standardVisits:3,visitNo:2,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"CROWN_REPLACEMENT",procedureName:"Crown Replacement",category:"Crowns & Bridges",standardVisits:3,visitNo:3,stageType:"C",stageCode:"FITTING",stageName:"Fitting",completesTreatment:true},
+  {procedureCode:"TEMPORARY_CROWN",procedureName:"Temporary Crown",category:"Crowns & Bridges",standardVisits:1,visitNo:1,stageType:"R/C",stageCode:"PREPARATION_TEMPORARY",stageName:"Preparation + Temporary",completesTreatment:true},
+  {procedureCode:"SINGLE_BRIDGE",procedureName:"Single Bridge",category:"Crowns & Bridges",standardVisits:3,visitNo:1,stageType:"R",stageCode:"PREPARATION_SCAN_IMPRESSION",stageName:"Preparation + Scan/Impression",completesTreatment:false},
+  {procedureCode:"SINGLE_BRIDGE",procedureName:"Single Bridge",category:"Crowns & Bridges",standardVisits:3,visitNo:2,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"SINGLE_BRIDGE",procedureName:"Single Bridge",category:"Crowns & Bridges",standardVisits:3,visitNo:3,stageType:"C",stageCode:"FITTING",stageName:"Fitting",completesTreatment:true},
+  {procedureCode:"MULTIPLE_UNIT_BRIDGE",procedureName:"Multiple-Unit Bridge",category:"Crowns & Bridges",standardVisits:4,visitNo:1,stageType:"R",stageCode:"PREPARATION",stageName:"Preparation",completesTreatment:false},
+  {procedureCode:"MULTIPLE_UNIT_BRIDGE",procedureName:"Multiple-Unit Bridge",category:"Crowns & Bridges",standardVisits:4,visitNo:2,stageType:"TI",stageCode:"FRAMEWORK_TRY_IN",stageName:"Framework/Try-In",completesTreatment:false},
+  {procedureCode:"MULTIPLE_UNIT_BRIDGE",procedureName:"Multiple-Unit Bridge",category:"Crowns & Bridges",standardVisits:4,visitNo:3,stageType:"TI",stageCode:"FINAL_TRY_IN",stageName:"Final Try-In",completesTreatment:false},
+  {procedureCode:"MULTIPLE_UNIT_BRIDGE",procedureName:"Multiple-Unit Bridge",category:"Crowns & Bridges",standardVisits:4,visitNo:4,stageType:"C",stageCode:"FITTING",stageName:"Fitting",completesTreatment:true},
+  {procedureCode:"BRIDGE_REPLACEMENT",procedureName:"Bridge Replacement",category:"Crowns & Bridges",standardVisits:3,visitNo:1,stageType:"R",stageCode:"REMOVE_PREPARE",stageName:"Remove + Prepare",completesTreatment:false},
+  {procedureCode:"BRIDGE_REPLACEMENT",procedureName:"Bridge Replacement",category:"Crowns & Bridges",standardVisits:3,visitNo:2,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"BRIDGE_REPLACEMENT",procedureName:"Bridge Replacement",category:"Crowns & Bridges",standardVisits:3,visitNo:3,stageType:"C",stageCode:"FITTING",stageName:"Fitting",completesTreatment:true},
+  {procedureCode:"TEMPORARY_BRIDGE",procedureName:"Temporary Bridge",category:"Crowns & Bridges",standardVisits:1,visitNo:1,stageType:"R/C",stageCode:"PREPARATION_TEMPORARY",stageName:"Preparation + Temporary",completesTreatment:true},
+  {procedureCode:"POST_AND_CORE",procedureName:"Post & Core",category:"Crowns & Bridges",standardVisits:2,visitNo:1,stageType:"R",stageCode:"POST_PREPARATION",stageName:"Post Preparation",completesTreatment:false},
+  {procedureCode:"POST_AND_CORE",procedureName:"Post & Core",category:"Crowns & Bridges",standardVisits:2,visitNo:2,stageType:"C",stageCode:"POST_CORE",stageName:"Post/Core",completesTreatment:true},
+  {procedureCode:"CROWN_ON_POST_AND_CORE",procedureName:"Crown on Post & Core",category:"Crowns & Bridges",standardVisits:3,visitNo:1,stageType:"R",stageCode:"CROWN_PREPARATION",stageName:"Crown Preparation",completesTreatment:false},
+  {procedureCode:"CROWN_ON_POST_AND_CORE",procedureName:"Crown on Post & Core",category:"Crowns & Bridges",standardVisits:3,visitNo:2,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"CROWN_ON_POST_AND_CORE",procedureName:"Crown on Post & Core",category:"Crowns & Bridges",standardVisits:3,visitNo:3,stageType:"C",stageCode:"FITTING",stageName:"Fitting",completesTreatment:true},
+  {procedureCode:"SINGLE_VENEER",procedureName:"Single Veneer",category:"Veneers & Aesthetic Restorations",standardVisits:3,visitNo:1,stageType:"R",stageCode:"PREPARATION_SCAN_IMPRESSION",stageName:"Preparation + Scan/Impression",completesTreatment:false},
+  {procedureCode:"SINGLE_VENEER",procedureName:"Single Veneer",category:"Veneers & Aesthetic Restorations",standardVisits:3,visitNo:2,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"SINGLE_VENEER",procedureName:"Single Veneer",category:"Veneers & Aesthetic Restorations",standardVisits:3,visitNo:3,stageType:"C",stageCode:"BONDING",stageName:"Bonding",completesTreatment:true},
+  {procedureCode:"MULTIPLE_VENEERS",procedureName:"Multiple Veneers",category:"Veneers & Aesthetic Restorations",standardVisits:4,visitNo:1,stageType:"P/R",stageCode:"PLANNING_PREPARATION",stageName:"Planning + Preparation",completesTreatment:false},
+  {procedureCode:"MULTIPLE_VENEERS",procedureName:"Multiple Veneers",category:"Veneers & Aesthetic Restorations",standardVisits:4,visitNo:2,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"MULTIPLE_VENEERS",procedureName:"Multiple Veneers",category:"Veneers & Aesthetic Restorations",standardVisits:4,visitNo:3,stageType:"C",stageCode:"BONDING",stageName:"Bonding",completesTreatment:false},
+  {procedureCode:"MULTIPLE_VENEERS",procedureName:"Multiple Veneers",category:"Veneers & Aesthetic Restorations",standardVisits:4,visitNo:4,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"COMPOSITE_VENEER",procedureName:"Composite Veneer",category:"Veneers & Aesthetic Restorations",standardVisits:1,visitNo:1,stageType:"T/C",stageCode:"PREPARATION_COMPOSITE",stageName:"Preparation + Composite",completesTreatment:true},
+  {procedureCode:"SMILE_MAKEOVER",procedureName:"Smile Makeover",category:"Veneers & Aesthetic Restorations",standardVisits:4,visitNo:1,stageType:"P",stageCode:"SMILE_DESIGN",stageName:"Smile Design",completesTreatment:false},
+  {procedureCode:"SMILE_MAKEOVER",procedureName:"Smile Makeover",category:"Veneers & Aesthetic Restorations",standardVisits:4,visitNo:2,stageType:"R",stageCode:"PREPARATION_PROVISIONALS",stageName:"Preparation + Provisionals",completesTreatment:false},
+  {procedureCode:"SMILE_MAKEOVER",procedureName:"Smile Makeover",category:"Veneers & Aesthetic Restorations",standardVisits:4,visitNo:3,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"SMILE_MAKEOVER",procedureName:"Smile Makeover",category:"Veneers & Aesthetic Restorations",standardVisits:4,visitNo:4,stageType:"C",stageCode:"FINAL_BONDING",stageName:"Final Bonding",completesTreatment:true},
+  {procedureCode:"WHITENING_VENEERS",procedureName:"Whitening + Veneers",category:"Veneers & Aesthetic Restorations",standardVisits:4,visitNo:1,stageType:"P/T",stageCode:"ASSESSMENT_WHITENING",stageName:"Assessment + Whitening",completesTreatment:false},
+  {procedureCode:"WHITENING_VENEERS",procedureName:"Whitening + Veneers",category:"Veneers & Aesthetic Restorations",standardVisits:4,visitNo:2,stageType:"R",stageCode:"PREPARATION",stageName:"Preparation",completesTreatment:false},
+  {procedureCode:"WHITENING_VENEERS",procedureName:"Whitening + Veneers",category:"Veneers & Aesthetic Restorations",standardVisits:4,visitNo:3,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"WHITENING_VENEERS",procedureName:"Whitening + Veneers",category:"Veneers & Aesthetic Restorations",standardVisits:4,visitNo:4,stageType:"C",stageCode:"BONDING",stageName:"Bonding",completesTreatment:true},
+  {procedureCode:"DIASTEMA_CLOSURE",procedureName:"Diastema Closure",category:"Veneers & Aesthetic Restorations",standardVisits:2,visitNo:1,stageType:"T/C",stageCode:"CLOSURE",stageName:"Closure",completesTreatment:false},
+  {procedureCode:"DIASTEMA_CLOSURE",procedureName:"Diastema Closure",category:"Veneers & Aesthetic Restorations",standardVisits:2,visitNo:2,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"AESTHETIC_RECONTOURING",procedureName:"Aesthetic Recontouring",category:"Veneers & Aesthetic Restorations",standardVisits:1,visitNo:1,stageType:"T/C",stageCode:"RECONTOURING",stageName:"Recontouring",completesTreatment:true},
+  {procedureCode:"SIMPLE_EXTRACTION",procedureName:"Simple Extraction",category:"Extractions & Oral Surgery",standardVisits:1,visitNo:1,stageType:"T/C",stageCode:"EXTRACTION",stageName:"Extraction",completesTreatment:true},
+  {procedureCode:"SURGICAL_EXTRACTION",procedureName:"Surgical Extraction",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:1,stageType:"T",stageCode:"SURGERY",stageName:"Surgery",completesTreatment:false},
+  {procedureCode:"SURGICAL_EXTRACTION",procedureName:"Surgical Extraction",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:2,stageType:"TI/C",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"WISDOM_TOOTH_EXTRACTION",procedureName:"Wisdom Tooth Extraction",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:1,stageType:"T",stageCode:"EXTRACTION",stageName:"Extraction",completesTreatment:false},
+  {procedureCode:"WISDOM_TOOTH_EXTRACTION",procedureName:"Wisdom Tooth Extraction",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:2,stageType:"TI/C",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"SURGICAL_WISDOM_TOOTH_REMOVAL",procedureName:"Surgical Wisdom Tooth Removal",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:1,stageType:"T",stageCode:"SURGERY",stageName:"Surgery",completesTreatment:false},
+  {procedureCode:"SURGICAL_WISDOM_TOOTH_REMOVAL",procedureName:"Surgical Wisdom Tooth Removal",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:2,stageType:"TI/C",stageCode:"REVIEW_SUTURE_REMOVAL",stageName:"Review/Suture Removal",completesTreatment:true},
+  {procedureCode:"APICOECTOMY",procedureName:"Apicoectomy",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:1,stageType:"T",stageCode:"SURGERY",stageName:"Surgery",completesTreatment:false},
+  {procedureCode:"APICOECTOMY",procedureName:"Apicoectomy",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:2,stageType:"TI/C",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"FRENECTOMY",procedureName:"Frenectomy",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:1,stageType:"T",stageCode:"PROCEDURE",stageName:"Procedure",completesTreatment:false},
+  {procedureCode:"FRENECTOMY",procedureName:"Frenectomy",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:2,stageType:"TI/C",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"SOFT_TISSUE_PROCEDURE",procedureName:"Soft Tissue Procedure",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:1,stageType:"T",stageCode:"PROCEDURE",stageName:"Procedure",completesTreatment:false},
+  {procedureCode:"SOFT_TISSUE_PROCEDURE",procedureName:"Soft Tissue Procedure",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:2,stageType:"TI/C",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"BIOPSY",procedureName:"Biopsy",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:1,stageType:"T",stageCode:"BIOPSY",stageName:"Biopsy",completesTreatment:false},
+  {procedureCode:"BIOPSY",procedureName:"Biopsy",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:2,stageType:"C",stageCode:"REVIEW_REPORT",stageName:"Review/Report",completesTreatment:true},
+  {procedureCode:"ALVEOLOPLASTY",procedureName:"Alveoloplasty",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:1,stageType:"T",stageCode:"PROCEDURE",stageName:"Procedure",completesTreatment:false},
+  {procedureCode:"ALVEOLOPLASTY",procedureName:"Alveoloplasty",category:"Extractions & Oral Surgery",standardVisits:2,visitNo:2,stageType:"TI/C",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"IMPLANT_CONSULTATION",procedureName:"Implant Consultation",category:"Implant Dentistry",standardVisits:1,visitNo:1,stageType:"P",stageCode:"ASSESSMENT_PLANNING",stageName:"Assessment + Planning",completesTreatment:true},
+  {procedureCode:"IMPLANT_PLANNING",procedureName:"Implant Planning",category:"Implant Dentistry",standardVisits:2,visitNo:1,stageType:"P",stageCode:"RECORDS_IMAGING",stageName:"Records + Imaging",completesTreatment:false},
+  {procedureCode:"IMPLANT_PLANNING",procedureName:"Implant Planning",category:"Implant Dentistry",standardVisits:2,visitNo:2,stageType:"P",stageCode:"TREATMENT_PLAN",stageName:"Treatment Plan",completesTreatment:true},
+  {procedureCode:"SINGLE_IMPLANT_PLACEMENT",procedureName:"Single Implant Placement",category:"Implant Dentistry",standardVisits:3,visitNo:1,stageType:"T",stageCode:"IMPLANT_PLACEMENT",stageName:"Implant Placement",completesTreatment:false},
+  {procedureCode:"SINGLE_IMPLANT_PLACEMENT",procedureName:"Single Implant Placement",category:"Implant Dentistry",standardVisits:3,visitNo:2,stageType:"TI",stageCode:"HEALING_REVIEW",stageName:"Healing Review",completesTreatment:false},
+  {procedureCode:"SINGLE_IMPLANT_PLACEMENT",procedureName:"Single Implant Placement",category:"Implant Dentistry",standardVisits:3,visitNo:3,stageType:"TI",stageCode:"IMPLANT_REVIEW",stageName:"Implant Review",completesTreatment:true},
+  {procedureCode:"MULTIPLE_IMPLANT_PLACEMENT",procedureName:"Multiple Implant Placement",category:"Implant Dentistry",standardVisits:3,visitNo:1,stageType:"T",stageCode:"IMPLANT_PLACEMENT",stageName:"Implant Placement",completesTreatment:false},
+  {procedureCode:"MULTIPLE_IMPLANT_PLACEMENT",procedureName:"Multiple Implant Placement",category:"Implant Dentistry",standardVisits:3,visitNo:2,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:false},
+  {procedureCode:"MULTIPLE_IMPLANT_PLACEMENT",procedureName:"Multiple Implant Placement",category:"Implant Dentistry",standardVisits:3,visitNo:3,stageType:"TI",stageCode:"HEALING",stageName:"Healing",completesTreatment:true},
+  {procedureCode:"BONE_GRAFTING",procedureName:"Bone Grafting",category:"Implant Dentistry",standardVisits:3,visitNo:1,stageType:"T",stageCode:"GRAFTING",stageName:"Grafting",completesTreatment:false},
+  {procedureCode:"BONE_GRAFTING",procedureName:"Bone Grafting",category:"Implant Dentistry",standardVisits:3,visitNo:2,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:false},
+  {procedureCode:"BONE_GRAFTING",procedureName:"Bone Grafting",category:"Implant Dentistry",standardVisits:3,visitNo:3,stageType:"TI",stageCode:"HEALING",stageName:"Healing",completesTreatment:true},
+  {procedureCode:"SINUS_LIFT",procedureName:"Sinus Lift",category:"Implant Dentistry",standardVisits:3,visitNo:1,stageType:"T",stageCode:"SINUS_LIFT",stageName:"Sinus Lift",completesTreatment:false},
+  {procedureCode:"SINUS_LIFT",procedureName:"Sinus Lift",category:"Implant Dentistry",standardVisits:3,visitNo:2,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:false},
+  {procedureCode:"SINUS_LIFT",procedureName:"Sinus Lift",category:"Implant Dentistry",standardVisits:3,visitNo:3,stageType:"TI",stageCode:"HEALING",stageName:"Healing",completesTreatment:true},
+  {procedureCode:"IMPLANT_CROWN",procedureName:"Implant + Crown",category:"Implant Dentistry",standardVisits:5,visitNo:1,stageType:"T",stageCode:"IMPLANT_PLACEMENT",stageName:"Implant Placement",completesTreatment:false},
+  {procedureCode:"IMPLANT_CROWN",procedureName:"Implant + Crown",category:"Implant Dentistry",standardVisits:5,visitNo:2,stageType:"TI",stageCode:"HEALING",stageName:"Healing",completesTreatment:false},
+  {procedureCode:"IMPLANT_CROWN",procedureName:"Implant + Crown",category:"Implant Dentistry",standardVisits:5,visitNo:3,stageType:"R",stageCode:"SCAN_IMPRESSION",stageName:"Scan/Impression",completesTreatment:false},
+  {procedureCode:"IMPLANT_CROWN",procedureName:"Implant + Crown",category:"Implant Dentistry",standardVisits:5,visitNo:4,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"IMPLANT_CROWN",procedureName:"Implant + Crown",category:"Implant Dentistry",standardVisits:5,visitNo:5,stageType:"C",stageCode:"FITTING",stageName:"Fitting",completesTreatment:true},
+  {procedureCode:"IMPLANT_BRIDGE",procedureName:"Implant + Bridge",category:"Implant Dentistry",standardVisits:5,visitNo:1,stageType:"T",stageCode:"IMPLANT_PLACEMENT",stageName:"Implant Placement",completesTreatment:false},
+  {procedureCode:"IMPLANT_BRIDGE",procedureName:"Implant + Bridge",category:"Implant Dentistry",standardVisits:5,visitNo:2,stageType:"TI",stageCode:"HEALING",stageName:"Healing",completesTreatment:false},
+  {procedureCode:"IMPLANT_BRIDGE",procedureName:"Implant + Bridge",category:"Implant Dentistry",standardVisits:5,visitNo:3,stageType:"R",stageCode:"SCAN_IMPRESSION",stageName:"Scan/Impression",completesTreatment:false},
+  {procedureCode:"IMPLANT_BRIDGE",procedureName:"Implant + Bridge",category:"Implant Dentistry",standardVisits:5,visitNo:4,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"IMPLANT_BRIDGE",procedureName:"Implant + Bridge",category:"Implant Dentistry",standardVisits:5,visitNo:5,stageType:"C",stageCode:"FITTING",stageName:"Fitting",completesTreatment:true},
+  {procedureCode:"IMPLANT_SUPPORTED_DENTURE",procedureName:"Implant-Supported Denture",category:"Implant Dentistry",standardVisits:5,visitNo:1,stageType:"P",stageCode:"PLANNING",stageName:"Planning",completesTreatment:false},
+  {procedureCode:"IMPLANT_SUPPORTED_DENTURE",procedureName:"Implant-Supported Denture",category:"Implant Dentistry",standardVisits:5,visitNo:2,stageType:"T",stageCode:"IMPLANT_PLACEMENT",stageName:"Implant Placement",completesTreatment:false},
+  {procedureCode:"IMPLANT_SUPPORTED_DENTURE",procedureName:"Implant-Supported Denture",category:"Implant Dentistry",standardVisits:5,visitNo:3,stageType:"TI",stageCode:"HEALING",stageName:"Healing",completesTreatment:false},
+  {procedureCode:"IMPLANT_SUPPORTED_DENTURE",procedureName:"Implant-Supported Denture",category:"Implant Dentistry",standardVisits:5,visitNo:4,stageType:"R/TI",stageCode:"IMPRESSION_TRY_IN",stageName:"Impression + Try-In",completesTreatment:false},
+  {procedureCode:"IMPLANT_SUPPORTED_DENTURE",procedureName:"Implant-Supported Denture",category:"Implant Dentistry",standardVisits:5,visitNo:5,stageType:"C",stageCode:"DELIVERY",stageName:"Delivery",completesTreatment:true},
+  {procedureCode:"IMPLANT_CROWN_REPLACEMENT",procedureName:"Implant Crown Replacement",category:"Implant Dentistry",standardVisits:3,visitNo:1,stageType:"R",stageCode:"SCAN_IMPRESSION",stageName:"Scan/Impression",completesTreatment:false},
+  {procedureCode:"IMPLANT_CROWN_REPLACEMENT",procedureName:"Implant Crown Replacement",category:"Implant Dentistry",standardVisits:3,visitNo:2,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"IMPLANT_CROWN_REPLACEMENT",procedureName:"Implant Crown Replacement",category:"Implant Dentistry",standardVisits:3,visitNo:3,stageType:"C",stageCode:"FITTING",stageName:"Fitting",completesTreatment:true},
+  {procedureCode:"IMPLANT_REVIEW",procedureName:"Implant Review",category:"Implant Dentistry",standardVisits:1,visitNo:1,stageType:"TI",stageCode:"IMPLANT_ASSESSMENT",stageName:"Implant Assessment",completesTreatment:true},
+  {procedureCode:"COMPLETE_DENTURE",procedureName:"Complete Denture",category:"Dentures",standardVisits:5,visitNo:1,stageType:"R",stageCode:"PRIMARY_IMPRESSION",stageName:"Primary Impression",completesTreatment:false},
+  {procedureCode:"COMPLETE_DENTURE",procedureName:"Complete Denture",category:"Dentures",standardVisits:5,visitNo:2,stageType:"R",stageCode:"FINAL_IMPRESSION",stageName:"Final Impression",completesTreatment:false},
+  {procedureCode:"COMPLETE_DENTURE",procedureName:"Complete Denture",category:"Dentures",standardVisits:5,visitNo:3,stageType:"R",stageCode:"JAW_RELATION",stageName:"Jaw Relation",completesTreatment:false},
+  {procedureCode:"COMPLETE_DENTURE",procedureName:"Complete Denture",category:"Dentures",standardVisits:5,visitNo:4,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"COMPLETE_DENTURE",procedureName:"Complete Denture",category:"Dentures",standardVisits:5,visitNo:5,stageType:"C",stageCode:"DELIVERY",stageName:"Delivery",completesTreatment:true},
+  {procedureCode:"IMMEDIATE_DENTURE",procedureName:"Immediate Denture",category:"Dentures",standardVisits:4,visitNo:1,stageType:"R",stageCode:"IMPRESSION_PLANNING",stageName:"Impression + Planning",completesTreatment:false},
+  {procedureCode:"IMMEDIATE_DENTURE",procedureName:"Immediate Denture",category:"Dentures",standardVisits:4,visitNo:2,stageType:"T/C",stageCode:"EXTRACTION_DELIVERY",stageName:"Extraction + Delivery",completesTreatment:false},
+  {procedureCode:"IMMEDIATE_DENTURE",procedureName:"Immediate Denture",category:"Dentures",standardVisits:4,visitNo:3,stageType:"TI",stageCode:"ADJUSTMENT",stageName:"Adjustment",completesTreatment:false},
+  {procedureCode:"IMMEDIATE_DENTURE",procedureName:"Immediate Denture",category:"Dentures",standardVisits:4,visitNo:4,stageType:"C",stageCode:"FINAL_ADJUSTMENT",stageName:"Final Adjustment",completesTreatment:true},
+  {procedureCode:"ACRYLIC_PARTIAL_DENTURE",procedureName:"Acrylic Partial Denture",category:"Dentures",standardVisits:4,visitNo:1,stageType:"R",stageCode:"IMPRESSION",stageName:"Impression",completesTreatment:false},
+  {procedureCode:"ACRYLIC_PARTIAL_DENTURE",procedureName:"Acrylic Partial Denture",category:"Dentures",standardVisits:4,visitNo:2,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"ACRYLIC_PARTIAL_DENTURE",procedureName:"Acrylic Partial Denture",category:"Dentures",standardVisits:4,visitNo:3,stageType:"TI",stageCode:"ADJUSTMENT",stageName:"Adjustment",completesTreatment:false},
+  {procedureCode:"ACRYLIC_PARTIAL_DENTURE",procedureName:"Acrylic Partial Denture",category:"Dentures",standardVisits:4,visitNo:4,stageType:"C",stageCode:"DELIVERY",stageName:"Delivery",completesTreatment:true},
+  {procedureCode:"CAST_PARTIAL_DENTURE",procedureName:"Cast Partial Denture",category:"Dentures",standardVisits:5,visitNo:1,stageType:"R",stageCode:"PREPARATION_IMPRESSION",stageName:"Preparation + Impression",completesTreatment:false},
+  {procedureCode:"CAST_PARTIAL_DENTURE",procedureName:"Cast Partial Denture",category:"Dentures",standardVisits:5,visitNo:2,stageType:"TI",stageCode:"FRAMEWORK",stageName:"Framework",completesTreatment:false},
+  {procedureCode:"CAST_PARTIAL_DENTURE",procedureName:"Cast Partial Denture",category:"Dentures",standardVisits:5,visitNo:3,stageType:"R",stageCode:"BITE_REGISTRATION",stageName:"Bite Registration",completesTreatment:false},
+  {procedureCode:"CAST_PARTIAL_DENTURE",procedureName:"Cast Partial Denture",category:"Dentures",standardVisits:5,visitNo:4,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"CAST_PARTIAL_DENTURE",procedureName:"Cast Partial Denture",category:"Dentures",standardVisits:5,visitNo:5,stageType:"C",stageCode:"DELIVERY",stageName:"Delivery",completesTreatment:true},
+  {procedureCode:"FLEXIBLE_PARTIAL_DENTURE",procedureName:"Flexible Partial Denture",category:"Dentures",standardVisits:4,visitNo:1,stageType:"R",stageCode:"IMPRESSION",stageName:"Impression",completesTreatment:false},
+  {procedureCode:"FLEXIBLE_PARTIAL_DENTURE",procedureName:"Flexible Partial Denture",category:"Dentures",standardVisits:4,visitNo:2,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"FLEXIBLE_PARTIAL_DENTURE",procedureName:"Flexible Partial Denture",category:"Dentures",standardVisits:4,visitNo:3,stageType:"TI",stageCode:"ADJUSTMENT",stageName:"Adjustment",completesTreatment:false},
+  {procedureCode:"FLEXIBLE_PARTIAL_DENTURE",procedureName:"Flexible Partial Denture",category:"Dentures",standardVisits:4,visitNo:4,stageType:"C",stageCode:"DELIVERY",stageName:"Delivery",completesTreatment:true},
+  {procedureCode:"DENTURE_RELINING",procedureName:"Denture Relining",category:"Dentures",standardVisits:2,visitNo:1,stageType:"R",stageCode:"IMPRESSION",stageName:"Impression",completesTreatment:false},
+  {procedureCode:"DENTURE_RELINING",procedureName:"Denture Relining",category:"Dentures",standardVisits:2,visitNo:2,stageType:"C",stageCode:"DELIVERY",stageName:"Delivery",completesTreatment:true},
+  {procedureCode:"DENTURE_REBASING",procedureName:"Denture Rebasing",category:"Dentures",standardVisits:2,visitNo:1,stageType:"R",stageCode:"IMPRESSION",stageName:"Impression",completesTreatment:false},
+  {procedureCode:"DENTURE_REBASING",procedureName:"Denture Rebasing",category:"Dentures",standardVisits:2,visitNo:2,stageType:"C",stageCode:"DELIVERY",stageName:"Delivery",completesTreatment:true},
+  {procedureCode:"DENTURE_REPAIR",procedureName:"Denture Repair",category:"Dentures",standardVisits:2,visitNo:1,stageType:"R/T",stageCode:"ASSESSMENT_REPAIR",stageName:"Assessment + Repair",completesTreatment:false},
+  {procedureCode:"DENTURE_REPAIR",procedureName:"Denture Repair",category:"Dentures",standardVisits:2,visitNo:2,stageType:"C",stageCode:"DELIVERY",stageName:"Delivery",completesTreatment:true},
+  {procedureCode:"DENTURE_ADJUSTMENT",procedureName:"Denture Adjustment",category:"Dentures",standardVisits:2,visitNo:1,stageType:"TI",stageCode:"ASSESSMENT_ADJUSTMENT",stageName:"Assessment + Adjustment",completesTreatment:false},
+  {procedureCode:"DENTURE_ADJUSTMENT",procedureName:"Denture Adjustment",category:"Dentures",standardVisits:2,visitNo:2,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"IN_OFFICE_BLEACHING",procedureName:"In-Office Bleaching",category:"Bleaching & Cosmetic",standardVisits:2,visitNo:1,stageType:"T",stageCode:"BLEACHING",stageName:"Bleaching",completesTreatment:false},
+  {procedureCode:"IN_OFFICE_BLEACHING",procedureName:"In-Office Bleaching",category:"Bleaching & Cosmetic",standardVisits:2,visitNo:2,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"TAKE_HOME_BLEACHING",procedureName:"Take-Home Bleaching",category:"Bleaching & Cosmetic",standardVisits:2,visitNo:1,stageType:"R",stageCode:"SCAN_IMPRESSION",stageName:"Scan/Impression",completesTreatment:false},
+  {procedureCode:"TAKE_HOME_BLEACHING",procedureName:"Take-Home Bleaching",category:"Bleaching & Cosmetic",standardVisits:2,visitNo:2,stageType:"C",stageCode:"TRAY_DELIVERY",stageName:"Tray Delivery",completesTreatment:true},
+  {procedureCode:"COMBINATION_BLEACHING",procedureName:"Combination Bleaching",category:"Bleaching & Cosmetic",standardVisits:3,visitNo:1,stageType:"T",stageCode:"IN_OFFICE",stageName:"In-Office",completesTreatment:false},
+  {procedureCode:"COMBINATION_BLEACHING",procedureName:"Combination Bleaching",category:"Bleaching & Cosmetic",standardVisits:3,visitNo:2,stageType:"C",stageCode:"HOME_KIT",stageName:"Home Kit",completesTreatment:false},
+  {procedureCode:"COMBINATION_BLEACHING",procedureName:"Combination Bleaching",category:"Bleaching & Cosmetic",standardVisits:3,visitNo:3,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"WHITENING_REVIEW",procedureName:"Whitening Review",category:"Bleaching & Cosmetic",standardVisits:1,visitNo:1,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"COSMETIC_CONSULTATION",procedureName:"Cosmetic Consultation",category:"Bleaching & Cosmetic",standardVisits:1,visitNo:1,stageType:"P",stageCode:"ASSESSMENT_PLANNING",stageName:"Assessment + Planning",completesTreatment:true},
+  {procedureCode:"ORTHODONTIC_CONSULTATION",procedureName:"Orthodontic Consultation",category:"Orthodontics",standardVisits:1,visitNo:1,stageType:"P",stageCode:"EXAMINATION_PLANNING",stageName:"Examination + Planning",completesTreatment:true},
+  {procedureCode:"ORTHODONTIC_RECORDS",procedureName:"Orthodontic Records",category:"Orthodontics",standardVisits:1,visitNo:1,stageType:"P",stageCode:"RECORDS",stageName:"Records",completesTreatment:true},
+  {procedureCode:"FIXED_BRACES_INITIAL",procedureName:"Fixed Braces \u2013 Initial",category:"Orthodontics",standardVisits:2,visitNo:1,stageType:"P",stageCode:"PLANNING",stageName:"Planning",completesTreatment:false},
+  {procedureCode:"FIXED_BRACES_INITIAL",procedureName:"Fixed Braces \u2013 Initial",category:"Orthodontics",standardVisits:2,visitNo:2,stageType:"T",stageCode:"BONDING",stageName:"Bonding",completesTreatment:true},
+  {procedureCode:"FIXED_BRACES_ADJUSTMENT",procedureName:"Fixed Braces \u2013 Adjustment",category:"Orthodontics",standardVisits:1,visitNo:1,stageType:"T/TI",stageCode:"ADJUSTMENT",stageName:"Adjustment",completesTreatment:true},
+  {procedureCode:"CLEAR_ALIGNERS_PLANNING",procedureName:"Clear Aligners \u2013 Planning",category:"Orthodontics",standardVisits:3,visitNo:1,stageType:"P",stageCode:"RECORDS_SCAN",stageName:"Records + Scan",completesTreatment:false},
+  {procedureCode:"CLEAR_ALIGNERS_PLANNING",procedureName:"Clear Aligners \u2013 Planning",category:"Orthodontics",standardVisits:3,visitNo:2,stageType:"P",stageCode:"TREATMENT_PLAN",stageName:"Treatment Plan",completesTreatment:false},
+  {procedureCode:"CLEAR_ALIGNERS_PLANNING",procedureName:"Clear Aligners \u2013 Planning",category:"Orthodontics",standardVisits:3,visitNo:3,stageType:"C",stageCode:"PLAN_APPROVAL",stageName:"Plan Approval",completesTreatment:true},
+  {procedureCode:"CLEAR_ALIGNER_DELIVERY",procedureName:"Clear Aligner Delivery",category:"Orthodontics",standardVisits:1,visitNo:1,stageType:"C",stageCode:"ALIGNER_DELIVERY_INSTRUCTIONS",stageName:"Aligner Delivery + Instructions",completesTreatment:true},
+  {procedureCode:"CLEAR_ALIGNER_REVIEW",procedureName:"Clear Aligner Review",category:"Orthodontics",standardVisits:1,visitNo:1,stageType:"TI",stageCode:"REVIEW_CHANGE",stageName:"Review + Change",completesTreatment:true},
+  {procedureCode:"RETAINER",procedureName:"Retainer",category:"Orthodontics",standardVisits:2,visitNo:1,stageType:"R",stageCode:"SCAN_IMPRESSION",stageName:"Scan/Impression",completesTreatment:false},
+  {procedureCode:"RETAINER",procedureName:"Retainer",category:"Orthodontics",standardVisits:2,visitNo:2,stageType:"C",stageCode:"DELIVERY",stageName:"Delivery",completesTreatment:true},
+  {procedureCode:"RETAINER_REVIEW",procedureName:"Retainer Review",category:"Orthodontics",standardVisits:1,visitNo:1,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"OCCLUSAL_ASSESSMENT",procedureName:"Occlusal Assessment",category:"Occlusion / TMD / Protective Appliances",standardVisits:1,visitNo:1,stageType:"P",stageCode:"ASSESSMENT",stageName:"Assessment",completesTreatment:true},
+  {procedureCode:"OCCLUSAL_ADJUSTMENT",procedureName:"Occlusal Adjustment",category:"Occlusion / TMD / Protective Appliances",standardVisits:2,visitNo:1,stageType:"T",stageCode:"ADJUSTMENT",stageName:"Adjustment",completesTreatment:false},
+  {procedureCode:"OCCLUSAL_ADJUSTMENT",procedureName:"Occlusal Adjustment",category:"Occlusion / TMD / Protective Appliances",standardVisits:2,visitNo:2,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"NIGHT_GUARD",procedureName:"Night Guard",category:"Occlusion / TMD / Protective Appliances",standardVisits:2,visitNo:1,stageType:"R",stageCode:"SCAN_IMPRESSION",stageName:"Scan/Impression",completesTreatment:false},
+  {procedureCode:"NIGHT_GUARD",procedureName:"Night Guard",category:"Occlusion / TMD / Protective Appliances",standardVisits:2,visitNo:2,stageType:"C",stageCode:"DELIVERY_ADJUSTMENT",stageName:"Delivery + Adjustment",completesTreatment:true},
+  {procedureCode:"OCCLUSAL_SPLINT",procedureName:"Occlusal Splint",category:"Occlusion / TMD / Protective Appliances",standardVisits:3,visitNo:1,stageType:"P/R",stageCode:"ASSESSMENT_RECORDS",stageName:"Assessment + Records",completesTreatment:false},
+  {procedureCode:"OCCLUSAL_SPLINT",procedureName:"Occlusal Splint",category:"Occlusion / TMD / Protective Appliances",standardVisits:3,visitNo:2,stageType:"C",stageCode:"DELIVERY",stageName:"Delivery",completesTreatment:false},
+  {procedureCode:"OCCLUSAL_SPLINT",procedureName:"Occlusal Splint",category:"Occlusion / TMD / Protective Appliances",standardVisits:3,visitNo:3,stageType:"TI",stageCode:"ADJUSTMENT",stageName:"Adjustment",completesTreatment:true},
+  {procedureCode:"TMD_ASSESSMENT",procedureName:"TMD Assessment",category:"Occlusion / TMD / Protective Appliances",standardVisits:2,visitNo:1,stageType:"P",stageCode:"ASSESSMENT",stageName:"Assessment",completesTreatment:false},
+  {procedureCode:"TMD_ASSESSMENT",procedureName:"TMD Assessment",category:"Occlusion / TMD / Protective Appliances",standardVisits:2,visitNo:2,stageType:"P",stageCode:"TREATMENT_PLAN",stageName:"Treatment Plan",completesTreatment:true},
+  {procedureCode:"TMD_APPLIANCE",procedureName:"TMD Appliance",category:"Occlusion / TMD / Protective Appliances",standardVisits:3,visitNo:1,stageType:"R",stageCode:"RECORDS",stageName:"Records",completesTreatment:false},
+  {procedureCode:"TMD_APPLIANCE",procedureName:"TMD Appliance",category:"Occlusion / TMD / Protective Appliances",standardVisits:3,visitNo:2,stageType:"C",stageCode:"DELIVERY",stageName:"Delivery",completesTreatment:false},
+  {procedureCode:"TMD_APPLIANCE",procedureName:"TMD Appliance",category:"Occlusion / TMD / Protective Appliances",standardVisits:3,visitNo:3,stageType:"TI",stageCode:"ADJUSTMENT",stageName:"Adjustment",completesTreatment:true},
+  {procedureCode:"SPORTS_MOUTHGUARD",procedureName:"Sports Mouthguard",category:"Occlusion / TMD / Protective Appliances",standardVisits:2,visitNo:1,stageType:"R",stageCode:"SCAN_IMPRESSION",stageName:"Scan/Impression",completesTreatment:false},
+  {procedureCode:"SPORTS_MOUTHGUARD",procedureName:"Sports Mouthguard",category:"Occlusion / TMD / Protective Appliances",standardVisits:2,visitNo:2,stageType:"C",stageCode:"DELIVERY",stageName:"Delivery",completesTreatment:true},
+  {procedureCode:"HABIT_APPLIANCE",procedureName:"Habit Appliance",category:"Occlusion / TMD / Protective Appliances",standardVisits:3,visitNo:1,stageType:"P/R",stageCode:"ASSESSMENT_RECORDS",stageName:"Assessment + Records",completesTreatment:false},
+  {procedureCode:"HABIT_APPLIANCE",procedureName:"Habit Appliance",category:"Occlusion / TMD / Protective Appliances",standardVisits:3,visitNo:2,stageType:"C",stageCode:"DELIVERY",stageName:"Delivery",completesTreatment:false},
+  {procedureCode:"HABIT_APPLIANCE",procedureName:"Habit Appliance",category:"Occlusion / TMD / Protective Appliances",standardVisits:3,visitNo:3,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"FULL_MOUTH_REHABILITATION",procedureName:"Full Mouth Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:1,stageType:"P",stageCode:"DIAGNOSIS_PLANNING",stageName:"Diagnosis + Planning",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_REHABILITATION",procedureName:"Full Mouth Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:2,stageType:"R",stageCode:"PREPARATORY_TREATMENT",stageName:"Preparatory Treatment",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_REHABILITATION",procedureName:"Full Mouth Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:3,stageType:"R",stageCode:"PREPARATIONS",stageName:"Preparations",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_REHABILITATION",procedureName:"Full Mouth Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:4,stageType:"TI",stageCode:"PROVISIONALS_TRY_IN",stageName:"Provisionals/Try-In",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_REHABILITATION",procedureName:"Full Mouth Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:5,stageType:"C",stageCode:"FINAL",stageName:"Final",completesTreatment:true},
+  {procedureCode:"FULL_MOUTH_CROWNS",procedureName:"Full Mouth Crowns",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:1,stageType:"P",stageCode:"PLANNING",stageName:"Planning",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_CROWNS",procedureName:"Full Mouth Crowns",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:2,stageType:"R",stageCode:"PREPARATION",stageName:"Preparation",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_CROWNS",procedureName:"Full Mouth Crowns",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:3,stageType:"R",stageCode:"PROVISIONALS",stageName:"Provisionals",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_CROWNS",procedureName:"Full Mouth Crowns",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:4,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_CROWNS",procedureName:"Full Mouth Crowns",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:5,stageType:"C",stageCode:"FINAL",stageName:"Final",completesTreatment:true},
+  {procedureCode:"FULL_MOUTH_VENEERS",procedureName:"Full Mouth Veneers",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:1,stageType:"P",stageCode:"SMILE_DESIGN",stageName:"Smile Design",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_VENEERS",procedureName:"Full Mouth Veneers",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:2,stageType:"R",stageCode:"PREPARATION",stageName:"Preparation",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_VENEERS",procedureName:"Full Mouth Veneers",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:3,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_VENEERS",procedureName:"Full Mouth Veneers",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:4,stageType:"C",stageCode:"BONDING",stageName:"Bonding",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_VENEERS",procedureName:"Full Mouth Veneers",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:5,stageType:"TI",stageCode:"REVIEW",stageName:"Review",completesTreatment:true},
+  {procedureCode:"FULL_MOUTH_RECONSTRUCTION",procedureName:"Full Mouth Reconstruction",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:1,stageType:"P",stageCode:"DIAGNOSIS",stageName:"Diagnosis",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_RECONSTRUCTION",procedureName:"Full Mouth Reconstruction",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:2,stageType:"T",stageCode:"DISEASE_CONTROL",stageName:"Disease Control",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_RECONSTRUCTION",procedureName:"Full Mouth Reconstruction",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:3,stageType:"R",stageCode:"PREPARATIONS",stageName:"Preparations",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_RECONSTRUCTION",procedureName:"Full Mouth Reconstruction",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:4,stageType:"TI",stageCode:"PROVISIONAL",stageName:"Provisional",completesTreatment:false},
+  {procedureCode:"FULL_MOUTH_RECONSTRUCTION",procedureName:"Full Mouth Reconstruction",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:5,stageType:"C",stageCode:"FINAL",stageName:"Final",completesTreatment:true},
+  {procedureCode:"MULTIPLE_IMPLANT_REHABILITATION",procedureName:"Multiple Implant Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:6,visitNo:1,stageType:"P",stageCode:"PLANNING",stageName:"Planning",completesTreatment:false},
+  {procedureCode:"MULTIPLE_IMPLANT_REHABILITATION",procedureName:"Multiple Implant Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:6,visitNo:2,stageType:"T",stageCode:"SURGERY",stageName:"Surgery",completesTreatment:false},
+  {procedureCode:"MULTIPLE_IMPLANT_REHABILITATION",procedureName:"Multiple Implant Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:6,visitNo:3,stageType:"TI",stageCode:"HEALING",stageName:"Healing",completesTreatment:false},
+  {procedureCode:"MULTIPLE_IMPLANT_REHABILITATION",procedureName:"Multiple Implant Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:6,visitNo:4,stageType:"R",stageCode:"RECORDS",stageName:"Records",completesTreatment:false},
+  {procedureCode:"MULTIPLE_IMPLANT_REHABILITATION",procedureName:"Multiple Implant Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:6,visitNo:5,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"MULTIPLE_IMPLANT_REHABILITATION",procedureName:"Multiple Implant Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:6,visitNo:6,stageType:"C",stageCode:"FINAL",stageName:"Final",completesTreatment:true},
+  {procedureCode:"IMPLANT_FULL_ARCH_REHABILITATION",procedureName:"Implant + Full Arch Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:1,stageType:"P",stageCode:"PLANNING",stageName:"Planning",completesTreatment:false},
+  {procedureCode:"IMPLANT_FULL_ARCH_REHABILITATION",procedureName:"Implant + Full Arch Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:2,stageType:"T",stageCode:"IMPLANT_SURGERY",stageName:"Implant Surgery",completesTreatment:false},
+  {procedureCode:"IMPLANT_FULL_ARCH_REHABILITATION",procedureName:"Implant + Full Arch Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:3,stageType:"TI",stageCode:"HEALING",stageName:"Healing",completesTreatment:false},
+  {procedureCode:"IMPLANT_FULL_ARCH_REHABILITATION",procedureName:"Implant + Full Arch Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:4,stageType:"TI",stageCode:"PROVISIONAL",stageName:"Provisional",completesTreatment:false},
+  {procedureCode:"IMPLANT_FULL_ARCH_REHABILITATION",procedureName:"Implant + Full Arch Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:5,stageType:"C",stageCode:"FINAL",stageName:"Final",completesTreatment:true},
+  {procedureCode:"COMPLEX_SMILE_REHABILITATION",procedureName:"Complex Smile Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:1,stageType:"P",stageCode:"PLANNING",stageName:"Planning",completesTreatment:false},
+  {procedureCode:"COMPLEX_SMILE_REHABILITATION",procedureName:"Complex Smile Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:2,stageType:"R",stageCode:"PREPARATION",stageName:"Preparation",completesTreatment:false},
+  {procedureCode:"COMPLEX_SMILE_REHABILITATION",procedureName:"Complex Smile Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:3,stageType:"TI",stageCode:"PROVISIONAL",stageName:"Provisional",completesTreatment:false},
+  {procedureCode:"COMPLEX_SMILE_REHABILITATION",procedureName:"Complex Smile Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:4,stageType:"TI",stageCode:"TRY_IN",stageName:"Try-In",completesTreatment:false},
+  {procedureCode:"COMPLEX_SMILE_REHABILITATION",procedureName:"Complex Smile Rehabilitation",category:"Full-Mouth / Complex Cases",standardVisits:5,visitNo:5,stageType:"C",stageCode:"FINAL",stageName:"Final",completesTreatment:true},
+];
+
+// "Stage Type" is the five-letter shorthand from the master list — P(lan) /
+// R(prepare) / T(reat) / TI (try-in or review) / C(omplete), sometimes a
+// slash-joined pair where a single visit does two things (e.g. "T/C"). It's
+// carried through for display/filtering only; every actual decision in this
+// file is keyed by the full stageCode, never by this shorthand.
+var PROCEDURE_LIBRARY_HEADERS = [
+  "Procedure Code", "Procedure Name", "Category", "Standard Visits", "Visit No.",
+  "Stage Type", "Stage Code", "Stage Name", "Completes Treatment"
+];
+
+// Seeded from PROCEDURE_LIBRARY_DEFAULTS the first time this is read — after
+// that, the sheet is the source of truth, and defaults are never written
+// again (so an edit made directly on the sheet is never overwritten).
+function getProcedureLibrary() {
+  var sh = getSheet("Procedure Library");
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(PROCEDURE_LIBRARY_HEADERS);
+    PROCEDURE_LIBRARY_DEFAULTS.forEach(function(r) {
+      sh.appendRow([r.procedureCode, r.procedureName, r.category || "", r.standardVisits, r.visitNo,
+        r.stageType || "", r.stageCode, r.stageName, r.completesTreatment]);
+    });
+  }
+  var data = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    items.push({
+      procedureCode: data[i][0], procedureName: data[i][1], category: data[i][2] || "",
+      standardVisits: Number(data[i][3]) || 0, visitNo: Number(data[i][4]) || 0,
+      stageType: data[i][5] || "", stageCode: data[i][6], stageName: data[i][7],
+      completesTreatment: data[i][8] === true || String(data[i][8]).toUpperCase() === "TRUE"
+    });
+  }
+  return { success: true, library: items };
+}
+
+// Admin-only rewrite (adding/renaming a procedure) — same clear+rewrite
+// pattern as every other master list in this file.
+function saveProcedureLibrary(p) {
+  var sh = getSheet("Procedure Library");
+  sh.clearContents();
+  sh.appendRow(PROCEDURE_LIBRARY_HEADERS);
+  var arr = [];
+  try { arr = JSON.parse(p.library); } catch (e) { if (Array.isArray(p.library)) arr = p.library; }
+  arr.forEach(function(r) {
+    sh.appendRow([r.procedureCode, r.procedureName, r.category || "", r.standardVisits, r.visitNo,
+      r.stageType || "", r.stageCode, r.stageName, !!r.completesTreatment]);
+  });
+  return { success: true };
+}
+
+// The ordered stage list for one procedure, sorted by visit number.
+function procedureLibraryStages_(procedureCode) {
+  var library = getProcedureLibrary().library;
+  return library
+    .filter(function(r) { return r.procedureCode === procedureCode; })
+    .sort(function(a, b) { return a.visitNo - b.visitNo; });
+}
+
+// Visit 1 of a brand-new case for this procedure.
+function startNewCase_(procedureCode) {
+  return newCaseFromStages_(procedureCode, procedureLibraryStages_(procedureCode));
+}
+
+// Pure form of startNewCase_, taking the stage list directly rather than
+// fetching it — this is what's actually unit-tested, since the library fetch
+// needs a live Spreadsheet.
+function newCaseFromStages_(procedureCode, stages) {
+  if (!stages.length) return null;
+  var first = stages[0];
+  return {
+    procedureCode: procedureCode, procedureName: first.procedureName,
+    visitNo: 1, totalVisits: first.standardVisits,
+    stageCode: first.stageCode, stageName: first.stageName,
+    isFinalVisit: !!first.completesTreatment
+  };
+}
+
+// The three exception options (section 3 of the spec), applied to whatever
+// appointment JUST finished, to decide what the NEXT one should be.
+function nextVisitAfter_(finished, exceptionOption) {
+  return nextVisitAfterUsingStages_(finished, exceptionOption, procedureLibraryStages_(finished.procedureCode));
+}
+
+// Pure form of nextVisitAfter_, taking the stage list directly — this is what
+// unit tests exercise, since the library fetch needs a live Spreadsheet.
+//
+// Deliberately keyed by STAGE, not by visit number: "add another visit"
+// repeats the current stage and pushes the visit count up by one, so the
+// library's own visit numbering only ever matches actualVisitNo when nothing
+// has ever been added — the stage sequence, not the count, is what's real.
+function nextVisitAfterUsingStages_(finished, exceptionOption, stages) {
+  if (exceptionOption === "complete") {
+    return { caseCompleted: true, nextVisit: null };
+  }
+
+  var idx = stages.findIndex(function(s) { return s.stageCode === finished.stageCode; });
+
+  if (exceptionOption === "add_visit") {
+    // Repeat the stage just finished — this visit didn't wrap it up.
+    var repeat = idx >= 0 ? stages[idx] : { stageCode: finished.stageCode, stageName: finished.stageName };
+    return {
+      caseCompleted: false,
+      nextVisit: {
+        procedureCode: finished.procedureCode, procedureName: finished.procedureName,
+        visitNo: Number(finished.visitNo) + 1, totalVisits: Number(finished.totalVisits) + 1,
+        stageCode: repeat.stageCode, stageName: repeat.stageName + " / Adjustment",
+        isFinalVisit: false
+      }
+    };
+  }
+
+  // "continue" — a stage the library marks as completing the treatment ends
+  // the case here, exactly as it would have without any exception at all.
+  if (finished.isFinalVisit || idx < 0 || idx === stages.length - 1) {
+    return { caseCompleted: true, nextVisit: null };
+  }
+  var next = stages[idx + 1];
+  return {
+    caseCompleted: false,
+    nextVisit: {
+      procedureCode: finished.procedureCode, procedureName: finished.procedureName,
+      visitNo: Number(finished.visitNo) + 1, totalVisits: Number(finished.totalVisits),
+      stageCode: next.stageCode, stageName: next.stageName,
+      isFinalVisit: !!next.completesTreatment
+    }
+  };
+}
+
+// What the booking form should suggest for a returning patient + procedure:
+// the most recent appointment on their open case, advanced one stage as if
+// nothing unusual happened. If an exception actually did happen at
+// completion time, resolveVisitException below already computed the real
+// next stage and the form should use that instead — this is only the
+// "nothing told us otherwise" default for section 5's auto-fill.
+function getNextVisitSuggestion(p) {
+  var uhid = String(p.uhid || "").trim().toUpperCase();
+  var procedureCode = String(p.procedureCode || "").trim();
+  if (!uhid || !procedureCode) return { success: false, error: "uhid and procedureCode required" };
+
+  var sh = getAppointmentsSheet();
+  var data = sh.getDataRange().getValues();
+  var headers = data[0].map(String);
+  var col = function(name) { return headers.indexOf(name); };
+
+  var latest = null, latestKey = "";
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    if (String(row[col("UHID")]).trim().toUpperCase() !== uhid) continue;
+    if (String(row[col("ProcedureCode")]) !== procedureCode) continue;
+    if (String(row[col("CaseStatus")]) !== "in_progress") continue;
+    var key = String(row[col("Date")]) + " " + String(row[col("Time")]) + " " + String(row[col("VisitNo")]);
+    if (key > latestKey) {
+      latestKey = key;
+      latest = {
+        caseId: row[col("CaseId")], procedureCode: row[col("ProcedureCode")], procedureName: row[col("ProcedureName")],
+        visitNo: row[col("VisitNo")], totalVisits: row[col("TotalVisits")],
+        stageCode: row[col("StageCode")], stageName: row[col("StageName")],
+        isFinalVisit: row[col("IsFinalVisit")] === true || String(row[col("IsFinalVisit")]).toUpperCase() === "TRUE"
+      };
+    }
+  }
+
+  if (!latest) {
+    var fresh = startNewCase_(procedureCode);
+    return fresh ? { success: true, isNewCase: true, suggestion: fresh }
+                 : { success: false, error: "Unknown procedureCode: " + procedureCode };
+  }
+  var result = nextVisitAfter_(latest, "continue");
+  if (result.caseCompleted || !result.nextVisit) {
+    return { success: true, isNewCase: false, caseComplete: true, suggestion: null };
+  }
+  return { success: true, isNewCase: false, caseId: latest.caseId, suggestion: result.nextVisit };
+}
+
+// Called once staff pick one of the three options at the end of a visit.
+// Updates ONLY the appointment that just finished (its own case-completion
+// fields) — it does not create the next appointment; staff still book that
+// through the normal form, which is what keeps date/time/chair a human
+// decision rather than something this silently schedules.
+function resolveVisitException(p) {
+  var apptId = String(p.apptId || "").trim();
+  var exceptionOption = String(p.exceptionOption || "").trim();
+  if (["continue", "add_visit", "complete"].indexOf(exceptionOption) < 0) {
+    return { success: false, error: "exceptionOption must be continue, add_visit, or complete" };
+  }
+
+  var sh = getAppointmentsSheet();
+  var data = sh.getDataRange().getValues();
+  var headers = data[0].map(String);
+  var col = function(name) { return headers.indexOf(name); };
+
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][col("ID")]).trim() !== apptId) continue;
+    var row = data[i];
+    if (!row[col("CaseId")]) return { success: false, error: "Appointment has no caseId — nothing to resolve" };
+
+    var finished = {
+      procedureCode: row[col("ProcedureCode")], procedureName: row[col("ProcedureName")],
+      visitNo: row[col("VisitNo")], totalVisits: row[col("TotalVisits")],
+      stageCode: row[col("StageCode")], stageName: row[col("StageName")],
+      isFinalVisit: row[col("IsFinalVisit")] === true || String(row[col("IsFinalVisit")]).toUpperCase() === "TRUE"
+    };
+    var result = nextVisitAfter_(finished, exceptionOption);
+
+    if (exceptionOption === "complete" || result.caseCompleted) {
+      sh.getRange(i + 1, col("CaseStatus") + 1).setValue("completed");
+      sh.getRange(i + 1, col("IsFinalVisit") + 1).setValue(true);
+    }
+    // "continue" and "add_visit" leave THIS row's own fields as they were —
+    // it already correctly describes the visit that just happened.
+
+    return { success: true, caseCompleted: exceptionOption === "complete" || result.caseCompleted,
+      nextVisit: result.nextVisit || null };
   }
   return { success: false, error: "Appointment not found: " + apptId };
 }
