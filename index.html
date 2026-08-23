@@ -5422,6 +5422,25 @@ const APPT_TYPES = [
   "Extraction","Implant Surgery","Implant Prosthesis","Orthodontics",
   "Restoration","Denture","Whitening","Review","Other"
 ];
+// Narrows the Procedure dropdown to the category matching the chosen Reason,
+// so picking "RCT" doesn't mean scrolling past all 115 procedures for one.
+// Reasons are staff-editable free text (the "+" button adds arbitrary ones),
+// so an unmapped or custom Reason falls back to showing every procedure
+// rather than leaving the dropdown looking empty.
+const REASON_PROCEDURE_CATEGORY = {
+  "Consultation": "Diagnostic & Consultation",
+  "Follow Up": "Diagnostic & Consultation",
+  "RCT": "Root Canal / Endodontics",
+  "Crown Cementation": "Crowns & Bridges",
+  "Scaling / Cleaning": "Preventive Dentistry",
+  "Extraction": "Extractions & Oral Surgery",
+  "Implant Surgery": "Implant Dentistry",
+  "Implant Prosthesis": "Implant Dentistry",
+  "Orthodontics": "Orthodontics",
+  "Restoration": "Restorative Dentistry",
+  "Denture": "Dentures",
+  "Whitening": "Bleaching & Cosmetic"
+};
 const TIME_SLOTS = [
   "09:00","09:30","10:00","10:30","11:00","11:30","12:00","12:30","13:00","13:30",
   "14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00","18:30","19:00","19:30"
@@ -5582,6 +5601,22 @@ function Appointments({ globalPat, setGlobalPat }) {
   const [visitSuggestion, setVisitSuggestion] = useState(null);
   const [visitLoading, setVisitLoading] = useState(false);
   const skipNextSuggestEffect = useRef(false);
+
+  // Procedures narrowed to the Reason's category (falls back to the full
+  // library when the Reason has no mapping — see REASON_PROCEDURE_CATEGORY).
+  const procedureCategory = REASON_PROCEDURE_CATEGORY[fReason] || null;
+  const visibleProcedures = procedureCategory
+    ? procedureLibrary.filter(r => r.category === procedureCategory)
+    : procedureLibrary;
+
+  // If the Reason changes to one that no longer includes the currently
+  // selected procedure (or none at all), drop the stale selection instead of
+  // silently keeping a procedure the dropdown no longer shows.
+  useEffect(() => {
+    if (fProcedureCode && !visibleProcedures.some(r => r.procedureCode === fProcedureCode)) {
+      setFProcedureCode("");
+    }
+  }, [fReason]);
 
   useEffect(() => {
     api("getReasonsList").then(res => { if (res.success && res.reasons?.length) { setReasons(res.reasons); setFReason(prev => prev || res.reasons[0]); } });
@@ -6338,12 +6373,16 @@ function Appointments({ globalPat, setGlobalPat }) {
       // default. Staff never see the procedure library table itself, only
       // this select and the read-only "Visit N of M — Stage" line it produces.
       React.createElement("div", { style:{ marginBottom:14, maxWidth:400 } },
-        React.createElement(Lbl, { c:"Procedure (optional — tracks multi-visit treatment)" }),
+        React.createElement(Lbl, { c:"Procedure (optional — tracks multi-visit treatment)" +
+          (procedureCategory ? " — " + procedureCategory : "") }),
         React.createElement("select", { style:inp, value:fProcedureCode, onChange:e=>setFProcedureCode(e.target.value) },
           React.createElement("option", { value:"" }, "— Not tracked —"),
-          [...new Map(procedureLibrary.map(r => [r.procedureCode, r.procedureName])).entries()]
+          [...new Map(visibleProcedures.map(r => [r.procedureCode, r.procedureName])).entries()]
             .map(([code, name]) => React.createElement("option", { key:code, value:code }, name))
-        )
+        ),
+        procedureCategory && visibleProcedures.length === 0 &&
+          React.createElement("div", { style:{ fontSize:11, color:"#888", marginTop:4 } },
+            "No procedures mapped to \"" + fReason + "\" yet — showing none. Change the Reason, or ask to widen this mapping.")
       ),
 
       fProcedureCode && React.createElement("div", { style:{ marginBottom:14, maxWidth:400, background:BGS, border:`1px solid ${BORDER}`, borderRadius:8, padding:10 } },
