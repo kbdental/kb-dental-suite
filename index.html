@@ -5422,24 +5422,24 @@ const APPT_TYPES = [
   "Extraction","Implant Surgery","Implant Prosthesis","Orthodontics",
   "Restoration","Denture","Whitening","Review","Other"
 ];
-// Narrows the Procedure dropdown to the category matching the chosen Reason,
+// Narrows the Procedure dropdown to the family matching the chosen Reason,
 // so picking "RCT" doesn't mean scrolling past all 115 procedures for one.
 // Reasons are staff-editable free text (the "+" button adds arbitrary ones),
 // so an unmapped or custom Reason falls back to showing every procedure
 // rather than leaving the dropdown looking empty.
-const REASON_PROCEDURE_CATEGORY = {
-  "Consultation": "Diagnostic & Consultation",
-  "Follow Up": "Diagnostic & Consultation",
-  "RCT": "Root Canal / Endodontics",
-  "Crown Cementation": "Crowns & Bridges",
-  "Scaling / Cleaning": "Preventive Dentistry",
-  "Extraction": "Extractions & Oral Surgery",
-  "Implant Surgery": "Implant Dentistry",
-  "Implant Prosthesis": "Implant Dentistry",
-  "Orthodontics": "Orthodontics",
-  "Restoration": "Restorative Dentistry",
-  "Denture": "Dentures",
-  "Whitening": "Bleaching & Cosmetic"
+const REASON_FAMILY_CODE = {
+  "Consultation": "DIAGNOSTIC",
+  "Follow Up": "DIAGNOSTIC",
+  "RCT": "ENDODONTIC",
+  "Crown Cementation": "PROSTHODONTIC",
+  "Scaling / Cleaning": "PREVENTIVE",
+  "Extraction": "SURGICAL",
+  "Implant Surgery": "IMPLANT",
+  "Implant Prosthesis": "IMPLANT",
+  "Orthodontics": "ORTHODONTIC",
+  "Restoration": "RESTORATIVE",
+  "Denture": "PROSTHODONTIC",
+  "Whitening": "AESTHETIC"
 };
 const TIME_SLOTS = [
   "09:00","09:30","10:00","10:30","11:00","11:30","12:00","12:30","13:00","13:30",
@@ -5593,20 +5593,21 @@ function Appointments({ globalPat, setGlobalPat }) {
   const [newReasonMode, setNewReasonMode] = useState(false);
   const [newReasonText, setNewReasonText] = useState("");
 
-  // Multi-visit treatment tracking (ClinicalSuiteMultiVisitSpec.md) — all
-  // optional, on top of the plain Reason field which stays for one-off visits.
+  // Multi-visit treatment tracking (ClinicalSuiteTreatmentCaseSpecV2.md) —
+  // all optional, on top of the plain Reason field which stays for one-off
+  // visits. V2's core rule: stage completion is the logic, the visit number
+  // is only a counter — so what's tracked here is a Case (its current/next
+  // stage), not a visit count.
   const [procedureLibrary, setProcedureLibrary] = useState([]);
   const [fProcedureCode, setFProcedureCode] = useState("");
-  const [fVisitNo, setFVisitNo] = useState("");
-  const [visitSuggestion, setVisitSuggestion] = useState(null);
-  const [visitLoading, setVisitLoading] = useState(false);
-  const skipNextSuggestEffect = useRef(false);
+  const [caseState, setCaseState] = useState(null); // {caseId, procedureName, familyCode, currentStageName, nextStageName, caseStatus, visitCounter, isNewCase}
+  const [caseLoading, setCaseLoading] = useState(false);
 
-  // Procedures narrowed to the Reason's category (falls back to the full
-  // library when the Reason has no mapping — see REASON_PROCEDURE_CATEGORY).
-  const procedureCategory = REASON_PROCEDURE_CATEGORY[fReason] || null;
-  const visibleProcedures = procedureCategory
-    ? procedureLibrary.filter(r => r.category === procedureCategory)
+  // Procedures narrowed to the Reason's family (falls back to the full
+  // library when the Reason has no mapping — see REASON_FAMILY_CODE).
+  const procedureFamily = REASON_FAMILY_CODE[fReason] || null;
+  const visibleProcedures = procedureFamily
+    ? procedureLibrary.filter(r => r.familyCode === procedureFamily)
     : procedureLibrary;
 
   // If the Reason changes to one that no longer includes the currently
@@ -5625,42 +5626,37 @@ function Appointments({ globalPat, setGlobalPat }) {
     loadTodaySidebar();
   }, []);
 
-  // Section 5 of the spec: "for a new case, visit defaults to 1; for an
-  // existing open case, it defaults to the next unfinished visit." Skipped
-  // while editing an existing appointment (openEdit sets these fields
-  // directly from the saved record) or right after resolveException below
-  // has already computed the real next visit — re-querying here would use
-  // the "continue" default and could silently overwrite an "add visit" or
-  // "complete" outcome with the wrong stage.
+  // Section 5 of the spec: show CURRENT/NEXT, defaulting to a returning
+  // patient's existing open case, or a fresh one otherwise. A fresh case is
+  // only PREVIEWED here (computed straight from the library, no case
+  // created) — startTreatmentCase is called at Save time, so cancelling the
+  // form never leaves an orphan case behind. Skipped while editing an
+  // existing appointment — openEdit fetches that appointment's actual case.
   useEffect(() => {
     if (editingId) return;
-    if (skipNextSuggestEffect.current) { skipNextSuggestEffect.current = false; return; }
-    if (!fProcedureCode) { setVisitSuggestion(null); setFVisitNo(""); return; }
+    if (!fProcedureCode) { setCaseState(null); return; }
 
-    const stages = procedureLibrary.filter(r => r.procedureCode === fProcedureCode).sort((a,b)=>a.visitNo-b.visitNo);
-    const first = stages[0];
-    const freshCase = first ? {
-      isNewCase: true, caseId: "", procedureName: first.procedureName,
-      visitNo: 1, totalVisits: first.standardVisits,
-      stageCode: first.stageCode, stageName: first.stageName, isFinalVisit: !!first.completesTreatment
+    const stages = procedureLibrary.filter(r => r.procedureCode === fProcedureCode).sort((a,b)=>a.sequenceNo-b.sequenceNo);
+    const first = stages[0], second = stages[1];
+    const freshPreview = first ? {
+      isNewCase: true, caseId: "", procedureCode: fProcedureCode, procedureName: first.procedureName,
+      familyCode: first.familyCode, caseStatus: "in_progress", visitCounter: 0,
+      currentStageCode: first.stageCode, currentStageName: first.stageName,
+      nextStageCode: second ? second.stageCode : "", nextStageName: second ? second.stageName : ""
     } : null;
 
-    if (!fUhid.trim()) { setVisitSuggestion(freshCase); setFVisitNo(freshCase ? 1 : ""); return; }
+    if (!fUhid.trim()) { setCaseState(freshPreview); return; }
 
     let cancelled = false;
-    setVisitLoading(true);
-    api("getNextVisitSuggestion", { uhid: fUhid, procedureCode: fProcedureCode }).then(res => {
+    setCaseLoading(true);
+    api("getOpenCase", { uhid: fUhid, procedureCode: fProcedureCode }).then(res => {
       if (cancelled) return;
-      setVisitLoading(false);
-      if (res.success && res.suggestion) {
-        setVisitSuggestion({ ...res.suggestion, isNewCase: res.isNewCase, caseId: res.caseId || "" });
-        setFVisitNo(res.suggestion.visitNo);
+      setCaseLoading(false);
+      if (res.success && res.found) {
+        setCaseState({ ...res, isNewCase: false });
       } else {
-        // Either the patient's last case for this procedure is already
-        // complete, or something went wrong asking — either way, starting a
-        // fresh case (visit 1) is the right default; staff can still see and
-        // fix it via the read-only stage line below.
-        setVisitSuggestion(freshCase); setFVisitNo(freshCase ? 1 : "");
+        // No open case for this patient + procedure — a fresh one, previewed only.
+        setCaseState(freshPreview);
       }
     });
     return () => { cancelled = true; };
@@ -5762,7 +5758,7 @@ function Appointments({ globalPat, setGlobalPat }) {
     setFMobile(""); setFEmail(""); setFAge(""); setFGender(""); setFReason(reasons[0]||"");
     setFDate(selDate);
     setFNotes(""); setFErrors({}); setPatQuery(""); setPatResults([]); setEditingId(null);
-    setFProcedureCode(""); setFVisitNo(""); setVisitSuggestion(null);
+    setFProcedureCode(""); setCaseState(null);
   };
 
   const openQuickAdd = (time, chair) => {
@@ -5772,21 +5768,25 @@ function Appointments({ globalPat, setGlobalPat }) {
     setShowForm(true);
   };
 
-  const openEdit = (a) => {
+  const openEdit = async (a) => {
     setEditingId(a.id);
     setPatientMode("established");
     setFUhid(a.uhid||""); setFName(a.patientName||""); setPatQuery(a.patientName||"");
     setFMobile(a.mobile||""); setFDate(a.date||selDate); setFTime(a.time||"10:00"); setFReason(a.type||reasons[0]||"");
     setFDoctor(a.doctor||doctors[0]||""); setFChair(a.chair||chairs[0]); setFNotes(a.notes||"");
     setFErrors({});
-    // Editing a case-linked appointment keeps it linked — this is the SAME
-    // visit's own stored fields, not a re-derived suggestion, which is why
-    // the auto-suggest effect (above) is skipped whenever editingId is set.
-    setFProcedureCode(a.procedureCode||""); setFVisitNo(a.visitNo||"");
-    setVisitSuggestion(a.procedureCode ? {
-      caseId: a.caseId, procedureName: a.procedureName, totalVisits: a.totalVisits,
-      stageCode: a.stageCode, stageName: a.stageName, isFinalVisit: a.isFinalVisit, isNewCase: false
-    } : null);
+    // Editing a case-linked appointment keeps it linked — fetch the case's
+    // actual current state (editingId being set skips the auto-suggest
+    // effect above, so this is the only place that populates it here).
+    setFProcedureCode(a.procedureCode||"");
+    if (a.caseId) {
+      setCaseLoading(true);
+      const res = await api("getCaseState", { caseId: a.caseId });
+      setCaseLoading(false);
+      setCaseState(res.success ? { ...res, isNewCase: false } : null);
+    } else {
+      setCaseState(null);
+    }
     setSelectedAppt(null); setPopupMode("view");
     setShowForm(true);
   };
@@ -5821,21 +5821,35 @@ function Appointments({ globalPat, setGlobalPat }) {
     }
 
     setSaving(true);
+
+    // A brand-new case (isNewCase, no caseId yet) is only ever PREVIEWED
+    // before now — it's created here, at the moment of actually booking,
+    // so cancelling the form never leaves an orphan case in the sheet.
+    let caseFields = {};
+    if (fProcedureCode && caseState) {
+      let cs = caseState;
+      if (cs.isNewCase && !cs.caseId && !editingId) {
+        const startRes = await api("startTreatmentCase", { uhid: fUhid, procedureCode: fProcedureCode, patientName: finalName });
+        if (!startRes.success) {
+          setSaving(false);
+          setApiMsg("Could not start the treatment case: " + (startRes.error || "Unknown error"));
+          return;
+        }
+        cs = { ...startRes, isNewCase: true };
+        setCaseState(cs);
+      }
+      caseFields = {
+        caseId: cs.caseId, procedureCode: fProcedureCode, procedureName: cs.procedureName,
+        familyCode: cs.familyCode, plannedStages: cs.currentStageCode ? [cs.stages?.find?.(s=>s.status==="pending")?.sequenceNo ?? 1] : [],
+        visitCounter: cs.visitCounter
+      };
+    }
+
     const payload = {
       date: fDate, uhid: fUhid, patientName: finalName,
       time: fTime, type: fReason, doctor: fDoctor, chair: fChair,
       mobile: fMobile, notes: fNotes, status: "Scheduled",
-      // Multi-visit case fields — omitted entirely for a plain one-off visit.
-      // Uses effectiveVisit (the stage recomputed for whatever visit number is
-      // actually showing), not the frozen initial suggestion, so what saves
-      // always matches what was on screen.
-      ...(fProcedureCode && effectiveVisit ? {
-        caseId: effectiveVisit.caseId || `${fUhid || "NEW"}-${fProcedureCode}-${Date.now().toString(36).toUpperCase()}`,
-        procedureCode: fProcedureCode, procedureName: effectiveVisit.procedureName,
-        visitNo: Number(fVisitNo) || effectiveVisit.visitNo, totalVisits: effectiveVisit.totalVisits,
-        stageCode: effectiveVisit.stageCode, stageName: effectiveVisit.stageName,
-        isFinalVisit: effectiveVisit.isFinalVisit, caseStatus: "in_progress"
-      } : {})
+      ...caseFields
     };
     const res = editingId
       ? await api("updateAppointment", { apptId: editingId, ...payload })
@@ -5860,14 +5874,43 @@ function Appointments({ globalPat, setGlobalPat }) {
     setSelectedAppt(null);
   };
 
-  // The three exception options (section 3 of the spec) — asked only when
-  // completing a visit that's part of a tracked, still-open case. Marks the
-  // visit itself completed first (same status write as any other checkout),
-  // then resolves the case; on continue/add_visit it hands the computed next
-  // visit straight to the booking form so staff still pick date/time/chair.
-  const resolveException = async (option) => {
-    if (!selectedAppt) return;
+  // V2 completion flow: fetch the case's actual current pending stages (not
+  // whatever was true at booking time — another visit may have moved things
+  // along since), let staff tick off whichever ones this visit covered
+  // (usually just the current one, sometimes several done in one sitting),
+  // then apply one of the three outcomes (section 6 of the spec) to them.
+  const [outcomeCase, setOutcomeCase] = useState(null);
+  const [checkedStages, setCheckedStages] = useState(new Set());
+
+  const openCompletionOutcome = async (a) => {
+    const res = await api("getCaseState", { caseId: a.caseId });
+    if (!res || !res.success) { setApiMsg("Could not load the case: " + ((res && res.error) || "Unknown error")); return; }
+    if (res.caseStatus === "completed") {
+      // Already closed by a different visit — nothing to ask, just check out.
+      updateStatus(a.id, "Completed");
+      return;
+    }
+    const pending = (res.stages || []).filter(s => s.status === "pending").sort((x, y) => x.sequenceNo - y.sequenceNo);
+    setOutcomeCase(res);
+    setCheckedStages(new Set(pending.length ? [pending[0].sequenceNo] : []));
+    setSelectedAppt(a);
+    setPopupMode("exception");
+  };
+
+  const toggleCheckedStage = (seq) => {
+    setCheckedStages(prev => {
+      const next = new Set(prev);
+      next.has(seq) ? next.delete(seq) : next.add(seq);
+      return next;
+    });
+  };
+
+  const resolveOutcome = async (outcome) => {
+    if (!selectedAppt || !outcomeCase) return;
     const a = selectedAppt;
+    const completedStages = [...checkedStages];
+    if (!completedStages.length) { setApiMsg("Tick at least one stage this visit covered."); return; }
+
     const statusRes = await api("updateAppointmentStatus", { apptId: a.id, status: "Completed" });
     if (!statusRes || !statusRes.success) {
       setApiMsg("Could not complete the appointment: " + ((statusRes && statusRes.error) || "Unknown error"));
@@ -5876,22 +5919,12 @@ function Appointments({ globalPat, setGlobalPat }) {
     setAppts(prev => prev.map(x => x.id===a.id ? {...x, status:"Completed"} : x));
     setRangeAppts(prev => prev.map(x => x.id===a.id ? {...x, status:"Completed"} : x));
 
-    const res = await api("resolveVisitException", { apptId: a.id, exceptionOption: option });
-    setSelectedAppt(null); setPopupMode("view");
+    const res = await api("resolveStageOutcome", {
+      caseId: outcomeCase.caseId, appointmentId: a.id, completedStages, stageOutcome: outcome
+    });
+    setSelectedAppt(null); setPopupMode("view"); setOutcomeCase(null); setCheckedStages(new Set());
     if (!res || !res.success) {
       setApiMsg("Visit completed, but could not update the case: " + ((res && res.error) || "Unknown error"));
-      return;
-    }
-    if (!res.caseCompleted && res.nextVisit) {
-      resetForm();
-      skipNextSuggestEffect.current = true; // the line below is the real next visit — don't re-query and overwrite it
-      setPatientMode("established");
-      setFUhid(a.uhid||""); setFName(a.patientName||""); setPatQuery(a.patientName||"");
-      setFMobile(a.mobile||""); setFDoctor(a.doctor||doctors[0]||"");
-      setFProcedureCode(res.nextVisit.procedureCode);
-      setVisitSuggestion({ ...res.nextVisit, caseId: a.caseId, isNewCase:false });
-      setFVisitNo(res.nextVisit.visitNo);
-      setShowForm(true);
     }
   };
 
@@ -5912,25 +5945,6 @@ function Appointments({ globalPat, setGlobalPat }) {
   };
 
   const dateLabel = (iso) => fmtDMY(iso + "T00:00:00");
-
-  // The auto-suggestion effect only decides the DEFAULT visit/stage. Once
-  // shown, the stage must track whatever visit number is actually in the
-  // box — recomputed fresh every render, straight from the library, rather
-  // than staying frozen at the number the suggestion first computed. Without
-  // this, e.g. every RCT visit displayed "Cleaning" (visit 1's stage)
-  // regardless of what visit number was entered.
-  const stageForVisit = (procedureCode, visitNo) => {
-    if (!procedureCode || !visitNo) return null;
-    return procedureLibrary.find(r => r.procedureCode === procedureCode && r.visitNo === Number(visitNo)) || null;
-  };
-  const effectiveVisit = (fProcedureCode && visitSuggestion) ? (() => {
-    if (Number(fVisitNo) === Number(visitSuggestion.visitNo)) return visitSuggestion;
-    const overridden = stageForVisit(fProcedureCode, fVisitNo);
-    return overridden
-      ? { ...visitSuggestion, visitNo: overridden.visitNo, stageCode: overridden.stageCode,
-          stageName: overridden.stageName, isFinalVisit: !!overridden.completesTreatment }
-      : visitSuggestion; // typed visit number has no library row (e.g. an inserted add-visit) — keep the last known stage
-  })() : null;
   const byDoctor = (list) => doctorFilter==="All Doctors" ? list : list.filter(a=>a.doctor===doctorFilter);
 
   const sortedAppts = byDoctor([...appts].sort((a,b) => (a.time||"").localeCompare(b.time||"")));
@@ -5978,8 +5992,8 @@ function Appointments({ globalPat, setGlobalPat }) {
                 style:{ padding:"8px 16px", fontSize:12.5, border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#555", fontWeight:700 } },
                 "Edit"),
               action && React.createElement("button", {
-                onClick: () => (action.next==="Completed" && a.caseId && a.caseStatus==="in_progress")
-                  ? setPopupMode("exception") : updateStatus(a.id, action.next),
+                onClick: () => (action.next==="Completed" && a.caseId)
+                  ? openCompletionOutcome(a) : updateStatus(a.id, action.next),
                 style:{ padding:"8px 16px", fontSize:12.5, border:"none", borderRadius:6, cursor:"pointer", background:"#059669", color:"#fff", fontWeight:700 } },
                 action.label),
               (a.status!=="Cancelled" && a.status!=="Completed") && React.createElement("button", { onClick:()=>setPopupMode("cancel"),
@@ -6011,23 +6025,36 @@ function Appointments({ globalPat, setGlobalPat }) {
             )
           ),
 
-          // The three exception options — the only clinical decision this
-          // feature asks for, offered at the end of every visit on a tracked case.
-          popupMode === "exception" && React.createElement("div", null,
-            React.createElement("div", { style:{ fontSize:12.5, color:"#555", marginBottom:12, lineHeight:1.5 } },
-              (a.procedureName||"This procedure") + " — Visit " + a.visitNo + " of " + a.totalVisits + " — " + (a.stageName||"") +
-              ". What happens next?"),
+          // V2 completion flow: tick which pending stage(s) this visit
+          // covered (usually just the current one, sometimes several done in
+          // one sitting), then pick one of the three outcomes for them.
+          popupMode === "exception" && outcomeCase && React.createElement("div", null,
+            React.createElement("div", { style:{ fontSize:12.5, color:"#555", marginBottom:8, lineHeight:1.5 } },
+              (outcomeCase.procedureName||"This procedure") + " — which stage(s) did this visit cover?"),
+            React.createElement("div", { style:{ display:"flex", flexDirection:"column", gap:6, marginBottom:14 } },
+              (outcomeCase.stages||[]).filter(s=>s.status==="pending").sort((x,y)=>x.sequenceNo-y.sequenceNo).map(s =>
+                React.createElement("label", { key:s.sequenceNo,
+                  style:{ display:"flex", alignItems:"center", gap:8, fontSize:12.5, padding:"6px 8px",
+                    border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer",
+                    background: checkedStages.has(s.sequenceNo) ? TL : "#fff" } },
+                  React.createElement("input", { type:"checkbox", checked:checkedStages.has(s.sequenceNo),
+                    onChange:()=>toggleCheckedStage(s.sequenceNo) }),
+                  s.stageName)
+              )
+            ),
+            React.createElement("div", { style:{ fontSize:12.5, color:"#555", marginBottom:8, lineHeight:1.5 } },
+              "What happens next?"),
             React.createElement("div", { style:{ display:"flex", flexDirection:"column", gap:8 } },
-              React.createElement("button", { onClick:()=>resolveException("continue"),
+              React.createElement("button", { onClick:()=>resolveOutcome("approved"),
                 style:{ padding:"10px 14px", fontSize:12.5, textAlign:"left", border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#333", fontWeight:700 } },
-                "Continue as planned", React.createElement("div", { style:{ fontWeight:400, fontSize:11, color:"#888", marginTop:2 } }, "Moves on to the next stage in the treatment plan.")),
-              React.createElement("button", { onClick:()=>resolveException("add_visit"),
+                "Approved / done", React.createElement("div", { style:{ fontWeight:400, fontSize:11, color:"#888", marginTop:2 } }, "Case advances to the next pending stage.")),
+              React.createElement("button", { onClick:()=>resolveOutcome("adjustment_required"),
                 style:{ padding:"10px 14px", fontSize:12.5, textAlign:"left", border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#333", fontWeight:700 } },
-                "Add another visit", React.createElement("div", { style:{ fontWeight:400, fontSize:11, color:"#888", marginTop:2 } }, "Repeats this stage once more before moving on.")),
-              React.createElement("button", { onClick:()=>resolveException("complete"),
+                "Adjustment required", React.createElement("div", { style:{ fontWeight:400, fontSize:11, color:"#888", marginTop:2 } }, "Inserts a repeat of the last ticked stage before moving on.")),
+              React.createElement("button", { onClick:()=>resolveOutcome("proceed_to_completion"),
                 style:{ padding:"10px 14px", fontSize:12.5, textAlign:"left", border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#333", fontWeight:700 } },
-                "Complete procedure now", React.createElement("div", { style:{ fontWeight:400, fontSize:11, color:"#888", marginTop:2 } }, "Ends the treatment here — no further visit is suggested.")),
-              React.createElement("button", { onClick:()=>setPopupMode("view"),
+                "Proceed to completion", React.createElement("div", { style:{ fontWeight:400, fontSize:11, color:"#888", marginTop:2 } }, "Marks any remaining stages skipped and closes the case.")),
+              React.createElement("button", { onClick:()=>{ setPopupMode("view"); setOutcomeCase(null); setCheckedStages(new Set()); },
                 style:{ padding:"8px 16px", fontSize:12.5, border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#555", fontWeight:700, marginTop:4 } },
                 "Back")
             )
@@ -6370,40 +6397,37 @@ function Appointments({ globalPat, setGlobalPat }) {
       ),
 
       // Multi-visit treatment tracking — one dropdown, optional, blank by
-      // default. Staff never see the procedure library table itself, only
-      // this select and the read-only "Visit N of M — Stage" line it produces.
+      // default. Staff never see the procedure library or the case's stages
+      // array, only this select and the read-only CURRENT/NEXT line it
+      // produces (V2 section 8).
       React.createElement("div", { style:{ marginBottom:14, maxWidth:400 } },
         React.createElement(Lbl, { c:"Procedure (optional — tracks multi-visit treatment)" +
-          (procedureCategory ? " — " + procedureCategory : "") }),
+          (procedureFamily ? " — " + procedureFamily : "") }),
         React.createElement("select", { style:inp, value:fProcedureCode, onChange:e=>setFProcedureCode(e.target.value) },
           React.createElement("option", { value:"" }, "— Not tracked —"),
           [...new Map(visibleProcedures.map(r => [r.procedureCode, r.procedureName])).entries()]
             .map(([code, name]) => React.createElement("option", { key:code, value:code }, name))
         ),
-        procedureCategory && visibleProcedures.length === 0 &&
+        procedureFamily && visibleProcedures.length === 0 &&
           React.createElement("div", { style:{ fontSize:11, color:"#888", marginTop:4 } },
             "No procedures mapped to \"" + fReason + "\" yet — showing none. Change the Reason, or ask to widen this mapping.")
       ),
 
       fProcedureCode && React.createElement("div", { style:{ marginBottom:14, maxWidth:400, background:BGS, border:`1px solid ${BORDER}`, borderRadius:8, padding:10 } },
-        visitLoading
+        caseLoading
           ? React.createElement("div", { style:{ fontSize:12, color:"#888" } }, "Checking this patient's open cases…")
-          : visitSuggestion
+          : caseState
             ? React.createElement("div", null,
-                React.createElement("div", { style:{ display:"flex", gap:10, alignItems:"flex-end" } },
-                  React.createElement("div", null,
-                    React.createElement(Lbl, { c:"Visit" }),
-                    React.createElement("input", { type:"number", min:1, style:{...inp, width:70},
-                      value:fVisitNo, onChange:e=>setFVisitNo(e.target.value) })
-                  ),
-                  React.createElement("div", { style:{ fontSize:12.5, color:"#555", paddingBottom:8 } }, "of " + effectiveVisit.totalVisits)
-                ),
-                React.createElement("div", { style:{ fontSize:12.5, color:T, fontWeight:700, marginTop:6 } },
-                  "Visit " + fVisitNo + " of " + effectiveVisit.totalVisits + " — " + effectiveVisit.stageName),
-                effectiveVisit.isFinalVisit && React.createElement("div", { style:{ fontSize:11, color:"#888", marginTop:2 } }, "Final visit for this treatment")
+                React.createElement("div", { style:{ fontSize:12.5, color:T, fontWeight:700 } },
+                  "CURRENT: " + (caseState.currentStageName || "—")),
+                React.createElement("div", { style:{ fontSize:12.5, color:"#555", marginTop:2 } },
+                  "NEXT: " + (caseState.nextStageName || "— completes the treatment —")),
+                React.createElement("div", { style:{ fontSize:11, color:"#888", marginTop:6 } },
+                  caseState.isNewCase
+                    ? "Starting a new case for this procedure."
+                    : "Continuing an open case — " + caseState.visitCounter + " visit(s) so far.")
               )
-            : React.createElement("div", { style:{ fontSize:12, color:"#888" } },
-                "This patient's most recent case for this procedure is already complete — this will start a new one.")
+            : React.createElement("div", { style:{ fontSize:12, color:"#888" } }, "Unknown procedure.")
       ),
 
       React.createElement("div", { style:{ marginBottom:14, maxWidth:400 } },

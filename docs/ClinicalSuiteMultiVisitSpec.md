@@ -1,5 +1,10 @@
 # KB Dental Clinical Suite — Multi-Visit Treatment Spec
 
+> **Superseded by `ClinicalSuiteTreatmentCaseSpecV2.md`.** V2 replaced this
+> spec's per-appointment visit-number model with a Case entity and
+> stage-based completion. Kept here for history only — see
+> `docs/MultiVisitTreatment.md` for what's actually implemented.
+
 **Purpose:** Let Clinical Suite track treatments that span several appointments (Crown = 3 visits, RCT Molar = 4, Full Denture = 5, etc.), so that any connected app — and the clinic's own staff — always knows *where we are in the treatment and what the next visit should be*.
 
 **Design principle:** the clinical complexity lives in the procedure library. Staff only ever see three things:
