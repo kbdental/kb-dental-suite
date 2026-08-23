@@ -1,51 +1,79 @@
-# Multi-visit treatment tracking
+# Multi-visit treatment tracking (V2)
 
-Implements `docs/ClinicalSuiteMultiVisitSpec.md`: appointments for
-treatments spanning several visits (Crown = 3 visits, RCT Molar = 4, Full
-Denture = 5, etc.) now carry the fields needed to know where a patient is in
-a treatment and what the next visit should be —
+Implements `docs/ClinicalSuiteTreatmentCaseSpecV2.md`, which **supersedes**
+`docs/ClinicalSuiteMultiVisitSpec.md` (kept for history — its per-appointment
+visit-number model is no longer what's built).
 
-> Procedure → Visit No. → Stage → Completion
-
-This is deliberately not a clinical engine — it's an ordered stage list per
-procedure, decided by three exception options at the end of every visit
-(continue as planned / add another visit / complete now).
+Core principle: **stage completion is the logic, the visit number is only a
+counter.** A dentist doing Preparation + Scan + Temporary in one sitting
+records those three stages as completed against that one appointment — the
+case moves on however far that actually went, not by "one visit = one stage."
 
 ## Backend (`apps-script/out/Code.gs`)
 
-- `APPOINTMENT_HEADERS` gains nine optional columns: `CaseId`,
-  `ProcedureCode`, `ProcedureName`, `VisitNo`, `TotalVisits`, `StageCode`,
-  `StageName`, `IsFinalVisit`, `CaseStatus`. A plain one-off appointment
-  (walk-in, phone call) simply leaves them blank — nothing about the existing
-  Appointments sheet or a normal booking changes.
-- **Procedure Library** — a new sheet tab, seeded automatically on first read
-  from `PROCEDURE_LIBRARY_DEFAULTS` (115 procedures / 274 stages, from the
-  V2 master list). After that first seed the sheet is the source of truth;
-  adding a procedure or renaming a stage is a row edit, not a code change.
-  Section 14 of the master list (Review / Maintenance) was excluded on
-  purpose — the spec calls those reusable follow-up stages, not standalone
-  tracked procedures.
-- New actions: `getProcedureLibrary`, `saveProcedureLibrary`,
-  `getNextVisitSuggestion` (what the booking form should default to for a
-  patient + procedure), `resolveVisitException` (applies the three options
-  at the end of a visit).
-- The actual decision logic (`nextVisitAfterUsingStages_`,
-  `newCaseFromStages_`) is pure and unit-tested against the real library in
-  `test/procedure-library.test.js` — no Sheets access needed to test it.
+**Procedure Library** — a self-seeding sheet tab, 115 procedures / 274 stages
+from the V2 master list. Each row: `procedureCode, procedureName, familyCode,
+visitsMin, visitsMax, sequenceNo, stageType, stageCode, stageName,
+completesTreatment`. `visitsMin/Max` are guidance only — nothing in the logic
+reads them. Section 14 of the master list (Review/Maintenance) is excluded on
+purpose — those are reusable follow-up stages (`REVIEW_STAGE_TYPES`), not
+standalone procedures, appendable to any case via `appendCaseStage`.
+
+**Treatment Cases** — a new sheet, one row per case, holding a JSON `stages`
+array (copied from the library at case creation, then modified as reality
+dictates: `pending` → `completed` or `skipped`, with an `adjustment_required`
+outcome able to insert an extra pending stage). Current stage, next stage,
+and whether the case is complete are **never stored** — always derived from
+the stages array (`deriveCaseView_`).
+
+New actions: `getProcedureLibrary`, `saveProcedureLibrary`,
+`startTreatmentCase` (persists a new case — called at Save time, not at
+selection time, so cancelling a booking never leaves an orphan case),
+`getOpenCase` (finds a patient's existing open case for a procedure),
+`getCaseState` (full state by caseId), `resolveStageOutcome` (applies one of
+the three outcomes to whichever stages an appointment covered),
+`appendCaseStage`.
+
+The actual stage-sequencing logic (`deriveCaseView_`, `applyStageOutcome_`,
+`buildInitialStages_`, `caseIdFor_`) is pure — no Sheets access — and
+unit-tested directly in `test/treatment-case.test.js` against the real
+shipped library, including the case V2 exists for: three stages closing
+against one appointment in a single call.
+
+Appointments carry `CaseId, ProcedureCode, ProcedureName, FamilyCode,
+PlannedStages, CompletedStages, VisitCounter` — all optional. They do **not**
+carry their own stage or visit-count state; that lives on the Case.
 
 ## Frontend (`index.html`, Appointments)
 
-- The booking form gets one new optional field, "Procedure" — selecting one
-  shows a read-only "Visit N of M — Stage" line, auto-filled (next unfinished
-  visit for a returning patient + procedure, or visit 1 for a new case) and
-  editable per the spec.
-- Completing a visit that belongs to a tracked, still-open case asks the
-  three exception options instead of just marking it done. Continuing or
-  adding a visit hands the computed next visit straight to the booking form
-  — staff still pick date/time/chair themselves; nothing is auto-scheduled.
+- The booking form's Procedure dropdown is narrowed to the family matching
+  the selected Reason (`REASON_FAMILY_CODE`) — e.g. picking "RCT" only shows
+  Endodontic procedures instead of all 115.
+- Selecting a procedure shows two read-only lines, per section 8 of the spec:
+
+  ```
+  CURRENT:  Try-in
+  NEXT:     Final fitting
+  ```
+
+  For a returning patient this comes from their existing open case
+  (`getOpenCase`); otherwise it's a client-side preview computed straight
+  from the library — no case is created until the appointment is actually
+  saved (`startTreatmentCase`).
+- Completing a case-linked appointment fetches the case's current pending
+  stages, lets staff tick off whichever ones this visit covered (usually
+  just the current one, sometimes several done in one sitting), then applies
+  one of the three outcomes: **Approved/done**, **Adjustment required**
+  (inserts a repeat of the last ticked stage), **Proceed to completion**
+  (skips whatever's left and closes the case).
 
 ## Deploying
 
 Same as any other backend change: paste the full `Code.gs` into the Apps
 Script editor, **Ctrl+S**, then **Deploy → Manage deployments → pencil → New
 version → Deploy.**
+
+Note: the Procedure Library sheet auto-detects and re-seeds itself if it
+finds the old (V1) header shape, so no manual cleanup is needed there — but
+any appointment already booked under V1's `VisitNo/StageCode` columns won't
+carry a Case forward automatically, since V1 never created one.
