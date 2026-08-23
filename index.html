@@ -70,6 +70,34 @@ function nowHHMM() {
   const d = new Date();
   return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
 }
+// A visit time as HH:MM, whatever shape it arrives in.
+//
+// Google Sheets turns an "HH:MM" write into a time-of-day cell, which Apps
+// Script reads back as a Date on the 1899-12-30 epoch — so check-in and
+// check-out reached the browser as "1899-12-30T05:35:50.000Z" and were shown
+// to staff exactly like that. The backend now formats these itself; this stays
+// as the safety net, and keeps older data readable.
+//
+// The named zone matters. In 1899 India ran at +05:21:10, not +05:30, so the
+// epoch date carries the historical offset: formatting through Asia/Kolkata
+// recovers the real clock time, while a hardcoded +05:30 would put every
+// stamp 8 minutes 50 seconds late.
+const CLINIC_TZ = "Asia/Kolkata";
+function hhmm(v) {
+  if (v === undefined || v === null || v === "") return "";
+  const s = String(v).trim();
+  if (/^\d{1,2}:\d{2}$/.test(s)) return s;                 // already HH:MM
+  if (/^(\d{1,2}):(\d{2}):\d{2}$/.test(s)) return s.slice(0, 5);
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;                        // leave anything unrecognised alone
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: CLINIC_TZ, hour: "2-digit", minute: "2-digit", hour12: false
+    }).format(d);
+  } catch (e) {
+    return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+}
 // Turnaround time between walk-in and consultation, as HH:MM. A consultation
 // time earlier than walk-in means the visit ran past midnight, so add a day
 // rather than reporting a negative TAT.
@@ -5546,11 +5574,62 @@ function Appointments({ globalPat, setGlobalPat }) {
   const [newReasonMode, setNewReasonMode] = useState(false);
   const [newReasonText, setNewReasonText] = useState("");
 
+  // Multi-visit treatment tracking (ClinicalSuiteMultiVisitSpec.md) — all
+  // optional, on top of the plain Reason field which stays for one-off visits.
+  const [procedureLibrary, setProcedureLibrary] = useState([]);
+  const [fProcedureCode, setFProcedureCode] = useState("");
+  const [fVisitNo, setFVisitNo] = useState("");
+  const [visitSuggestion, setVisitSuggestion] = useState(null);
+  const [visitLoading, setVisitLoading] = useState(false);
+  const skipNextSuggestEffect = useRef(false);
+
   useEffect(() => {
     api("getReasonsList").then(res => { if (res.success && res.reasons?.length) { setReasons(res.reasons); setFReason(prev => prev || res.reasons[0]); } });
     api("getChairsList").then(res => { if (res.success && res.chairs?.length) { setChairs(res.chairs); setFChair(prev => res.chairs.includes(prev) ? prev : res.chairs[0]); } });
+    api("getProcedureLibrary").then(res => { if (res.success && res.library) setProcedureLibrary(res.library); });
     loadTodaySidebar();
   }, []);
+
+  // Section 5 of the spec: "for a new case, visit defaults to 1; for an
+  // existing open case, it defaults to the next unfinished visit." Skipped
+  // while editing an existing appointment (openEdit sets these fields
+  // directly from the saved record) or right after resolveException below
+  // has already computed the real next visit — re-querying here would use
+  // the "continue" default and could silently overwrite an "add visit" or
+  // "complete" outcome with the wrong stage.
+  useEffect(() => {
+    if (editingId) return;
+    if (skipNextSuggestEffect.current) { skipNextSuggestEffect.current = false; return; }
+    if (!fProcedureCode) { setVisitSuggestion(null); setFVisitNo(""); return; }
+
+    const stages = procedureLibrary.filter(r => r.procedureCode === fProcedureCode).sort((a,b)=>a.visitNo-b.visitNo);
+    const first = stages[0];
+    const freshCase = first ? {
+      isNewCase: true, caseId: "", procedureName: first.procedureName,
+      visitNo: 1, totalVisits: first.standardVisits,
+      stageCode: first.stageCode, stageName: first.stageName, isFinalVisit: !!first.completesTreatment
+    } : null;
+
+    if (!fUhid.trim()) { setVisitSuggestion(freshCase); setFVisitNo(freshCase ? 1 : ""); return; }
+
+    let cancelled = false;
+    setVisitLoading(true);
+    api("getNextVisitSuggestion", { uhid: fUhid, procedureCode: fProcedureCode }).then(res => {
+      if (cancelled) return;
+      setVisitLoading(false);
+      if (res.success && res.suggestion) {
+        setVisitSuggestion({ ...res.suggestion, isNewCase: res.isNewCase, caseId: res.caseId || "" });
+        setFVisitNo(res.suggestion.visitNo);
+      } else {
+        // Either the patient's last case for this procedure is already
+        // complete, or something went wrong asking — either way, starting a
+        // fresh case (visit 1) is the right default; staff can still see and
+        // fix it via the read-only stage line below.
+        setVisitSuggestion(freshCase); setFVisitNo(freshCase ? 1 : "");
+      }
+    });
+    return () => { cancelled = true; };
+  }, [fProcedureCode, fUhid, procedureLibrary, editingId]);
 
   useEffect(() => {
     if (viewMode === "week") loadRange(startOfWeekISO(selDate), isoAddDays(startOfWeekISO(selDate), 6));
@@ -5648,6 +5727,7 @@ function Appointments({ globalPat, setGlobalPat }) {
     setFMobile(""); setFEmail(""); setFAge(""); setFGender(""); setFReason(reasons[0]||"");
     setFDate(selDate);
     setFNotes(""); setFErrors({}); setPatQuery(""); setPatResults([]); setEditingId(null);
+    setFProcedureCode(""); setFVisitNo(""); setVisitSuggestion(null);
   };
 
   const openQuickAdd = (time, chair) => {
@@ -5664,6 +5744,14 @@ function Appointments({ globalPat, setGlobalPat }) {
     setFMobile(a.mobile||""); setFDate(a.date||selDate); setFTime(a.time||"10:00"); setFReason(a.type||reasons[0]||"");
     setFDoctor(a.doctor||doctors[0]||""); setFChair(a.chair||chairs[0]); setFNotes(a.notes||"");
     setFErrors({});
+    // Editing a case-linked appointment keeps it linked — this is the SAME
+    // visit's own stored fields, not a re-derived suggestion, which is why
+    // the auto-suggest effect (above) is skipped whenever editingId is set.
+    setFProcedureCode(a.procedureCode||""); setFVisitNo(a.visitNo||"");
+    setVisitSuggestion(a.procedureCode ? {
+      caseId: a.caseId, procedureName: a.procedureName, totalVisits: a.totalVisits,
+      stageCode: a.stageCode, stageName: a.stageName, isFinalVisit: a.isFinalVisit, isNewCase: false
+    } : null);
     setSelectedAppt(null); setPopupMode("view");
     setShowForm(true);
   };
@@ -5701,7 +5789,15 @@ function Appointments({ globalPat, setGlobalPat }) {
     const payload = {
       date: fDate, uhid: fUhid, patientName: finalName,
       time: fTime, type: fReason, doctor: fDoctor, chair: fChair,
-      mobile: fMobile, notes: fNotes, status: "Scheduled"
+      mobile: fMobile, notes: fNotes, status: "Scheduled",
+      // Multi-visit case fields — omitted entirely for a plain one-off visit.
+      ...(fProcedureCode && visitSuggestion ? {
+        caseId: visitSuggestion.caseId || `${fUhid || "NEW"}-${fProcedureCode}-${Date.now().toString(36).toUpperCase()}`,
+        procedureCode: fProcedureCode, procedureName: visitSuggestion.procedureName,
+        visitNo: Number(fVisitNo) || visitSuggestion.visitNo, totalVisits: visitSuggestion.totalVisits,
+        stageCode: visitSuggestion.stageCode, stageName: visitSuggestion.stageName,
+        isFinalVisit: visitSuggestion.isFinalVisit, caseStatus: "in_progress"
+      } : {})
     };
     const res = editingId
       ? await api("updateAppointment", { apptId: editingId, ...payload })
@@ -5724,6 +5820,41 @@ function Appointments({ globalPat, setGlobalPat }) {
     setAppts(prev => prev.map(a => a.id===apptId ? {...a, status} : a));
     setRangeAppts(prev => prev.map(a => a.id===apptId ? {...a, status} : a));
     setSelectedAppt(null);
+  };
+
+  // The three exception options (section 3 of the spec) — asked only when
+  // completing a visit that's part of a tracked, still-open case. Marks the
+  // visit itself completed first (same status write as any other checkout),
+  // then resolves the case; on continue/add_visit it hands the computed next
+  // visit straight to the booking form so staff still pick date/time/chair.
+  const resolveException = async (option) => {
+    if (!selectedAppt) return;
+    const a = selectedAppt;
+    const statusRes = await api("updateAppointmentStatus", { apptId: a.id, status: "Completed" });
+    if (!statusRes || !statusRes.success) {
+      setApiMsg("Could not complete the appointment: " + ((statusRes && statusRes.error) || "Unknown error"));
+      return;
+    }
+    setAppts(prev => prev.map(x => x.id===a.id ? {...x, status:"Completed"} : x));
+    setRangeAppts(prev => prev.map(x => x.id===a.id ? {...x, status:"Completed"} : x));
+
+    const res = await api("resolveVisitException", { apptId: a.id, exceptionOption: option });
+    setSelectedAppt(null); setPopupMode("view");
+    if (!res || !res.success) {
+      setApiMsg("Visit completed, but could not update the case: " + ((res && res.error) || "Unknown error"));
+      return;
+    }
+    if (!res.caseCompleted && res.nextVisit) {
+      resetForm();
+      skipNextSuggestEffect.current = true; // the line below is the real next visit — don't re-query and overwrite it
+      setPatientMode("established");
+      setFUhid(a.uhid||""); setFName(a.patientName||""); setPatQuery(a.patientName||"");
+      setFMobile(a.mobile||""); setFDoctor(a.doctor||doctors[0]||"");
+      setFProcedureCode(res.nextVisit.procedureCode);
+      setVisitSuggestion({ ...res.nextVisit, caseId: a.caseId, isNewCase:false });
+      setFVisitNo(res.nextVisit.visitNo);
+      setShowForm(true);
+    }
   };
 
   const confirmCancel = async () => {
@@ -5789,7 +5920,9 @@ function Appointments({ globalPat, setGlobalPat }) {
               (a.status!=="Cancelled" && a.status!=="Completed") && React.createElement("button", { onClick:()=>openEdit(a),
                 style:{ padding:"8px 16px", fontSize:12.5, border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#555", fontWeight:700 } },
                 "Edit"),
-              action && React.createElement("button", { onClick:()=>updateStatus(a.id, action.next),
+              action && React.createElement("button", {
+                onClick: () => (action.next==="Completed" && a.caseId && a.caseStatus==="in_progress")
+                  ? setPopupMode("exception") : updateStatus(a.id, action.next),
                 style:{ padding:"8px 16px", fontSize:12.5, border:"none", borderRadius:6, cursor:"pointer", background:"#059669", color:"#fff", fontWeight:700 } },
                 action.label),
               (a.status!=="Cancelled" && a.status!=="Completed") && React.createElement("button", { onClick:()=>setPopupMode("cancel"),
@@ -5798,7 +5931,7 @@ function Appointments({ globalPat, setGlobalPat }) {
             ),
             React.createElement("div", { style:{ fontSize:11.5, color:"#888" } },
               "Status: ", React.createElement("span", { style:{ fontWeight:700, color:STATUS_COL[a.status]||"#888" } }, a.status||"Scheduled")),
-            a.checkinTime && React.createElement("div", { style:{ fontSize:11, color:"#888", marginTop:4 } }, "Checked in: "+a.checkinTime),
+            a.checkinTime && React.createElement("div", { style:{ fontSize:11, color:"#888", marginTop:4 } }, "Checked in: "+hhmm(a.checkinTime)),
             a.engagedTime && React.createElement("div", { style:{ fontSize:11, color:"#888" } }, "Engaged: "+a.engagedTime),
             a.checkoutTime && React.createElement("div", { style:{ fontSize:11, color:"#888" } }, "Checked out: "+a.checkoutTime)
           ),
@@ -5817,6 +5950,28 @@ function Appointments({ globalPat, setGlobalPat }) {
                 "Delete"),
               React.createElement("button", { onClick:()=>setPopupMode("view"),
                 style:{ padding:"8px 16px", fontSize:12.5, border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#555", fontWeight:700 } },
+                "Back")
+            )
+          ),
+
+          // The three exception options — the only clinical decision this
+          // feature asks for, offered at the end of every visit on a tracked case.
+          popupMode === "exception" && React.createElement("div", null,
+            React.createElement("div", { style:{ fontSize:12.5, color:"#555", marginBottom:12, lineHeight:1.5 } },
+              (a.procedureName||"This procedure") + " — Visit " + a.visitNo + " of " + a.totalVisits + " — " + (a.stageName||"") +
+              ". What happens next?"),
+            React.createElement("div", { style:{ display:"flex", flexDirection:"column", gap:8 } },
+              React.createElement("button", { onClick:()=>resolveException("continue"),
+                style:{ padding:"10px 14px", fontSize:12.5, textAlign:"left", border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#333", fontWeight:700 } },
+                "Continue as planned", React.createElement("div", { style:{ fontWeight:400, fontSize:11, color:"#888", marginTop:2 } }, "Moves on to the next stage in the treatment plan.")),
+              React.createElement("button", { onClick:()=>resolveException("add_visit"),
+                style:{ padding:"10px 14px", fontSize:12.5, textAlign:"left", border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#333", fontWeight:700 } },
+                "Add another visit", React.createElement("div", { style:{ fontWeight:400, fontSize:11, color:"#888", marginTop:2 } }, "Repeats this stage once more before moving on.")),
+              React.createElement("button", { onClick:()=>resolveException("complete"),
+                style:{ padding:"10px 14px", fontSize:12.5, textAlign:"left", border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#333", fontWeight:700 } },
+                "Complete procedure now", React.createElement("div", { style:{ fontWeight:400, fontSize:11, color:"#888", marginTop:2 } }, "Ends the treatment here — no further visit is suggested.")),
+              React.createElement("button", { onClick:()=>setPopupMode("view"),
+                style:{ padding:"8px 16px", fontSize:12.5, border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#555", fontWeight:700, marginTop:4 } },
                 "Back")
             )
           )
@@ -6155,6 +6310,39 @@ function Appointments({ globalPat, setGlobalPat }) {
               React.createElement("button", { onClick:()=>setNewReasonMode(true),
                 style:{ width:36, border:`1px solid ${T}`, borderRadius:6, background:"#fff", color:T, cursor:"pointer", fontWeight:700, fontSize:16 } }, "+")
             )
+      ),
+
+      // Multi-visit treatment tracking — one dropdown, optional, blank by
+      // default. Staff never see the procedure library table itself, only
+      // this select and the read-only "Visit N of M — Stage" line it produces.
+      React.createElement("div", { style:{ marginBottom:14, maxWidth:400 } },
+        React.createElement(Lbl, { c:"Procedure (optional — tracks multi-visit treatment)" }),
+        React.createElement("select", { style:inp, value:fProcedureCode, onChange:e=>setFProcedureCode(e.target.value) },
+          React.createElement("option", { value:"" }, "— Not tracked —"),
+          [...new Map(procedureLibrary.map(r => [r.procedureCode, r.procedureName])).entries()]
+            .map(([code, name]) => React.createElement("option", { key:code, value:code }, name))
+        )
+      ),
+
+      fProcedureCode && React.createElement("div", { style:{ marginBottom:14, maxWidth:400, background:BGS, border:`1px solid ${BORDER}`, borderRadius:8, padding:10 } },
+        visitLoading
+          ? React.createElement("div", { style:{ fontSize:12, color:"#888" } }, "Checking this patient's open cases…")
+          : visitSuggestion
+            ? React.createElement("div", null,
+                React.createElement("div", { style:{ display:"flex", gap:10, alignItems:"flex-end" } },
+                  React.createElement("div", null,
+                    React.createElement(Lbl, { c:"Visit" }),
+                    React.createElement("input", { type:"number", min:1, style:{...inp, width:70},
+                      value:fVisitNo, onChange:e=>setFVisitNo(e.target.value) })
+                  ),
+                  React.createElement("div", { style:{ fontSize:12.5, color:"#555", paddingBottom:8 } }, "of " + visitSuggestion.totalVisits)
+                ),
+                React.createElement("div", { style:{ fontSize:12.5, color:T, fontWeight:700, marginTop:6 } },
+                  "Visit " + fVisitNo + " of " + visitSuggestion.totalVisits + " — " + visitSuggestion.stageName),
+                visitSuggestion.isFinalVisit && React.createElement("div", { style:{ fontSize:11, color:"#888", marginTop:2 } }, "Final visit for this treatment")
+              )
+            : React.createElement("div", { style:{ fontSize:12, color:"#888" } },
+                "This patient's most recent case for this procedure is already complete — this will start a new one.")
       ),
 
       React.createElement("div", { style:{ marginBottom:14, maxWidth:400 } },
@@ -6530,7 +6718,7 @@ function Daysheet({ globalPat, setGlobalPat }) {
                 React.createElement("td", { style:{ padding:"7px 10px" } },
                   action ? React.createElement("button", { onClick:()=>updateStatus(a.id, action.next),
                     style:{ padding:"5px 12px", fontSize:11, border:"none", borderRadius:6, cursor:"pointer", background:"#059669", color:"#fff", fontWeight:600 } },
-                    action.label) : React.createElement("span", { style:{ fontSize:11, color:STATUS_COL[a.status]||"#888", fontWeight:700 } }, a.checkinTime||a.status)
+                    action.label) : React.createElement("span", { style:{ fontSize:11, color:STATUS_COL[a.status]||"#888", fontWeight:700 } }, hhmm(a.checkinTime)||a.status)
                 ),
                 React.createElement("td", { style:{ padding:"7px 10px" } }, a.engagedTime||"—"),
                 React.createElement("td", { style:{ padding:"7px 10px" } }, a.checkoutTime||"—")
@@ -11014,7 +11202,7 @@ function DailyRegister({ globalPat, setGlobalPat }) {
       res.appointments.forEach(a=>{
         if(!a.uhid) return;
         map[apptKey(a.uhid,a.date)] = {
-          checkin: a.checkinTime||"", engaged: a.engagedTime||"", checkout: a.checkoutTime||""
+          checkin: hhmm(a.checkinTime), engaged: hhmm(a.engagedTime), checkout: hhmm(a.checkoutTime)
         };
       });
       setApptTimes(map);
