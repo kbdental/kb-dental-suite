@@ -5791,12 +5791,15 @@ function Appointments({ globalPat, setGlobalPat }) {
       time: fTime, type: fReason, doctor: fDoctor, chair: fChair,
       mobile: fMobile, notes: fNotes, status: "Scheduled",
       // Multi-visit case fields — omitted entirely for a plain one-off visit.
-      ...(fProcedureCode && visitSuggestion ? {
-        caseId: visitSuggestion.caseId || `${fUhid || "NEW"}-${fProcedureCode}-${Date.now().toString(36).toUpperCase()}`,
-        procedureCode: fProcedureCode, procedureName: visitSuggestion.procedureName,
-        visitNo: Number(fVisitNo) || visitSuggestion.visitNo, totalVisits: visitSuggestion.totalVisits,
-        stageCode: visitSuggestion.stageCode, stageName: visitSuggestion.stageName,
-        isFinalVisit: visitSuggestion.isFinalVisit, caseStatus: "in_progress"
+      // Uses effectiveVisit (the stage recomputed for whatever visit number is
+      // actually showing), not the frozen initial suggestion, so what saves
+      // always matches what was on screen.
+      ...(fProcedureCode && effectiveVisit ? {
+        caseId: effectiveVisit.caseId || `${fUhid || "NEW"}-${fProcedureCode}-${Date.now().toString(36).toUpperCase()}`,
+        procedureCode: fProcedureCode, procedureName: effectiveVisit.procedureName,
+        visitNo: Number(fVisitNo) || effectiveVisit.visitNo, totalVisits: effectiveVisit.totalVisits,
+        stageCode: effectiveVisit.stageCode, stageName: effectiveVisit.stageName,
+        isFinalVisit: effectiveVisit.isFinalVisit, caseStatus: "in_progress"
       } : {})
     };
     const res = editingId
@@ -5874,6 +5877,25 @@ function Appointments({ globalPat, setGlobalPat }) {
   };
 
   const dateLabel = (iso) => fmtDMY(iso + "T00:00:00");
+
+  // The auto-suggestion effect only decides the DEFAULT visit/stage. Once
+  // shown, the stage must track whatever visit number is actually in the
+  // box — recomputed fresh every render, straight from the library, rather
+  // than staying frozen at the number the suggestion first computed. Without
+  // this, e.g. every RCT visit displayed "Cleaning" (visit 1's stage)
+  // regardless of what visit number was entered.
+  const stageForVisit = (procedureCode, visitNo) => {
+    if (!procedureCode || !visitNo) return null;
+    return procedureLibrary.find(r => r.procedureCode === procedureCode && r.visitNo === Number(visitNo)) || null;
+  };
+  const effectiveVisit = (fProcedureCode && visitSuggestion) ? (() => {
+    if (Number(fVisitNo) === Number(visitSuggestion.visitNo)) return visitSuggestion;
+    const overridden = stageForVisit(fProcedureCode, fVisitNo);
+    return overridden
+      ? { ...visitSuggestion, visitNo: overridden.visitNo, stageCode: overridden.stageCode,
+          stageName: overridden.stageName, isFinalVisit: !!overridden.completesTreatment }
+      : visitSuggestion; // typed visit number has no library row (e.g. an inserted add-visit) — keep the last known stage
+  })() : null;
   const byDoctor = (list) => doctorFilter==="All Doctors" ? list : list.filter(a=>a.doctor===doctorFilter);
 
   const sortedAppts = byDoctor([...appts].sort((a,b) => (a.time||"").localeCompare(b.time||"")));
@@ -6335,11 +6357,11 @@ function Appointments({ globalPat, setGlobalPat }) {
                     React.createElement("input", { type:"number", min:1, style:{...inp, width:70},
                       value:fVisitNo, onChange:e=>setFVisitNo(e.target.value) })
                   ),
-                  React.createElement("div", { style:{ fontSize:12.5, color:"#555", paddingBottom:8 } }, "of " + visitSuggestion.totalVisits)
+                  React.createElement("div", { style:{ fontSize:12.5, color:"#555", paddingBottom:8 } }, "of " + effectiveVisit.totalVisits)
                 ),
                 React.createElement("div", { style:{ fontSize:12.5, color:T, fontWeight:700, marginTop:6 } },
-                  "Visit " + fVisitNo + " of " + visitSuggestion.totalVisits + " — " + visitSuggestion.stageName),
-                visitSuggestion.isFinalVisit && React.createElement("div", { style:{ fontSize:11, color:"#888", marginTop:2 } }, "Final visit for this treatment")
+                  "Visit " + fVisitNo + " of " + effectiveVisit.totalVisits + " — " + effectiveVisit.stageName),
+                effectiveVisit.isFinalVisit && React.createElement("div", { style:{ fontSize:11, color:"#888", marginTop:2 } }, "Final visit for this treatment")
               )
             : React.createElement("div", { style:{ fontSize:12, color:"#888" } },
                 "This patient's most recent case for this procedure is already complete — this will start a new one.")
