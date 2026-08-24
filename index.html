@@ -21467,6 +21467,150 @@ function InstructionListEditor({ items, onAdd, onRemove, onEdit }) {
   );
 }
 
+function slugFromName_(name) {
+  return String(name || "").toUpperCase().replace(/&/g, "AND").replace(/[–\-/]/g, " ")
+    .replace(/[^A-Z0-9 ]/g, "").replace(/\s+/g, "_").trim();
+}
+
+// The Procedure Library that drives the Appointments "Procedure" dropdown
+// and CURRENT/NEXT line — grouped by family, each procedure expandable to
+// its ordered stages. Staff can add a procedure, add/rename/remove a stage
+// on it, or remove the whole procedure. Any change writes back the FULL
+// list (same clear+rewrite pattern as every other Master list), so edits
+// here take effect immediately for the next booking.
+function ProcedureLibraryEditor({ items, families, onSave }) {
+  const [expanded, setExpanded] = React.useState(new Set());
+  const [familyFilter, setFamilyFilter] = React.useState("");
+  const [query, setQuery] = React.useState("");
+  const [newName, setNewName] = React.useState("");
+  const [newFamily, setNewFamily] = React.useState(families[0] || "");
+  const [newStageName, setNewStageName] = React.useState("");
+
+  // Group into an ordered array of {procedureCode, procedureName, familyCode, stages:[...]}.
+  const procMap = new Map();
+  items.forEach(r => {
+    if (!procMap.has(r.procedureCode)) {
+      procMap.set(r.procedureCode, { procedureCode:r.procedureCode, procedureName:r.procedureName, familyCode:r.familyCode, stages:[] });
+    }
+    procMap.get(r.procedureCode).stages.push(r);
+  });
+  let procs = [...procMap.values()];
+  procs.forEach(p => p.stages.sort((a,b)=>a.sequenceNo-b.sequenceNo));
+  if (familyFilter) procs = procs.filter(p => p.familyCode === familyFilter);
+  if (query.trim()) {
+    const q = query.trim().toLowerCase();
+    procs = procs.filter(p => p.procedureName.toLowerCase().includes(q));
+  }
+  procs.sort((a,b) => a.familyCode === b.familyCode ? a.procedureName.localeCompare(b.procedureName) : a.familyCode.localeCompare(b.familyCode));
+
+  const toggle = (code) => setExpanded(prev => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; });
+
+  const renameStage = (procedureCode, sequenceNo, stageName) => {
+    onSave(items.map(r => (r.procedureCode===procedureCode && r.sequenceNo===sequenceNo) ? { ...r, stageName } : r));
+  };
+  const removeStage = (procedureCode, sequenceNo) => {
+    const proc = procMap.get(procedureCode);
+    if (proc.stages.length <= 1) {
+      window.alert("This is the only stage left — remove the whole procedure instead if it's no longer needed.");
+      return;
+    }
+    const removed = proc.stages.find(s => s.sequenceNo === sequenceNo);
+    let remaining = items.filter(r => !(r.procedureCode===procedureCode && r.sequenceNo===sequenceNo));
+    if (removed && removed.completesTreatment) {
+      // Keep exactly one completing stage per procedure — promote whichever
+      // remaining stage now comes last in sequence.
+      const stillHere = remaining.filter(r => r.procedureCode === procedureCode);
+      const lastSeq = Math.max(...stillHere.map(r => r.sequenceNo));
+      remaining = remaining.map(r => (r.procedureCode===procedureCode)
+        ? { ...r, completesTreatment: r.sequenceNo === lastSeq } : r);
+    }
+    onSave(remaining);
+  };
+  const removeProcedure = (procedureCode) => {
+    onSave(items.filter(r => r.procedureCode !== procedureCode));
+  };
+  const addStage = (proc) => {
+    const name = (window.prompt("New stage name for " + proc.procedureName + ":") || "").trim();
+    if (!name) return;
+    const nextSeq = proc.stages.reduce((m,s)=>Math.max(m,s.sequenceNo),0) + 1;
+    // The stage that used to complete the treatment no longer does — the new one does.
+    const updated = items.map(r => (r.procedureCode===proc.procedureCode && r.completesTreatment)
+      ? { ...r, completesTreatment:false } : r);
+    updated.push({
+      procedureCode:proc.procedureCode, procedureName:proc.procedureName, familyCode:proc.familyCode,
+      visitsMin:proc.stages[0].visitsMin, visitsMax:proc.stages[0].visitsMax, sequenceNo:nextSeq,
+      stageType:"", stageCode:slugFromName_(name), stageName:name, completesTreatment:true
+    });
+    onSave(updated);
+  };
+  const addProcedure = () => {
+    const name = newName.trim(), stageName = newStageName.trim();
+    if (!name || !stageName) return;
+    let code = slugFromName_(name), n = 1;
+    while (procMap.has(code)) { n++; code = slugFromName_(name) + "_" + n; }
+    onSave([...items, {
+      procedureCode:code, procedureName:name, familyCode:newFamily,
+      visitsMin:1, visitsMax:1, sequenceNo:1, stageType:"", stageCode:slugFromName_(stageName),
+      stageName, completesTreatment:true
+    }]);
+    setNewName(""); setNewStageName("");
+  };
+
+  return React.createElement("div", null,
+    React.createElement("div", { style:{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" } },
+      React.createElement("input", { style:{...inp, flex:1, minWidth:180}, placeholder:"Search procedures...", value:query, onChange:e=>setQuery(e.target.value) }),
+      React.createElement("select", { style:{...inp, width:200}, value:familyFilter, onChange:e=>setFamilyFilter(e.target.value) },
+        React.createElement("option", { value:"" }, "All families"),
+        families.map(f => React.createElement("option", { key:f, value:f }, f))
+      )
+    ),
+
+    React.createElement("div", { style:{ background:BGS, border:`1px solid ${BORDER}`, borderRadius:8, padding:12, marginBottom:16 } },
+      React.createElement("div", { style:{ fontSize:11.5, fontWeight:700, color:"#555", marginBottom:8, textTransform:"uppercase" } }, "+ Add Procedure"),
+      React.createElement("div", { style:{ display:"flex", gap:8, flexWrap:"wrap" } },
+        React.createElement("input", { style:{...inp, flex:1, minWidth:160}, placeholder:"Procedure name", value:newName, onChange:e=>setNewName(e.target.value) }),
+        React.createElement("select", { style:{...inp, width:180}, value:newFamily, onChange:e=>setNewFamily(e.target.value) },
+          families.map(f => React.createElement("option", { key:f, value:f }, f))
+        ),
+        React.createElement("input", { style:{...inp, flex:1, minWidth:160}, placeholder:"First stage name", value:newStageName, onChange:e=>setNewStageName(e.target.value) }),
+        React.createElement("button", { onClick:addProcedure,
+          style:{ padding:"0 16px", border:"none", borderRadius:6, background:T, color:"#fff", cursor:"pointer", fontWeight:700 } }, "Add")
+      )
+    ),
+
+    procs.length===0
+      ? React.createElement("div", { style:{ textAlign:"center", color:"#aaa", fontSize:13, padding:20 } }, "No procedures match.")
+      : procs.map(p => React.createElement("div", { key:p.procedureCode,
+          style:{ border:`1px solid ${BORDER}`, borderRadius:8, marginBottom:8, overflow:"hidden" } },
+          React.createElement("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"center",
+              padding:"10px 14px", cursor:"pointer", background: expanded.has(p.procedureCode) ? TL : "#fff" },
+              onClick:()=>toggle(p.procedureCode) },
+            React.createElement("div", null,
+              React.createElement("span", { style:{ fontWeight:700, fontSize:13, color:"#222" } }, p.procedureName),
+              React.createElement("span", { style:{ fontSize:11, color:"#888", marginLeft:8 } },
+                p.familyCode + " · " + p.stages.length + " stage" + (p.stages.length===1?"":"s"))
+            ),
+            React.createElement("button", { onClick:e=>{ e.stopPropagation(); if (window.confirm("Remove \"" + p.procedureName + "\" and all its stages?")) removeProcedure(p.procedureCode); },
+              style:{ border:"none", background:"none", color:"#e24b4a", cursor:"pointer", fontSize:11.5, fontWeight:700 } }, "Remove")
+          ),
+          expanded.has(p.procedureCode) && React.createElement("div", { style:{ padding:"8px 14px 14px" } },
+            p.stages.map(s => React.createElement("div", { key:s.sequenceNo,
+              style:{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom:`1px solid ${BORDER}` } },
+              React.createElement("span", { style:{ fontSize:11, color:"#888", width:24 } }, s.sequenceNo),
+              React.createElement("input", { style:{...inp, flex:1}, defaultValue:s.stageName,
+                onBlur:e => { const v = e.target.value.trim(); if (v && v !== s.stageName) renameStage(p.procedureCode, s.sequenceNo, v); } }),
+              s.completesTreatment && React.createElement("span", { style:{ fontSize:10.5, color:"#059669", fontWeight:700 } }, "COMPLETES"),
+              React.createElement("button", { onClick:()=>removeStage(p.procedureCode, s.sequenceNo),
+                style:{ border:"none", background:"none", color:"#e24b4a", cursor:"pointer", fontSize:11 } }, "✕")
+            )),
+            React.createElement("button", { onClick:()=>addStage(p),
+              style:{ marginTop:8, padding:"6px 12px", fontSize:11.5, border:`1px solid ${T}`, borderRadius:6, background:"#fff", color:T, cursor:"pointer", fontWeight:700 } },
+              "+ Add Stage")
+          )
+        ))
+  );
+}
+
 // Two-level pill navigation matching the clinic's own Master layout plan:
 // a top-level category row (CLINIC / Schedule / Patient / Prescriptions /
 // Notes / Accounts / Security), each opening its own row of second-level
@@ -21483,7 +21627,8 @@ const MASTER_STRUCTURE = [
   { id:"schedule", label:"Schedule", subtabs:[
     { id:"clinicTimings", label:"Clinic Timings", placeholder:true },
     { id:"workingDays",   label:"Working Days", placeholder:true },
-    { id:"apptReasons",   label:"Appointment Reasons" }
+    { id:"apptReasons",   label:"Appointment Reasons" },
+    { id:"procedureLibrary", label:"Procedure Library" }
   ]},
   { id:"patient", label:"Patient", subtabs:[
     { id:"referralSource", label:"Referral Source", placeholder:true },
@@ -21870,6 +22015,8 @@ function Master() {
   const [medNotes, setMedNotes] = React.useState([]);
   const [apptReasons, setApptReasons] = React.useState([]);
   const [docCategories, setDocCategories] = React.useState([]);
+  const [procedureLibrary, setProcedureLibrary] = React.useState([]);
+  const [procedureFamilies, setProcedureFamilies] = React.useState([]);
   const [clinicProfile, setClinicProfile] = React.useState(window.CLINIC || {});
   const [loading, setLoading] = React.useState(true);
   const [msg, setMsg] = React.useState("");
@@ -21882,8 +22029,8 @@ function Master() {
       api("getChairsList"), api("getMedicinesMaster"),
       api("getMedicineDosagesList"), api("getMedicineFrequenciesList"), api("getMedicineDurationsList"),
       api("getMedicineInstructionsList"), api("getMedicineNotesList"), api("getReasonsList"),
-      api("getClinicProfile"), api("getDocumentCategoriesList")
-    ]).then(([t,d,e,c,m,tpl,ch,med,dos,freq,dur,instr,mn,ar,cp,dc]) => {
+      api("getClinicProfile"), api("getDocumentCategoriesList"), api("getProcedureLibrary")
+    ]).then(([t,d,e,c,m,tpl,ch,med,dos,freq,dur,instr,mn,ar,cp,dc,pl]) => {
       setLoading(false);
       if (t.success) setTreatments(t.treatments || []);
       if (d.success) setDoctorDetails(d.doctors || []);
@@ -21901,6 +22048,7 @@ function Master() {
       if (ar.success) setApptReasons(ar.reasons || []);
       if (cp.success && cp.profile) setClinicProfile(cp.profile);
       if (dc.success) setDocCategories(dc.categories || []);
+      if (pl.success) { setProcedureLibrary(pl.library || []); setProcedureFamilies(pl.families || []); }
     }).catch(() => setLoading(false));
   }, []);
 
@@ -21921,6 +22069,7 @@ function Master() {
   const saveMedNotes = async (arr) => { setMedNotes(arr); await api("saveMedicineNotesList", { medNotes: JSON.stringify(arr) }); flash(); };
   const saveApptReasons = async (arr) => { setApptReasons(arr); await api("saveReasonsList", { reasons: JSON.stringify(arr) }); flash(); };
   const saveDocCategories = async (arr) => { setDocCategories(arr); await api("saveDocumentCategoriesList", { categories: JSON.stringify(arr) }); flash(); };
+  const saveProcedureLibrary = async (arr) => { setProcedureLibrary(arr); await api("saveProcedureLibrary", { library: JSON.stringify(arr) }); flash(); };
   const saveClinicProfile = async (profile) => {
     setClinicProfile(profile);
     window.CLINIC = { ...window.CLINIC, ...profile };
@@ -22004,6 +22153,9 @@ function Master() {
       items:apptReasons, placeholder:"New appointment reason...",
       onAdd:(v)=>saveApptReasons([...apptReasons, v]),
       onRemove:(i)=>saveApptReasons(apptReasons.filter((_,idx)=>idx!==i))
+    }),
+    procedureLibrary: () => React.createElement(ProcedureLibraryEditor, {
+      items:procedureLibrary, families:procedureFamilies, onSave:saveProcedureLibrary
     }),
     docCategories: () => React.createElement(SimpleListEditor, {
       items:docCategories, placeholder:"New document category...",
