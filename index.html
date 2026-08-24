@@ -5602,6 +5602,10 @@ function Appointments({ globalPat, setGlobalPat }) {
   const [fProcedureCode, setFProcedureCode] = useState("");
   const [caseState, setCaseState] = useState(null); // {caseId, procedureName, familyCode, currentStageName, nextStageName, caseStatus, visitCounter, isNewCase}
   const [caseLoading, setCaseLoading] = useState(false);
+  // Only offered for a brand-new case: a patient who already had earlier
+  // stages done before the clinic tracked this (or elsewhere) can be opened
+  // straight at the stage they're actually at, instead of always Visit 1.
+  const [startAtSequenceNo, setStartAtSequenceNo] = useState(0);
 
   // Procedures narrowed to the Reason's family (falls back to the full
   // library when the Reason has no mapping — see REASON_FAMILY_CODE).
@@ -5632,6 +5636,14 @@ function Appointments({ globalPat, setGlobalPat }) {
   // created) — startTreatmentCase is called at Save time, so cancelling the
   // form never leaves an orphan case behind. Skipped while editing an
   // existing appointment — openEdit fetches that appointment's actual case.
+  useEffect(() => { setStartAtSequenceNo(0); }, [fProcedureCode]);
+
+  // All stages for the selected procedure, in order — used both for the
+  // "starting stage" override select and to recompute its live preview.
+  const procedureStages = fProcedureCode
+    ? procedureLibrary.filter(r => r.procedureCode === fProcedureCode).sort((a,b)=>a.sequenceNo-b.sequenceNo)
+    : [];
+
   useEffect(() => {
     if (editingId) return;
     if (!fProcedureCode) { setCaseState(null); return; }
@@ -5758,7 +5770,7 @@ function Appointments({ globalPat, setGlobalPat }) {
     setFMobile(""); setFEmail(""); setFAge(""); setFGender(""); setFReason(reasons[0]||"");
     setFDate(selDate);
     setFNotes(""); setFErrors({}); setPatQuery(""); setPatResults([]); setEditingId(null);
-    setFProcedureCode(""); setCaseState(null);
+    setFProcedureCode(""); setCaseState(null); setStartAtSequenceNo(0);
   };
 
   const openQuickAdd = (time, chair) => {
@@ -5829,7 +5841,10 @@ function Appointments({ globalPat, setGlobalPat }) {
     if (fProcedureCode && caseState) {
       let cs = caseState;
       if (cs.isNewCase && !cs.caseId && !editingId) {
-        const startRes = await api("startTreatmentCase", { uhid: fUhid, procedureCode: fProcedureCode, patientName: finalName });
+        const startRes = await api("startTreatmentCase", {
+          uhid: fUhid, procedureCode: fProcedureCode, patientName: finalName,
+          startAtSequenceNo: startAtSequenceNo || undefined
+        });
         if (!startRes.success) {
           setSaving(false);
           setApiMsg("Could not start the treatment case: " + (startRes.error || "Unknown error"));
@@ -6413,22 +6428,44 @@ function Appointments({ globalPat, setGlobalPat }) {
             "No procedures mapped to \"" + fReason + "\" yet — showing none. Change the Reason, or ask to widen this mapping.")
       ),
 
-      fProcedureCode && React.createElement("div", { style:{ marginBottom:14, maxWidth:400, background:BGS, border:`1px solid ${BORDER}`, borderRadius:8, padding:10 } },
-        caseLoading
-          ? React.createElement("div", { style:{ fontSize:12, color:"#888" } }, "Checking this patient's open cases…")
-          : caseState
-            ? React.createElement("div", null,
-                React.createElement("div", { style:{ fontSize:12.5, color:T, fontWeight:700 } },
-                  "CURRENT: " + (caseState.currentStageName || "—")),
-                React.createElement("div", { style:{ fontSize:12.5, color:"#555", marginTop:2 } },
-                  "NEXT: " + (caseState.nextStageName || "— completes the treatment —")),
-                React.createElement("div", { style:{ fontSize:11, color:"#888", marginTop:6 } },
-                  caseState.isNewCase
-                    ? "Starting a new case for this procedure."
-                    : "Continuing an open case — " + caseState.visitCounter + " visit(s) so far.")
-              )
-            : React.createElement("div", { style:{ fontSize:12, color:"#888" } }, "Unknown procedure.")
-      ),
+      fProcedureCode && (() => {
+        // For a brand-new case only: lets staff open it straight at the
+        // stage a patient is actually at (already had earlier stages done
+        // before the clinic tracked this, or elsewhere) instead of always
+        // defaulting to the first stage. Purely a display recompute — no
+        // case exists yet, so nothing is written until Save.
+        const startIdx = startAtSequenceNo ? procedureStages.findIndex(s => s.sequenceNo === startAtSequenceNo) : -1;
+        const displayCase = (caseState && caseState.isNewCase && startIdx >= 0)
+          ? { ...caseState, currentStageName: procedureStages[startIdx].stageName,
+              nextStageName: procedureStages[startIdx + 1] ? procedureStages[startIdx + 1].stageName : "" }
+          : caseState;
+        return React.createElement("div", { style:{ marginBottom:14, maxWidth:400, background:BGS, border:`1px solid ${BORDER}`, borderRadius:8, padding:10 } },
+          caseLoading
+            ? React.createElement("div", { style:{ fontSize:12, color:"#888" } }, "Checking this patient's open cases…")
+            : displayCase
+              ? React.createElement("div", null,
+                  React.createElement("div", { style:{ fontSize:12.5, color:T, fontWeight:700 } },
+                    "CURRENT: " + (displayCase.currentStageName || "—")),
+                  React.createElement("div", { style:{ fontSize:12.5, color:"#555", marginTop:2 } },
+                    "NEXT: " + (displayCase.nextStageName || "— completes the treatment —")),
+                  React.createElement("div", { style:{ fontSize:11, color:"#888", marginTop:6 } },
+                    displayCase.isNewCase
+                      ? "Starting a new case for this procedure."
+                      : "Continuing an open case — " + displayCase.visitCounter + " visit(s) so far."),
+                  caseState && caseState.isNewCase && procedureStages.length > 1 &&
+                    React.createElement("div", { style:{ marginTop:8 } },
+                      React.createElement(Lbl, { c:"Already partway through? Start this case at:" }),
+                      React.createElement("select", { style:inp, value:startAtSequenceNo,
+                        onChange:e=>setStartAtSequenceNo(Number(e.target.value)) },
+                        React.createElement("option", { value:0 }, "First stage — " + procedureStages[0].stageName),
+                        procedureStages.slice(1).map(s => React.createElement("option", { key:s.sequenceNo, value:s.sequenceNo },
+                          s.stageName + " (earlier stages assumed already done)"))
+                      )
+                    )
+                )
+              : React.createElement("div", { style:{ fontSize:12, color:"#888" } }, "Unknown procedure.")
+        );
+      })(),
 
       React.createElement("div", { style:{ marginBottom:14, maxWidth:400 } },
         React.createElement(Lbl, { c:"Comments" }),

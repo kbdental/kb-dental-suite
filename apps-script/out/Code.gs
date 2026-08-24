@@ -2362,11 +2362,17 @@ function getCasesSheet() {
 // The stages array for a brand-new case, copied from the library — each
 // entry independent from here on ("copied at case creation and then
 // modified as reality dictates").
-function buildInitialStages_(libraryStages) {
+// startAtSequenceNo lets a case be opened partway through — e.g. a patient
+// who already had earlier stages done before the clinic tracked this, or
+// elsewhere. Stages before it are marked completed with no date/appointment
+// (done, just not through this system); nothing else about the derived
+// current/next logic changes.
+function buildInitialStages_(libraryStages, startAtSequenceNo) {
   return libraryStages.map(function(s) {
+    var startingLate = startAtSequenceNo && s.sequenceNo < startAtSequenceNo;
     return {
       sequenceNo: s.sequenceNo, stageCode: s.stageCode, stageName: s.stageName,
-      status: "pending", completedDate: "", completedInAppointment: "",
+      status: startingLate ? "completed" : "pending", completedDate: "", completedInAppointment: "",
       completesTreatment: !!s.completesTreatment
     };
   });
@@ -2449,7 +2455,8 @@ function startTreatmentCase(p) {
   }
 
   var caseId = caseIdFor_(uhid, procedureCode, existingCount);
-  var initialStages = buildInitialStages_(stagesMeta);
+  var startAt = Number(p.startAtSequenceNo) || 0;
+  var initialStages = buildInitialStages_(stagesMeta, startAt);
   var now = new Date().toISOString();
   var first = stagesMeta[0];
   var values = {

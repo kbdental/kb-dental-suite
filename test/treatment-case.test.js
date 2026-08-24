@@ -68,6 +68,14 @@ eq('fresh case -> current is stage 1 (Preparation)', view.currentStageName, 'Pre
 eq('fresh case -> next is stage 2 (Try-In)', view.nextStageName, 'Try-In');
 eq('fresh case -> not complete', view.isComplete, false);
 
+// --- starting a case partway through (a legacy patient) -----------------
+const lateStart = buildInitialStages_(crownStages, 2); // opened straight at Try-In
+eq('starting at stage 2 -> stage 1 pre-marked completed', lateStart[0].status, 'completed');
+eq('starting at stage 2 -> stage 1 has no completion date (assumed, not tracked)', lateStart[0].completedDate, '');
+eq('starting at stage 2 -> current is Try-In, not Preparation', deriveCaseView_(lateStart).currentStageName, 'Try-In');
+const noLateStart = buildInitialStages_(crownStages, 0);
+eq('startAtSequenceNo 0 behaves like no override at all', noLateStart.every(s => s.status === 'pending'), true);
+
 // Approve stage 1 -> advances to stage 2.
 let stages = applyStageOutcome_(initial, [1], 'approved', 'APT-1');
 view = deriveCaseView_(stages);
