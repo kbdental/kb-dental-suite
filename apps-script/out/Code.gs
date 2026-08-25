@@ -1737,6 +1737,34 @@ function fmtTAT(val) {
   return s;
 }
 
+// Combines a value that can legitimately happen more than once in a day
+// (Procedure Done, Work Done, Tooth No., Operating Doctor, Mode of Payment)
+// — a patient having an X-ray, a Digital Scan, and Local Anesthesia on the
+// same visit should read as one register row listing all three, not three
+// separate rows. Skips re-appending a value already present.
+function combineRegisterField_(oldVal, newVal) {
+  oldVal = String(oldVal || "").trim();
+  newVal = String(newVal || "").trim();
+  if (!newVal) return oldVal;
+  if (!oldVal) return newVal;
+  var parts = oldVal.split(/\s*\|\s*/);
+  if (parts.indexOf(newVal) >= 0) return oldVal;
+  return oldVal + " | " + newVal;
+}
+// A fact that should only ever hold one true value at a time (the compliance
+// questions) — a later non-blank answer corrects an earlier one instead of
+// piling up, but never overwrites an answer with blank.
+function preferLatestNonBlank_(oldVal, newVal) {
+  newVal = String(newVal || "").trim();
+  return newVal || String(oldVal || "").trim();
+}
+// Timing set once at the first visit of the day — later saves fill a gap but
+// never overwrite an already-recorded time.
+function keepFirstNonBlank_(oldVal, newVal) {
+  oldVal = String(oldVal || "").trim();
+  return oldVal || String(newVal || "").trim();
+}
+
 function saveToDailyRegister(p) {
   var sh = getSheet("Daily Register");
 
@@ -1765,35 +1793,76 @@ function saveToDailyRegister(p) {
       if (idx !== undefined) { row[idx] = val; return; }
     }
   }
+  function getBy(row, keys) {
+    for (var k = 0; k < keys.length; k++) {
+      var idx = hIdx[keys[k].toLowerCase()];
+      if (idx !== undefined) return row[idx];
+    }
+    return "";
+  }
 
-  var row = new Array(headers.length).fill("");
   var dateObj = p.date ? new Date(p.date) : new Date();
-  setBy(row, ["month"], p.month || dateObj.toLocaleString("en-US", { month: "long" }));
+  var targetDateISO = formatDateISO(p.date || dateObj);
+  var targetUhid = String(p.uhid || "").trim().toUpperCase();
+
+  // Same patient, same day, more than one clinical action recorded (an
+  // X-ray, a scan, local anesthesia, and more can all happen in one visit) —
+  // merge into that existing row instead of appending a duplicate one.
+  var existingRowIndex = -1;
+  if (targetUhid) {
+    var data = sh.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      var rowUhid = String(getBy(data[i], ["uhid / registration id","uhid","registration id"])).trim().toUpperCase();
+      if (rowUhid !== targetUhid) continue;
+      var rowDateRaw = getBy(data[i], ["timestamp", "date"]);
+      if (rowDateRaw && formatDateISO(rowDateRaw) === targetDateISO) { existingRowIndex = i; break; }
+    }
+  }
+
+  var row = existingRowIndex >= 0 ? data[existingRowIndex].slice() : new Array(headers.length).fill("");
+
+  setBy(row, ["month"], existingRowIndex >= 0
+    ? (getBy(row, ["month"]) || p.month || dateObj.toLocaleString("en-US", { month: "long" }))
+    : (p.month || dateObj.toLocaleString("en-US", { month: "long" })));
   // Sheet's real date column is named "Timestamp" (see debugSheetHeaders) —
   // try that first so new entries actually persist their date; "date" kept
   // as a fallback in case a future sheet uses that name instead.
-  setBy(row, ["timestamp", "date"], p.date || "");
+  if (existingRowIndex < 0) setBy(row, ["timestamp", "date"], p.date || "");
   setBy(row, ["uhid / registration id","uhid","registration id"], p.uhid || "");
-  setBy(row, ["full name","patient name","name"], p.patientName || "");
-  setBy(row, ["phone no.","phone no","phone"], p.phoneNo || "");
-  setBy(row, ["age"], p.age || "");
-  setBy(row, ["time of walk in","walk-in time","walk in","time of walk-in"], p.timeWalkIn || "");
-  setBy(row, ["consultation time"], p.consultationTime || "");
-  setBy(row, ["tat (hr/min)","tat"], p.tat || "");
+  setBy(row, ["full name","patient name","name"],
+    keepFirstNonBlank_(getBy(row, ["full name","patient name","name"]), p.patientName));
+  setBy(row, ["phone no.","phone no","phone"],
+    keepFirstNonBlank_(getBy(row, ["phone no.","phone no","phone"]), p.phoneNo));
+  setBy(row, ["age"], keepFirstNonBlank_(getBy(row, ["age"]), p.age));
+  setBy(row, ["time of walk in","walk-in time","walk in","time of walk-in"],
+    keepFirstNonBlank_(getBy(row, ["time of walk in","walk-in time","walk in","time of walk-in"]), p.timeWalkIn));
+  setBy(row, ["consultation time"],
+    keepFirstNonBlank_(getBy(row, ["consultation time"]), p.consultationTime));
+  setBy(row, ["tat (hr/min)","tat"], keepFirstNonBlank_(getBy(row, ["tat (hr/min)","tat"]), p.tat));
   // An unanswered question stays blank. These are compliance answers, and
   // the register should not be giving them on the clinic's behalf.
-  setBy(row, ["initial assessment done","initial assessment"], p.initialAssessment || "");
-  setBy(row, ["care plan documented","care plan"], p.carePlanDocumented || "");
-  setBy(row, ["procedure done"], p.procedureDone || "");
-  setBy(row, ["tooth no. (if any)","tooth no.","tooth no"], p.toothNo || "");
-  setBy(row, ["work done"], p.workDone || "");
-  setBy(row, ["operating doctor"], p.operatingDoctor || "");
-  setBy(row, ["if delay reason for delay","delay reason"], p.delayReason || "");
-  setBy(row, ["mode of payment & payment","mode of payment","payment"], p.modeOfPayment || "");
-  setBy(row, ["s.no","sno"], sh.getLastRow());
+  setBy(row, ["initial assessment done","initial assessment"],
+    preferLatestNonBlank_(getBy(row, ["initial assessment done","initial assessment"]), p.initialAssessment));
+  setBy(row, ["care plan documented","care plan"],
+    preferLatestNonBlank_(getBy(row, ["care plan documented","care plan"]), p.carePlanDocumented));
+  setBy(row, ["procedure done"], combineRegisterField_(getBy(row, ["procedure done"]), p.procedureDone));
+  setBy(row, ["tooth no. (if any)","tooth no.","tooth no"],
+    combineRegisterField_(getBy(row, ["tooth no. (if any)","tooth no.","tooth no"]), p.toothNo));
+  setBy(row, ["work done"], combineRegisterField_(getBy(row, ["work done"]), p.workDone));
+  setBy(row, ["operating doctor"], combineRegisterField_(getBy(row, ["operating doctor"]), p.operatingDoctor));
+  setBy(row, ["if delay reason for delay","delay reason"],
+    keepFirstNonBlank_(getBy(row, ["if delay reason for delay","delay reason"]), p.delayReason));
+  setBy(row, ["mode of payment & payment","mode of payment","payment"],
+    combineRegisterField_(getBy(row, ["mode of payment & payment","mode of payment","payment"]), p.modeOfPayment));
+  if (existingRowIndex < 0) setBy(row, ["s.no","sno"], sh.getLastRow());
   setBy(row, ["saved at"], new Date().toISOString());
+
+  if (existingRowIndex >= 0) {
+    sh.getRange(existingRowIndex + 1, 1, 1, row.length).setValues([row]);
+    return { success: true, merged: true, row: existingRowIndex + 1 };
+  }
   sh.appendRow(row);
-  return { success: true };
+  return { success: true, merged: false };
 }
 
 // ════════════════════════════════════════════════════════════
