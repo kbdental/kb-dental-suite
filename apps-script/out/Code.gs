@@ -3264,32 +3264,27 @@ function receiptFeeAndMode(r) {
   };
 }
 
-// Save a new payment into the SAME "Working" tab the clinic's live "Patient Fee
-// Receipt Form" (Google Form) already writes to — matches existing column headers
-// by fuzzy name instead of assuming a fixed layout, so the existing finance
-// workflow (whatever reads "Working" downstream) is not disturbed. If the tab is
-// genuinely empty, a header row matching the Google Form's own field order is
-// created once.
-// Records a payment on the "Patient Fee Receipt" tab — the clinic's own entry
-// sheet, and the only tab in the receipt chain with no formulas in it.
+// Records a payment on the "Patient Fee Receipt" tab (the clinic's own entry
+// sheet) AND mirrors it into "Working", which is what "Receipt No." / the FY
+// tabs / the E. Receipt No. sequence actually read from.
 //
-// This writes THAT TAB AND NOTHING ELSE, on purpose.
+// History worth knowing, because the same mistake must not happen a third
+// way: an earlier version of this mirrored into Working using
+// mirror.getLastRow() + 1. Working carries an ARRAYFORMULA spilling down its
+// Date/Time columns, and getLastRow() counts that formula output as if it
+// were real data — the write landed ~190 rows past the real data, outside
+// the formula's range, and the gap broke the E. Receipt No. sequence (it
+// restarted at 1 when the clinic had already issued 233). The fix after
+// that removed the mirror entirely — which stopped the corruption, but also
+// meant a receipt saved through the app never reached Working, Receipt No.,
+// or the FY tabs at all, silently, since the clinic's own Google Form
+// writes straight into Working and nothing was left connecting the two.
 //
-// An earlier version of this function also mirrored the row into "Working",
-// reasoning that Working is a static copy rather than a formula link, so a row
-// written only to the entry tab would not reach "Receipt No." and would be
-// invisible in the app. That reasoning was right about the linkage and badly
-// wrong about the consequence. "Working" carries an ARRAYFORMULA spilling down
-// its Date and Time columns, so appendRow/getLastRow land far below the real
-// data — the row went in ~190 rows past the end, outside the formula range,
-// and the gap restarted the E. Receipt No. sequence at 1 when the clinic had
-// already issued 233. Whatever keeps Working in step with the entry tab today
-// was already doing its job; this function has no business reaching into it.
-//
-// So: one row, one tab, no side effects. If a receipt takes a moment to appear
-// in the app, that is the clinic's existing entry-tab-to-Working step catching
-// up — which is a wait, not a corrupted ledger.
+// So: the mirror is back, but the row it targets is found by scanning the
+// UHID column from the bottom up (finFirstFreeRow_), never by trusting
+// getLastRow() — the same fix already proven correct on the entry tab.
 var FIN_ENTRY_TAB = "Patient Fee Receipt";
+var FIN_MIRROR_TAB = "Working";
 
 // Finds a column by header name, tolerating the sheet's own spelling (trailing
 // spaces, "'s", casing). Returns -1 when absent.
@@ -3328,21 +3323,32 @@ function finReceiptRow_(headers, p, stamp) {
   return row;
 }
 
-// The first free row judged by the Timestamp column rather than by
-// getLastRow(). getLastRow() counts anything on the sheet, formula output
-// included, so on a tab carrying a spilled ARRAYFORMULA it points well past
-// the last real entry. The entry tab has no formulas today, but a row landing
-// in the wrong place here is exactly what broke the receipt numbering once
-// already, so it is not left to chance.
-function finFirstFreeRow_(sheet) {
+// The first free row judged by scanning an actual data column from the
+// bottom up, rather than by getLastRow(). getLastRow() counts anything on
+// the sheet, formula output included, so on a tab carrying a spilled
+// ARRAYFORMULA it points well past the last real entry — exactly what broke
+// the receipt numbering once already. colIndex defaults to 1 (column A).
+function finFirstFreeRow_(sheet, colIndex) {
+  var col = colIndex || 1;
   var last = sheet.getLastRow();
   if (last < 1) return 2;
-  var stamps = sheet.getRange(1, 1, last, 1).getValues();
-  for (var i = stamps.length - 1; i >= 1; i--) {
-    var v = stamps[i][0];
+  var vals = sheet.getRange(1, col, last, 1).getValues();
+  for (var i = vals.length - 1; i >= 1; i--) {
+    var v = vals[i][0];
     if (v !== "" && v !== null && v !== undefined) return i + 2;
   }
   return 2;
+}
+
+// A receipt's date arrives as "YYYY-MM-DD" — new Date("YYYY-MM-DD") parses
+// that as UTC midnight, which this sheet's IST timezone then displays as
+// 05:30, not midnight. The clinic's own historical rows (from the Google
+// Form) show plain local midnight instead, so build the date from its parts
+// directly rather than through a UTC-parsing constructor.
+function localDateFromISO_(iso) {
+  var m = String(iso || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
 function saveReceipt(p) {
@@ -3355,15 +3361,34 @@ function saveReceipt(p) {
 
     // The receipt is dated by the entry the staff member made, not by the
     // moment the request happened to reach the server.
-    var stamp = p.date ? new Date(p.date) : new Date();
+    var stamp = (p.date && localDateFromISO_(p.date)) || new Date();
     if (isNaN(stamp.getTime())) stamp = new Date();
 
-    var headers = entry.getRange(1, 1, 1, entry.getLastColumn()).getValues()[0].map(String);
-    var row = finReceiptRow_(headers, p, stamp);
-    var target = finFirstFreeRow_(entry);
-    entry.getRange(target, 1, 1, row.length).setValues([row]);
+    var entryHeaders = entry.getRange(1, 1, 1, entry.getLastColumn()).getValues()[0].map(String);
+    var entryRow = finReceiptRow_(entryHeaders, p, stamp);
+    var entryTarget = finFirstFreeRow_(entry, finCol_(entryHeaders, ["UHID"]) + 1 || 1);
+    entry.getRange(entryTarget, 1, 1, entryRow.length).setValues([entryRow]);
 
-    return { success: true, row: target };
+    // Mirror into Working so Receipt No. / the FY tabs / E. Receipt No. pick
+    // it up — the clinic's Google Form writes there directly, and nothing
+    // else moves an app-saved receipt across on its own.
+    var mirror = ss.getSheetByName(FIN_MIRROR_TAB);
+    var mirrored = false;
+    if (mirror) {
+      var mirrorHeaders = mirror.getRange(1, 1, 1, mirror.getLastColumn()).getValues()[0].map(String);
+      var dateCol = finCol_(mirrorHeaders, ["Date"]);
+      var timeCol = finCol_(mirrorHeaders, ["Time"]);
+      // Stop before the computed columns — never write into an ARRAYFORMULA spill.
+      var lastWritable = mirrorHeaders.length;
+      [dateCol, timeCol].forEach(function(c) { if (c >= 0 && c < lastWritable) lastWritable = c; });
+      var mirrorRow = finReceiptRow_(mirrorHeaders, p, stamp).slice(0, lastWritable);
+      var mirrorUhidCol = finCol_(mirrorHeaders, ["UHID"]);
+      var mirrorTarget = finFirstFreeRow_(mirror, (mirrorUhidCol >= 0 ? mirrorUhidCol : 0) + 1);
+      mirror.getRange(mirrorTarget, 1, 1, mirrorRow.length).setValues([mirrorRow]);
+      mirrored = true;
+    }
+
+    return { success: true, row: entryTarget, mirrored: mirrored };
   } catch (e) {
     return { success: false, error: e.message };
   }
