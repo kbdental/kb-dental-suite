@@ -5462,6 +5462,31 @@ function isoAddDays(iso, n) {
   d.setDate(d.getDate() + n);
   return toISODate(d);
 }
+
+// A telephone booking for a not-yet-registered patient is saved with no
+// UHID (there isn't one yet). Once they register, nothing used to connect
+// that appointment to the new UHID — front desk had no way to find it, so
+// they booked a second appointment for the same visit, and the day showed
+// the same patient twice: once blank, once with a UHID. Finds the best
+// candidate to attach the new UHID to instead: an appointment with no UHID
+// whose phone number matches, picking whichever is closest to today (a
+// same-day walk-in over a booking made for next week).
+function findOrphanAppointmentForPhone(appointments, mobile, todayISO) {
+  // Compare the last 10 digits, not the whole string — the same number shows
+  // up with and without a "+91" country code depending on where it was typed.
+  const last10 = (v) => String(v || "").replace(/\D/g, "").slice(-10);
+  const digits = last10(mobile);
+  if (!digits) return null;
+  const candidates = (appointments || []).filter(a =>
+    !String(a.uhid || "").trim() &&
+    last10(a.mobile) === digits &&
+    a.status !== "Cancelled"
+  );
+  if (!candidates.length) return null;
+  candidates.sort((a, b) =>
+    Math.abs(new Date(a.date) - new Date(todayISO)) - Math.abs(new Date(b.date) - new Date(todayISO)));
+  return candidates[0];
+}
 function startOfWeekISO(iso) {
   const d = new Date(iso + "T00:00:00");
   const dow = d.getDay(); // 0=Sun..6=Sat
@@ -24602,8 +24627,22 @@ function App() {
     setGlobalPat: setGlobalPat
   }), page === "registration" && /*#__PURE__*/React.createElement(Registration, {
     globalPat: globalPat,
-    onPatientRegistered: p => {
+    onPatientRegistered: async p => {
       setGlobalPat(p);
+      // See findOrphanAppointmentForPhone — attach the new UHID to a phone
+      // booking made before this patient existed in the system, rather than
+      // leaving it to show up as a second, blank-UHID copy of today's visit.
+      try {
+        const mobile = String(p.mobile || "").trim();
+        if (!mobile) return;
+        const today = toISODate(new Date());
+        const res = await api("getAppointments", { fromDate: isoAddDays(today, -7), toDate: isoAddDays(today, 60) });
+        if (!res.success || !res.appointments) return;
+        const orphan = findOrphanAppointmentForPhone(res.appointments, mobile, today);
+        if (orphan) {
+          await api("updateAppointment", { apptId: orphan.id, uhid: p.uhid, patientName: p.name });
+        }
+      } catch (e) { console.error("Link phone-booked appointment:", e); }
     },
     onNavigate: setPage
   }), page === "careplan" && /*#__PURE__*/React.createElement(CarePlan, {

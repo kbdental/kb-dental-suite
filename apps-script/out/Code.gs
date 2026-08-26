@@ -2011,6 +2011,11 @@ function updateAppointment(p) {
       var updates = {
         "Date": p.date, "Time": p.time, "Type": p.type, "Doctor": p.doctor,
         "Chair": p.chair, "Notes": p.notes,
+        // Only sent when actually attaching a UHID — a telephone booking made
+        // before the patient existed in the system is saved with no UHID, and
+        // gets linked here once they register, rather than staying a second,
+        // unidentified copy of the same visit.
+        "UHID": p.uhid, "Patient Name": p.patientName,
         // Multi-visit case fields — only touched when the edit form actually
         // sent them (a plain one-off appointment's edit never includes these).
         "CaseId": p.caseId, "ProcedureCode": p.procedureCode, "ProcedureName": p.procedureName,
