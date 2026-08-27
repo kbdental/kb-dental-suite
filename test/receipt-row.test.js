@@ -29,7 +29,10 @@ const from = src.indexOf('function finCol_(');
 const to = src.indexOf('function saveReceipt(p) {');
 if (from < 0 || to < 0) { console.error('could not locate the receipt helpers'); process.exit(1); }
 
-const ctx = { SpreadsheetApp: null };
+// The slice above also carries the gap-closing maintenance helpers, which read
+// these two tab-name constants at load time (they are exercised properly in
+// working-gap.test.js).
+const ctx = { SpreadsheetApp: null, FIN_ENTRY_TAB: 'Patient Fee Receipt', FIN_MIRROR_TAB: 'Working' };
 vm.createContext(ctx);
 vm.runInContext(src.slice(from, to) +
   ';this.finCol_ = finCol_; this.finReceiptRow_ = finReceiptRow_; this.finFirstFreeRow_ = finFirstFreeRow_;' +

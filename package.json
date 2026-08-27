@@ -2,7 +2,7 @@
   "name": "kb-dental-suite",
   "private": true,
   "scripts": {
-    "test": "node test/prefill.test.js && node test/hhmm.test.js && node test/receipt-row.test.js && node test/treatment-case.test.js && node test/register-merge.test.js && node test/orphan-appointment.test.js && node test/register-questions.test.js && node test/templates.test.js && node test/clinical-sheet-register.test.js && node test/rct-backend.test.js"
+    "test": "node test/prefill.test.js && node test/hhmm.test.js && node test/receipt-row.test.js && node test/treatment-case.test.js && node test/register-merge.test.js && node test/orphan-appointment.test.js && node test/register-questions.test.js && node test/templates.test.js && node test/clinical-sheet-register.test.js && node test/rct-backend.test.js && node test/working-gap.test.js"
   },
   "devDependencies": {
     "playwright": "^1.56.0",
