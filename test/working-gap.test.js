@@ -12,17 +12,10 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const src = fs.readFileSync(path.resolve(__dirname, '..', 'apps-script', 'out', 'Code.gs'), 'utf8');
-function grab(startMarker, endMarker) {
-  const from = src.indexOf(startMarker);
-  const to = src.indexOf(endMarker, from);
-  if (from < 0 || to < 0) { console.error('could not locate ' + startMarker); process.exit(1); }
-  return src.slice(from, to);
-}
-
-const code =
-  grab('function finCol_(', '// Builds the row against') +
-  grab('// A function rather than a top-level array', '// A receipt\'s date arrives');
+// The file the clinic actually pastes into the Apps Script editor, tested as
+// the thing that gets run rather than a second copy of it.
+const code = fs.readFileSync(
+  path.resolve(__dirname, '..', 'apps-script', 'maintenance', 'finance-gap-fix.gs'), 'utf8');
 
 // A stand-in for one finance tab. Row 1 is the header; `rows` are the data
 // rows below it, each a full-width array.
@@ -46,17 +39,15 @@ const logs = [];
 // `tabs` maps tab name -> fakeSheet, so a test can supply one tab or both.
 function makeCtx(tabs) {
   const ctx = {
-    FIN_ENTRY_TAB: 'Patient Fee Receipt',
-    FIN_MIRROR_TAB: 'Working',
-    getFinanceSheetId: () => 'FAKE',
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
     SpreadsheetApp: { openById: () => ({ getSheetByName: n => tabs[n] || null }) },
     Logger: { log: (...a) => logs.push(a.join(' ')) }
   };
   vm.createContext(ctx);
   vm.runInContext(code +
-    ';this.finScanTab_=finScanTab_;this.closeFinanceGaps=closeFinanceGaps;' +
-    'this.reportFinanceGaps=reportFinanceGaps;this.finDataWidth_=finDataWidth_;' +
-    'this.finCellEmpty_=finCellEmpty_;this.finGapTabs_=finGapTabs_;', ctx);
+    ';this.finScanTab_=gapfixScanTab_;this.closeFinanceGaps=closeFinanceGaps;' +
+    'this.reportFinanceGaps=reportFinanceGaps;this.finDataWidth_=gapfixDataWidth_;' +
+    'this.finCellEmpty_=gapfixCellEmpty_;this.gapfixSheetId_=gapfixSheetId_;', ctx);
   return ctx;
 }
 // Most tests only care about one tab; give the other an already-clean stub.
