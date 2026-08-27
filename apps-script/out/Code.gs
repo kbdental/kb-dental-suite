@@ -3357,7 +3357,10 @@ function finFirstFreeRow_(sheet, colIndex) {
 // reportFinanceGaps() shows what is there and changes nothing.
 // closeFinanceGaps() deletes ONLY blank rows, so the stranded receipts slide
 // up into sequence. It never deletes a row carrying data.
-var FIN_GAP_TABS = [FIN_ENTRY_TAB, FIN_MIRROR_TAB];
+// A function rather than a top-level array so this block can be pasted into
+// the script anywhere without depending on the tab-name constants above it
+// having been evaluated first.
+function finGapTabs_() { return [FIN_ENTRY_TAB, FIN_MIRROR_TAB]; }
 
 // Two kinds of column lie about a row being used, and both have to be ignored
 // when deciding whether a row is blank:
@@ -3405,7 +3408,7 @@ function finScanTab_(tabName) {
 
 // Read-only. Run this first and read the log.
 function reportFinanceGaps() {
-  FIN_GAP_TABS.forEach(function(tabName) {
+  finGapTabs_().forEach(function(tabName) {
     Logger.log("──────── %s ────────", tabName);
     var s = finScanTab_(tabName);
     Logger.log("getLastRow() says %s rows; %s of them carry real data.", s.lastRow, s.filled.length);
@@ -3427,7 +3430,7 @@ function reportFinanceGaps() {
 // Deletes only the blank rows reportFinanceGaps() listed, bottom-up so the row
 // numbers above each deletion stay valid as it goes.
 function closeFinanceGaps() {
-  FIN_GAP_TABS.forEach(function(tabName) {
+  finGapTabs_().forEach(function(tabName) {
     Logger.log("──────── %s ────────", tabName);
     var s = finScanTab_(tabName);
     if (!s.gaps.length) { Logger.log("No blank gaps between data rows. Nothing deleted."); return; }

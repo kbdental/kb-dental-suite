@@ -22,7 +22,7 @@ function grab(startMarker, endMarker) {
 
 const code =
   grab('function finCol_(', '// Builds the row against') +
-  grab('var FIN_GAP_TABS', '// A receipt\'s date arrives');
+  grab('// A function rather than a top-level array', '// A receipt\'s date arrives');
 
 // A stand-in for one finance tab. Row 1 is the header; `rows` are the data
 // rows below it, each a full-width array.
@@ -56,7 +56,7 @@ function makeCtx(tabs) {
   vm.runInContext(code +
     ';this.finScanTab_=finScanTab_;this.closeFinanceGaps=closeFinanceGaps;' +
     'this.reportFinanceGaps=reportFinanceGaps;this.finDataWidth_=finDataWidth_;' +
-    'this.finCellEmpty_=finCellEmpty_;this.FIN_GAP_TABS=FIN_GAP_TABS;', ctx);
+    'this.finCellEmpty_=finCellEmpty_;this.finGapTabs_=finGapTabs_;', ctx);
   return ctx;
 }
 // Most tests only care about one tab; give the other an already-clean stub.
