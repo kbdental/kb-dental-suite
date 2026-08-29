@@ -1,13 +1,18 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CLOSE THE BLANK GAP IN THE FINANCE SHEET
+// FINANCE SHEET MAINTENANCE
 //
 // HOW TO USE
 //   1. Open any Apps Script project (script.google.com — a brand new empty
 //      one is fine) and paste this whole file into it. Save (Ctrl+S).
-//   2. Function dropdown -> reportFinanceGaps -> Run -> open Execution log.
-//      This CHANGES NOTHING. It only tells you what is there.
-//   3. If the numbers look right, run closeFinanceGaps.
-//      It deletes ONLY blank rows. Every row carrying data is kept.
+//   2. Function dropdown -> pick one -> Run -> open Execution log.
+//
+//   diagnoseFinanceWrites  READ-ONLY. Lists the last rows of both tabs with
+//                          their row numbers, so a receipt appearing twice can
+//                          be pinned to exact rows, and flags any row that is
+//                          produced by a formula rather than written.
+//   reportFinanceGaps      READ-ONLY. Reports blank gaps between data rows.
+//   closeFinanceGaps       Deletes ONLY blank rows. Every row carrying data
+//                          is kept, so stranded receipts slide back up.
 //
 // This file is deliberately self-contained — it shares no names with the
 // clinic's main Code.gs, so it can be pasted anywhere (including alongside
@@ -115,6 +120,47 @@ function reportFinanceGaps() {
     Logger.log("Blank rows closeFinanceGaps() would delete here: %s", total);
   });
   Logger.log("Nothing has been changed. Run closeFinanceGaps() to delete exactly those rows.");
+}
+
+// ── Read-only. Shows the tail of both tabs so a receipt that appears twice ─
+// ── can be pinned to exact rows, and says whether each row is typed/written ─
+// ── or produced by a formula (which would mean the tab is derived, not fed). ─
+function diagnoseFinanceWrites() {
+  var tz = SpreadsheetApp.openById(gapfixSheetId_()).getSpreadsheetTimeZone();
+  Logger.log("Finance sheet: %s   (timezone %s)", gapfixSheetId_(), tz);
+  GAPFIX_TABS.forEach(function(tabName) {
+    Logger.log("──────── %s ────────", tabName);
+    var s = gapfixScanTab_(tabName);
+    if (!s.filled.length) { Logger.log("No data rows."); return; }
+    var last = s.filled[s.filled.length - 1];
+    Logger.log("Last row carrying data: %s   (getLastRow() reports %s)", last, s.lastRow);
+
+    var tsCol   = gapfixCol_(s.headers, "Timestamp");
+    var uhidCol = gapfixCol_(s.headers, "UHID");
+    var nameCol = gapfixCol_(s.headers, "Patient's Name");
+    if (nameCol < 0) nameCol = gapfixCol_(s.headers, "Name");
+    var amtCol  = gapfixCol_(s.headers, "Amount");
+
+    var show = s.filled.slice(-12);
+    Logger.log("Last %s rows with data:", show.length);
+    show.forEach(function(r) {
+      var vals = s.sheet.getRange(r, 1, 1, s.width).getValues()[0];
+      var fx   = s.sheet.getRange(r, 1, 1, s.width).getFormulas()[0];
+      var isFormula = fx.some(function(f) { return f !== ""; });
+      var ts = tsCol >= 0 ? vals[tsCol] : "";
+      var tsTxt = (ts instanceof Date)
+        ? Utilities.formatDate(ts, tz, "dd/MM/yyyy HH:mm:ss")
+        : String(ts);
+      Logger.log("  row %s | %s | %s | %s | %s%s",
+        r, tsTxt,
+        uhidCol >= 0 ? vals[uhidCol] : "",
+        nameCol >= 0 ? vals[nameCol] : "",
+        amtCol  >= 0 ? vals[amtCol]  : "",
+        isFormula ? "   <-- FORMULA, not a written row" : "");
+    });
+  });
+  Logger.log("Nothing has been changed.");
+  Logger.log("A receipt listed under BOTH tabs above is the app writing it twice.");
 }
 
 // ── Deletes only the blank rows the report listed, bottom-up so the row ────

@@ -36,8 +36,8 @@ const ctx = { SpreadsheetApp: null, FIN_ENTRY_TAB: 'Patient Fee Receipt', FIN_MI
 vm.createContext(ctx);
 vm.runInContext(src.slice(from, to) +
   ';this.finCol_ = finCol_; this.finReceiptRow_ = finReceiptRow_; this.finFirstFreeRow_ = finFirstFreeRow_;' +
-  'this.localDateFromISO_ = localDateFromISO_;', ctx);
-const { finCol_, finReceiptRow_, finFirstFreeRow_, localDateFromISO_ } = ctx;
+  'this.localStampFromISO_ = localStampFromISO_;', ctx);
+const { finCol_, finReceiptRow_, finFirstFreeRow_, localStampFromISO_ } = ctx;
 
 // A minimal stand-in for a Sheet, enough for finFirstFreeRow_'s getLastRow()
 // and getRange(...).getValues() calls. expectedCol (1-based), when given,
@@ -130,17 +130,25 @@ eq('firstFreeRow: ignores spilled rows past the real data',
 eq('firstFreeRow: scans column 3 when asked to, not column A',
   finFirstFreeRow_(fakeSheet(['UHID', 'AL0777', 'AL0778', '', '', '', '', ''], undefined, 3), 3), 4);
 
-// --- localDateFromISO_: the timestamp-showing-05:30-instead-of-midnight fix
-// new Date("2026-08-22") parses as UTC midnight, which an IST-timezone sheet
-// then displays as 05:30 — not the plain local midnight every historical row
-// (fed by the clinic's own Google Form) actually shows.
-const local = localDateFromISO_('2026-08-22');
-eq('localDateFromISO_: year/month/day match the input, not shifted by UTC parsing',
+// --- localStampFromISO_: two bugs this one value has to avoid at once -----
+// 1. new Date("2026-08-22") parses as UTC midnight, which an IST-timezone
+//    sheet then displays as 05:30. The parts must be fed to the constructor
+//    directly, never parsed from the string as UTC.
+// 2. Building from the date alone left every app row reading 00:00:00 in a
+//    column where the clinic's Google Form rows carry the real entry time.
+const local = localStampFromISO_('2026-08-22');
+eq('localStampFromISO_: year/month/day match the input, not shifted by UTC parsing',
   [local.getFullYear(), local.getMonth(), local.getDate()], [2026, 7, 22]);
-eq('localDateFromISO_: local midnight, not 05:30', [local.getHours(), local.getMinutes()], [0, 0]);
-eq('localDateFromISO_: garbage input returns null, so saveReceipt falls back to "now"',
-  localDateFromISO_('not a date'), null);
-eq('localDateFromISO_: empty input returns null', localDateFromISO_(''), null);
+eq('localStampFromISO_: not the 05:30 UTC-parse artefact',
+  [local.getHours(), local.getMinutes()] .join(':') === '5:30', false);
+// The clock time is "now", so assert it tracks the current time rather than
+// pinning an exact value the test could never know.
+const nowRef = new Date();
+eq('localStampFromISO_: carries a real clock time, not midnight',
+  [local.getHours(), local.getMinutes()], [nowRef.getHours(), nowRef.getMinutes()]);
+eq('localStampFromISO_: garbage input returns null, so saveReceipt falls back to "now"',
+  localStampFromISO_('not a date'), null);
+eq('localStampFromISO_: empty input returns null', localStampFromISO_(''), null);
 
 // --- the mirror row must stop before Working's computed Date/Time columns -
 const MIRROR_HEADERS = ['Timestamp', 'UHID', "Patient's Name ", 'Nature of Professional Services',

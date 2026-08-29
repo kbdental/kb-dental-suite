@@ -3345,15 +3345,24 @@ function finFirstFreeRow_(sheet, colIndex) {
   return 2;
 }
 
-// A receipt's date arrives as "YYYY-MM-DD" — new Date("YYYY-MM-DD") parses
-// that as UTC midnight, which this sheet's IST timezone then displays as
-// 05:30, not midnight. The clinic's own historical rows (from the Google
-// Form) show plain local midnight instead, so build the date from its parts
-// directly rather than through a UTC-parsing constructor.
-function localDateFromISO_(iso) {
+// A receipt's date arrives as "YYYY-MM-DD". Two things have gone wrong here
+// before, and the stamp has to satisfy both:
+//
+//   new Date("YYYY-MM-DD") parses as UTC midnight, which this sheet's IST
+//   timezone then displays as 05:30 — so the parts are read out of the string
+//   and fed to the constructor directly, never parsed as a UTC string.
+//
+//   Building from the date alone then left every app-saved row reading
+//   00:00:00, while the clinic's Google Form rows carry the real moment of
+//   entry (11:17:15, 14:08:26 …). App rows stood out as midnight in a column
+//   of genuine times. So the chosen date keeps the staff member's intent,
+//   and the clock time records when it was actually entered.
+function localStampFromISO_(iso) {
   var m = String(iso || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return null;
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  var now = new Date();
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]),
+                  now.getHours(), now.getMinutes(), now.getSeconds());
 }
 
 function saveReceipt(p) {
@@ -3366,7 +3375,7 @@ function saveReceipt(p) {
 
     // The receipt is dated by the entry the staff member made, not by the
     // moment the request happened to reach the server.
-    var stamp = (p.date && localDateFromISO_(p.date)) || new Date();
+    var stamp = (p.date && localStampFromISO_(p.date)) || new Date();
     if (isNaN(stamp.getTime())) stamp = new Date();
 
     var entryHeaders = entry.getRange(1, 1, 1, entry.getLastColumn()).getValues()[0].map(String);
