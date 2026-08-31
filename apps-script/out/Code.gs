@@ -666,18 +666,28 @@ function findRegColumn_(headers, candidates) {
   return -1;
 }
 
+// A person, not a phone number, is what makes a duplicate. This used to match
+// on mobile alone — which blocked registering a second family member (very
+// common with elderly patients sharing one phone) as a "duplicate" of the
+// first, refusing them their own UHID. Name + date of birth is what actually
+// identifies a patient here; mobile is no longer part of the check.
+function normaliseRegName_(s) {
+  return String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
 function checkDuplicate(p) {
   var sh = getSheet("Registrations");
   var data = sh.getDataRange().getValues();
   if (data.length <= 1) return { success: true, duplicate: false };
   var headers = data[0];
-  var mobileCol = findRegColumn_(headers, ["Mobile No.", "Mobile"]);
   var uhidCol = findRegColumn_(headers, ["UHID", "Registration ID"]);
   var nameCol = findRegColumn_(headers, ["Full Name", "Name"]);
-  if (mobileCol < 0) return { success: true, duplicate: false };
-  var mobile = String(p.mobile || "").trim();
+  var dobCol = findRegColumn_(headers, ["Date of Birth", "DOB"]);
+  if (nameCol < 0 || dobCol < 0) return { success: true, duplicate: false };
+  var name = normaliseRegName_(p.name);
+  var dob = formatDOB(p.dob);
+  if (!name || !dob) return { success: true, duplicate: false };
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][mobileCol]).trim() === mobile) {
+    if (normaliseRegName_(data[i][nameCol]) === name && formatDOB(data[i][dobCol]) === dob) {
       return {
         success: true, duplicate: true,
         existingUHID: uhidCol >= 0 ? data[i][uhidCol] : "",
