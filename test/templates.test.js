@@ -107,6 +107,11 @@ function expectedFor(cat) {
       }
       if (optCount === 0) { rec.status = 'EMPTY (no templates in category)'; results.push(rec); await page.close(); continue; }
 
+      // 1b. Simulate a tooth already having been picked earlier in the form
+      // (RCT, Crown & Bridge, Implant Surgery, Implant Prosthetic all track
+      // this in a `selTooth` variable set by clicking a tooth number).
+      await page.evaluate(() => { window.selTooth = '16'; });
+
       // 2. Select the first template; placeholder inputs should appear.
       // Set the value directly rather than via selectOption: several forms keep
       // the dropdown inside a tab pane that is display:none until that tab is
@@ -122,10 +127,24 @@ function expectedFor(cat) {
         document.querySelectorAll('#' + id + ' [data-tpl-field]').length, fieldsId);
       rec.tokens = tokenCount;
 
-      // 3. Fill every placeholder with a marker value.
+      // 2b. If the template has a {tooth} placeholder, it should already be
+      // auto-filled from window.selTooth before staff types anything.
+      const toothAutofilled = await page.evaluate(id => {
+        const f = document.querySelector('#' + id + ' [data-tpl-field="tooth"]');
+        return f ? f.value : null;
+      }, fieldsId);
+      rec.toothAutofilled = toothAutofilled;
+      // Only these 4 forms track a selected tooth (via `selTooth`) earlier in
+      // the form and are expected to auto-fill the {tooth} placeholder from it.
+      const SELTOOTH_FORMS = ['RCT_FORM_B64', 'CROWN_BRIDGE_B64', 'IMP_SURGERY_B64', 'IMP_PROSTHETIC_B64'];
+      const hasToothToken = expected[0] && /\{tooth\}/.test(expected[0].text) && SELTOOTH_FORMS.includes(name);
+      rec.toothAutofillOk = !hasToothToken || toothAutofilled === '16';
+
+      // 3. Fill every remaining placeholder with a marker value (leave any
+      // already-autofilled field, e.g. tooth, untouched).
       await page.evaluate(id => {
         document.querySelectorAll('#' + id + ' [data-tpl-field]').forEach((f, i) => {
-          f.value = 'VAL' + i;
+          if (!f.value) f.value = 'VAL' + i;
         });
       }, fieldsId);
 
@@ -145,10 +164,10 @@ function expectedFor(cat) {
       rec.landedIn = landed.map(l => l.id).join(',') || '(nowhere)';
       const text = landed.map(l => l.value).join(' ');
       rec.textSample = text.slice(0, 60);
-      rec.substituted = tokenCount === 0 ? true : /VAL0/.test(text);
+      rec.substituted = tokenCount === 0 ? true : (/VAL0/.test(text) || (hasToothToken && /\b16\b/.test(text)));
       rec.leftoverToken = /\{\w+\}/.test(text);
 
-      rec.status = (landed.length > 0 && rec.substituted && !rec.leftoverToken) ? 'PASS' : 'FAIL';
+      rec.status = (landed.length > 0 && rec.substituted && !rec.leftoverToken && rec.toothAutofillOk) ? 'PASS' : 'FAIL';
     } catch (err) {
       rec.status = 'ERROR: ' + err.message;
     }
@@ -175,6 +194,7 @@ function expectedFor(cat) {
       ('->' + (r.landedIn || '-'))
     );
     if (!ok) console.log('          status: ' + r.status);
+    if (!ok && r.toothAutofillOk === false) console.log('          tooth NOT autofilled: got ' + JSON.stringify(r.toothAutofilled));
     if (r.jsErrors) console.log('          JS ERROR: ' + r.jsErrors);
   }
   console.log('='.repeat(100));

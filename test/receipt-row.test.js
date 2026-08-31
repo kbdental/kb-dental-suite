@@ -1,21 +1,20 @@
-// Checks how a receipt is laid out for the finance sheet.
+// Checks how a receipt is laid out for the finance sheet, and that exactly
+// one row is written for it.
 //
-// The receipt chain is: Patient Fee Receipt -> Working -> Receipt No. / FY tabs.
-// saveReceipt writes the entry tab ("Patient Fee Receipt") AND mirrors into
-// "Working", which is what Receipt No. / the FY tabs / the E. Receipt No.
-// sequence actually read from — the clinic's own Google Form writes straight
-// into Working, so nothing else moves an app-saved receipt across on its own.
+// The receipt chain is: Patient Fee Receipt -> Working -> Receipt No. / FY
+// tabs, and every step after the first is the spreadsheet's own formulas. So
+// saveReceipt writes the entry tab and nothing else.
 //
-// History: an earlier version of the mirror wrote via mirror.getLastRow()+1,
-// which is unsafe on a tab carrying a spilled ARRAYFORMULA (getLastRow()
-// counts the formula's spilled output as if it were real data, landing the
-// write ~190 rows past the actual last row and breaking the receipt
-// numbering). A later version removed the mirror entirely to stop that, which
-// stopped the corruption but also meant a receipt saved through the app never
-// reached Working at all. The mirror is back, but the row it targets is now
-// found by scanning a real data column from the bottom up (finFirstFreeRow_),
-// the same fix already proven correct on the entry tab, never by trusting
-// getLastRow().
+// History, because this was got wrong three separate ways: an early version
+// also copied the row into Working via getLastRow()+1 — unsafe on a tab
+// carrying a spilled ARRAYFORMULA, since getLastRow() counts the spill as
+// real data, landing the write ~190 rows past the end and breaking the
+// receipt numbering. The next version dropped the copy (correct, but reverted
+// after being misread as a different bug). The third re-added it with a
+// scan-based target: safer, but still a second row in a tab the spreadsheet
+// was already filling itself, so every receipt appeared twice at two
+// different rows. The guard against a fourth attempt is at the bottom of
+// this file.
 //
 // Headers below are copied verbatim from the live sheet, trailing spaces and
 // all, since matching them is the point.
@@ -29,12 +28,13 @@ const from = src.indexOf('function finCol_(');
 const to = src.indexOf('function saveReceipt(p) {');
 if (from < 0 || to < 0) { console.error('could not locate the receipt helpers'); process.exit(1); }
 
-const ctx = { SpreadsheetApp: null };
+// FIN_ENTRY_TAB is read at load time by the slice above.
+const ctx = { SpreadsheetApp: null, FIN_ENTRY_TAB: 'Patient Fee Receipt' };
 vm.createContext(ctx);
 vm.runInContext(src.slice(from, to) +
   ';this.finCol_ = finCol_; this.finReceiptRow_ = finReceiptRow_; this.finFirstFreeRow_ = finFirstFreeRow_;' +
-  'this.localDateFromISO_ = localDateFromISO_;', ctx);
-const { finCol_, finReceiptRow_, finFirstFreeRow_, localDateFromISO_ } = ctx;
+  'this.localStampFromISO_ = localStampFromISO_;', ctx);
+const { finCol_, finReceiptRow_, finFirstFreeRow_, localStampFromISO_ } = ctx;
 
 // A minimal stand-in for a Sheet, enough for finFirstFreeRow_'s getLastRow()
 // and getRange(...).getValues() calls. expectedCol (1-based), when given,
@@ -121,35 +121,84 @@ eq('firstFreeRow: getLastRow() 0 -> row 2', finFirstFreeRow_(fakeSheet([], 0)), 
 eq('firstFreeRow: ignores spilled rows past the real data',
   finFirstFreeRow_(fakeSheet(['Timestamp', new Date(), new Date(), '', '', '', '', ''])), 4);
 
-// The same helper is now also used to target the Working mirror, scanning
-// whatever column is actually passed in (UHID there, not necessarily
-// column A) — confirms the column argument is honored, not defaulted away.
+// The helper is asked for the UHID column, not column A — this confirms the
+// column argument is honored rather than defaulted away.
 eq('firstFreeRow: scans column 3 when asked to, not column A',
   finFirstFreeRow_(fakeSheet(['UHID', 'AL0777', 'AL0778', '', '', '', '', ''], undefined, 3), 3), 4);
 
-// --- localDateFromISO_: the timestamp-showing-05:30-instead-of-midnight fix
-// new Date("2026-08-22") parses as UTC midnight, which an IST-timezone sheet
-// then displays as 05:30 — not the plain local midnight every historical row
-// (fed by the clinic's own Google Form) actually shows.
-const local = localDateFromISO_('2026-08-22');
-eq('localDateFromISO_: year/month/day match the input, not shifted by UTC parsing',
+// --- localStampFromISO_: two bugs this one value has to avoid at once -----
+// 1. new Date("2026-08-22") parses as UTC midnight, which an IST-timezone
+//    sheet then displays as 05:30. The parts must be fed to the constructor
+//    directly, never parsed from the string as UTC.
+// 2. Building from the date alone left every app row reading 00:00:00 in a
+//    column where the clinic's Google Form rows carry the real entry time.
+const local = localStampFromISO_('2026-08-22');
+eq('localStampFromISO_: year/month/day match the input, not shifted by UTC parsing',
   [local.getFullYear(), local.getMonth(), local.getDate()], [2026, 7, 22]);
-eq('localDateFromISO_: local midnight, not 05:30', [local.getHours(), local.getMinutes()], [0, 0]);
-eq('localDateFromISO_: garbage input returns null, so saveReceipt falls back to "now"',
-  localDateFromISO_('not a date'), null);
-eq('localDateFromISO_: empty input returns null', localDateFromISO_(''), null);
+eq('localStampFromISO_: not the 05:30 UTC-parse artefact',
+  [local.getHours(), local.getMinutes()] .join(':') === '5:30', false);
+// The clock time is "now", so assert it tracks the current time rather than
+// pinning an exact value the test could never know.
+const nowRef = new Date();
+eq('localStampFromISO_: carries a real clock time, not midnight',
+  [local.getHours(), local.getMinutes()], [nowRef.getHours(), nowRef.getMinutes()]);
+eq('localStampFromISO_: garbage input returns null, so saveReceipt falls back to "now"',
+  localStampFromISO_('not a date'), null);
+eq('localStampFromISO_: empty input returns null', localStampFromISO_(''), null);
 
-// --- the mirror row must stop before Working's computed Date/Time columns -
-const MIRROR_HEADERS = ['Timestamp', 'UHID', "Patient's Name ", 'Nature of Professional Services',
-  'Payment Mode', 'Amount', 'Payment Mode (Payment mode is more than one)',
-  'Amount (Payment mode is more than one)', 'Date', 'Time'];
-const dateCol = finCol_(MIRROR_HEADERS, ['Date']);
-const timeCol = finCol_(MIRROR_HEADERS, ['Time']);
-let lastWritable = MIRROR_HEADERS.length;
-[dateCol, timeCol].forEach(c => { if (c >= 0 && c < lastWritable) lastWritable = c; });
-const mirrorRow = finReceiptRow_(MIRROR_HEADERS, p, stamp).slice(0, lastWritable);
-eq('mirror row: stops before the ARRAYFORMULA columns (Date, Time)', mirrorRow.length, 8);
-eq('mirror row: still carries the amounts', [mirrorRow[5], mirrorRow[7]], [500, 250]);
+// --- saveReceipt must write ONE row, into ONE tab --------------------------
+// "Working" is derived from "Patient Fee Receipt" by the spreadsheet's own
+// formulas, so a second write there produced the same receipt twice, in two
+// tabs, at two different rows — and, because Working is formula-driven, tore
+// a gap in it. This is the regression guard: any future re-addition of a
+// mirror write fails here.
+{
+  const writes = [];          // {tab, row, values}
+  const tabGrid = {
+    'Patient Fee Receipt': [ENTRY_HEADERS, ['x', 'AL0001', 'Old', '', '', '', '', '', '', '']],
+    // Present in the workbook, and must be left completely alone.
+    'Working': [['Timestamp', 'UHID', "Patient's Name ", 'Amount', 'Date', 'Time'],
+                ['x', 'AL0001', 'Old', 100, '2026-08-22', '10:00']]
+  };
+  const fakeTab = name => ({
+    getLastRow: () => tabGrid[name].length,
+    getLastColumn: () => tabGrid[name][0].length,
+    getRange: (row, col, numRows, numCols) => ({
+      getValues: () => tabGrid[name].slice(row - 1, row - 1 + numRows)
+                                    .map(r => r.slice(col - 1, col - 1 + (numCols || 1))),
+      setValues: v => { writes.push({ tab: name, row, values: v[0] }); }
+    })
+  });
+
+  const rctx = {
+    FIN_ENTRY_TAB: 'Patient Fee Receipt',
+    getFinanceSheetId: () => 'FAKE',
+    SpreadsheetApp: { openById: () => ({ getSheetByName: n => (tabGrid[n] ? fakeTab(n) : null) }) }
+  };
+  vm.createContext(rctx);
+  vm.runInContext(src.slice(src.indexOf('function finCol_('), src.indexOf('function getReceipts(p) {')) +
+    ';this.saveReceipt = saveReceipt;', rctx);
+
+  const res = rctx.saveReceipt({ ...p, date: '2026-08-29' });
+  eq('saveReceipt: reports success', res.success, true);
+  eq('saveReceipt: writes exactly one row', writes.length, 1);
+  eq('saveReceipt: and it goes to the entry tab', writes[0] && writes[0].tab, 'Patient Fee Receipt');
+  eq('saveReceipt: nothing is written to Working',
+    writes.filter(w => w.tab === 'Working').length, 0);
+  eq('saveReceipt: lands on the first free row, after the one existing row',
+    writes[0] && writes[0].row, 3);
+  eq('saveReceipt: the row carries the amounts',
+    writes[0] && [writes[0].values[5], writes[0].values[7]], [500, 250]);
+  // Not `instanceof Date`: the value is constructed inside the vm's own realm,
+  // where Date is a different object than the one in this file's realm.
+  eq('saveReceipt: timestamp is a real Date, not text',
+    writes[0] && Object.prototype.toString.call(writes[0].values[0]), '[object Date]');
+  eq('saveReceipt: timestamp keeps the chosen date',
+    writes[0] && [writes[0].values[0].getFullYear(), writes[0].values[0].getMonth(), writes[0].values[0].getDate()],
+    [2026, 7, 29]);
+  eq('saveReceipt: timestamp is not midnight',
+    writes[0] && (writes[0].values[0].getHours() + writes[0].values[0].getMinutes() > 0), true);
+}
 
 let pass = 0, fail = 0;
 console.log('\n' + '='.repeat(74));
