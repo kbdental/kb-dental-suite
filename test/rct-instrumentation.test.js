@@ -64,19 +64,26 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
   eq('Re-RCT selectable', await active('rctType'), ['Re-RCT']);
 
   // --- 1. Instrumentation: Instrument is the first field in the card, and
-  // Rotary NiTi/Reciproc/Hand Files Only moved out of Filing Technique into
-  // the Rotary System group (those are instruments, not techniques).
+  // holds Rotary NiTi/Reciproc/Hand Files Only as quick-pick buttons (plus
+  // free text below for brand/size) — they're instruments, not filing
+  // techniques or named rotary systems, so they don't belong in either of
+  // those two groups.
   const rowLabels = await page.evaluate(() => {
     const card = Array.from(document.querySelectorAll('#p2 .card')).find(c => c.querySelector('.ch').textContent.includes('Instrumentation'));
     return Array.from(card.querySelectorAll('.fr .fl')).map(el => el.textContent.trim());
   });
   eq('Instrument is the first field in the Instrumentation card', rowLabels[0], 'Instrument');
+  eq('Instrument holds Rotary NiTi/Reciproc/Hand Files Only as buttons', await page.evaluate(() =>
+    Array.from(document.getElementById('instrType').querySelectorAll('.btn')).map(b => b.textContent.trim())),
+    ['Rotary NiTi', 'Reciproc', 'Hand Files Only']);
   eq('Filing Technique keeps only Step-back/Crown-down', await page.evaluate(() =>
     Array.from(document.getElementById('fTech').querySelectorAll('.btn')).map(b => b.textContent.trim())),
     ['Step-back', 'Crown-down']);
-  eq('Rotary System now also lists Rotary NiTi/Reciproc/Hand Files Only', await page.evaluate(() =>
+  eq('Rotary System keeps only the named systems', await page.evaluate(() =>
     Array.from(document.getElementById('rotSys').querySelectorAll('.btn')).map(b => b.textContent.trim())),
-    ['Rotary NiTi', 'Reciproc', 'Hand Files Only', 'ProTaper Gold', 'ProTaper Universal', 'ProTaper Next', 'WaveOne Gold', 'Reciproc Blue']);
+    ['ProTaper Gold', 'ProTaper Universal', 'ProTaper Next', 'WaveOne Gold', 'Reciproc Blue']);
+  await click('instrType', 'Rotary NiTi');
+  eq('Rotary NiTi selectable under Instrument', await active('instrType'), ['Rotary NiTi']);
 
   await page.evaluate(() => { document.getElementById('instrUsed').value = '25/.06 rotary'; });
   await click('instrRetr', 'Yes');
@@ -111,6 +118,7 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
   const collected = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('kb_rct_sheet') || '{}').entries[0]);
   eq('printed record: rctType included', collected.rctType, 'Re-RCT');
+  eq('printed record: instrument type folded into instr', /Rotary NiTi/.test(collected.instr), true);
   eq('printed record: instrument text folded into instr', /Instrument: 25\/\.06 rotary/.test(collected.instr), true);
   eq('printed record: old GP removed folded into instr', /Old GP removed/i.test(collected.instr), true);
   eq('printed record: complication text folded into comps', /Instrument fractured mid-canal/.test(collected.comps), true);
@@ -136,6 +144,7 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
   }, id);
 
   eq('rctType restored on resume', await active2('rctType'), ['Re-RCT']);
+  eq('instrType restored on resume', await active2('instrType'), ['Rotary NiTi']);
   eq('gpRem restored on resume', await active2('gpRem'), ['Yes']);
   eq('instrUsed text restored on resume',
     await page2.evaluate(() => document.getElementById('instrUsed').value), '25/.06 rotary');
