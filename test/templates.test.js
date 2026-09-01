@@ -107,10 +107,23 @@ function expectedFor(cat) {
       }
       if (optCount === 0) { rec.status = 'EMPTY (no templates in category)'; results.push(rec); await page.close(); continue; }
 
-      // 1b. Simulate a tooth already having been picked earlier in the form
-      // (RCT, Crown & Bridge, Implant Surgery, Implant Prosthetic all track
-      // this in a `selTooth` variable set by clicking a tooth number).
-      await page.evaluate(() => { window.selTooth = '16'; });
+      // 1b. Simulate a tooth already having been picked earlier in the form.
+      // RCT tracks the tooth being worked on in a single `selTooth` global
+      // that persists for the session, so setting it directly is realistic.
+      // Crown & Bridge, Implant Surgery and Implant Prosthetic instead store
+      // the pick per table row (dataset.tooth/dataset.teeth on that row's own
+      // button) — cnResolveValue() reads it off the most recently added row,
+      // so the pick has to go through the actual row + tooth-picker-modal
+      // flow staff use, or it won't be there to resolve.
+      const ROW_TABLE = { CROWN_BRIDGE_B64: 'toothTbody', IMP_SURGERY_B64: 'impTbody', IMP_PROSTHETIC_B64: 'impTbody' };
+      if (ROW_TABLE[name]) {
+        const tbodyId = ROW_TABLE[name];
+        await page.evaluate((tbodyId) => document.querySelector('#' + tbodyId + ' .tbtn').click(), tbodyId);
+        await page.evaluate(() => document.querySelector('.ft[data-n="16"]').click());
+        await page.evaluate(() => document.getElementById('modalConfirm').click());
+      } else {
+        await page.evaluate(() => { window.selTooth = '16'; });
+      }
 
       // 2. Select the first template; placeholder inputs should appear.
       // Set the value directly rather than via selectOption: several forms keep
