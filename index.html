@@ -6,6 +6,8 @@
 <title>K.B. Dental Clinical Suite</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow:hidden}
@@ -23375,55 +23377,111 @@ function fmtRs(n) {
   return "₹" + v.toLocaleString("en-IN");
 }
 
-// ── Printable single-patient Fee Receipt ──
+// Amount in words, Indian numbering (Lakh/Crore) — "the sum of Rupees" line
+// on the printed receipt reads this out, the way a bank/clinic receipt does.
+function amountInWordsIndian(n) {
+  const ones = ["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten",
+    "Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
+  const tens = ["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
+  function twoDigits(v) {
+    if (v < 20) return ones[v];
+    return tens[Math.floor(v/10)] + (v%10 ? " " + ones[v%10] : "");
+  }
+  function threeDigits(v) {
+    let s = "";
+    if (v >= 100) { s += ones[Math.floor(v/100)] + " Hundred"; v %= 100; if (v) s += " "; }
+    if (v) s += twoDigits(v);
+    return s;
+  }
+  let v = Math.floor(Math.abs(Number(n) || 0));
+  if (v === 0) return "Rupees Zero Only";
+  const crore = Math.floor(v / 10000000); v %= 10000000;
+  const lakh = Math.floor(v / 100000); v %= 100000;
+  const thousand = Math.floor(v / 1000); v %= 1000;
+  const hundred = v;
+  let parts = [];
+  if (crore) parts.push(threeDigits(crore) + " Crore");
+  if (lakh) parts.push(threeDigits(lakh) + " Lakh");
+  if (thousand) parts.push(threeDigits(thousand) + " Thousand");
+  if (hundred) parts.push(threeDigits(hundred));
+  return "Rupees " + parts.join(" ") + " Only";
+}
+
+// ── Printable single-patient Fee Receipt — matches the clinic's printed
+// paper receipt pad field-for-field (boxed Receipt No./Dated, Received with
+// Thanks from/UHID, the sum of Rupees, payment mode + instrument no./date,
+// Transfer from/Drawn on, on Account of, boxed Rs. amount, signatory line).
+// "On Account of" is always "Dental Treatment", matching the pad — it is
+// not tied to whichever specific service/procedure was picked for the fee.
 function buildReceiptHTML(r) {
   const logo = window.LOGO_B64;
   const today = fmtDMY(new Date());
-  const rows = [
-    ["Receipt No.", r.receiptNo || "—"],
-    ["Date", r.date ? fmtDMY(r.date) : today],
-    ["UHID", r.uhid || "—"],
-    ["Patient Name", r.patientName || "—"],
-    ["Nature of Services", r.service || "—"],
-    ["Payment Mode", r.mode || "—"],
-  ];
-  if (r.remarks) rows.push(["Remarks", r.remarks]);
-  const rowsHtml = rows.map(([l,v]) => `<div class="row"><span class="lbl">${l}</span><span class="val">${v}</span></div>`).join("");
+  const box = (label, value, opts) => {
+    const w = (opts && opts.width) || "auto";
+    const flex = (opts && opts.flex) ? "flex:" + opts.flex + ";" : "";
+    return `<div style="display:flex;align-items:center;${flex}${w!=="auto"?"width:"+w+";":""}">
+      <span style="white-space:nowrap;padding-right:8pt;">${label}</span>
+      <span style="flex:1;border:1.3pt solid #333;border-radius:3pt;min-height:22pt;padding:3pt 8pt;font-weight:700;display:flex;align-items:center;">${value || "&nbsp;"}</span>
+    </div>`;
+  };
+  const mode = r.mode || "";
+  const modeLine = ["Cash","Cheque","Draft","NEFT"].map(m =>
+    `<span style="${mode && mode.toLowerCase().indexOf(m.toLowerCase())>=0 ? "text-decoration:underline;font-weight:800;color:#0078B4;" : ""}">${m}</span>`
+  ).join("/");
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>
-@page{size:A5 portrait;margin:10mm}
+@page{size:A5 landscape;margin:8mm}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',Arial,sans-serif;font-size:11pt;color:#111}
-.hdr{display:flex;align-items:center;gap:10pt;border-bottom:2pt solid #0078B4;padding-bottom:8pt;margin-bottom:10pt}
-.logo{width:46pt;height:46pt;object-fit:contain}
-.cares{font-size:13pt;font-weight:800;color:#C0392B;text-decoration:underline;letter-spacing:.1em}
-.sub{font-size:8pt;color:#555}
-.title{text-align:center;font-size:13pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:.06em;margin:10pt 0;border:1.5pt solid #0078B4;padding:5pt;border-radius:4pt}
-.row{display:flex;justify-content:space-between;padding:5pt 0;border-bottom:0.5pt dashed #ccc;font-size:11pt}
-.lbl{color:#555;font-weight:600}
-.val{font-weight:700;text-align:right}
-.amtbox{margin-top:14pt;background:#f0f6fb;border:1pt solid #0090CC;border-radius:5pt;padding:10pt 14pt;display:flex;justify-content:space-between;align-items:center}
-.amtlbl{font-size:11pt;font-weight:700;color:#0078B4}
-.amtval{font-size:18pt;font-weight:800;color:#0078B4}
-.sig{margin-top:40pt;display:flex;justify-content:space-between;font-size:10pt}
-.sigline{border-top:1pt solid #333;padding-top:4pt;width:150pt;text-align:center}
-.foot{margin-top:20pt;font-size:8pt;color:#888;text-align:center}
+body{font-family:'Segoe UI',Arial,sans-serif;font-size:10.5pt;color:#111}
+.sheet{border:1.5pt solid #000;padding:10pt 14pt 14pt;}
+.hdr{text-align:center;margin-bottom:8pt;display:flex;align-items:center;gap:10pt;}
+.logo{width:48pt;height:48pt;object-fit:contain;flex-shrink:0;}
+.hdrmid{flex:1;}
+.cares{font-size:14pt;font-weight:800;color:#C0392B;text-align:center;}
+.tagline{font-size:8.5pt;font-weight:700;color:#0078B4;text-align:center;}
+.addr{font-size:8.5pt;font-weight:700;text-align:center;}
+.contact{font-size:8.5pt;text-align:center;}
+.contact a{color:#0078B4;}
+.fld{margin:7pt 0;}
+.two{display:flex;gap:14pt;}
+.foot{margin-top:14pt;font-size:7.5pt;color:#888;text-align:center;}
 </style></head><body>
+<div class="sheet">
 <div class="hdr">
   <img class="logo" src="${logo}"/>
-  <div>
-    <div class="cares">K.B. Dental Clinic</div>
-    <div class="sub">Block R-74 B, Dilshad Garden, Delhi-110095 | Ph: 011-22131942 | 7866939786, 9319990912</div>
+  <div class="hdrmid">
+    <div class="cares">C. A. R. E. S.</div>
+    <div class="tagline">COMFORT, AWARENESS, RESPECT, EMPATHY, SAFETY</div>
+    <div class="addr">BLOCK R - 74 B, DILSHAD GARDEN, DELHI - 110095</div>
+    <div class="contact">📞 011-22131942 &nbsp; 📱 7866939786, 9319990912 &nbsp; 📧 kbdentaldelhi@gmail.com</div>
   </div>
 </div>
-<div class="title">Fee Receipt</div>
-${rowsHtml}
-<div class="amtbox">
-  <span class="amtlbl">Amount Received</span>
-  <span class="amtval">${fmtRs(r.fee)}</span>
+<div class="two fld">
+  ${box("Receipt No.", r.receiptNo, { flex: 2 })}
+  ${box("Dated", r.date ? fmtDMY(r.date) : today, { flex: 1 })}
 </div>
-<div class="sig">
-  <div class="sigline">Patient Signature</div>
-  <div class="sigline">Received By</div>
+<div class="two fld">
+  ${box("Received with Thanks from", r.patientName, { flex: 2 })}
+  ${box("UHID:", r.uhid, { flex: 1 })}
+</div>
+<div class="fld">
+  ${box("the sum of Rupees", amountInWordsIndian(r.fee))}
+</div>
+<div class="two fld">
+  ${box("by " + modeLine + " No.", r.instrNo || "", { flex: 2 })}
+  ${box("Dated", r.instrDate ? fmtDMY(r.instrDate) : (r.date ? fmtDMY(r.date) : today), { flex: 1 })}
+</div>
+<div class="fld">
+  ${box("Transfer from / Drawn on", r.drawnOn || "")}
+</div>
+<div class="fld" style="display:flex;align-items:baseline;gap:8pt;">
+  <span>on Account of</span>
+  <span style="font-weight:800;font-style:italic;border-bottom:1pt solid #333;flex:1;padding-bottom:2pt;">Dental Treatment</span>
+</div>
+<div style="text-align:right;font-size:9.5pt;margin-top:10pt;">For K.B. Dental Clinic Delhi</div>
+<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:20pt;">
+  ${box("Rs.", fmtRs(r.fee), { width: "180pt" })}
+  <div style="font-size:9.5pt;">Authorised Signatory</div>
+</div>
 </div>
 <div class="foot">This is a computer-generated receipt — K.B. Dental Clinic</div>
 </body></html>`;
@@ -23433,6 +23491,83 @@ function generateReceiptPrint(r) {
   const w = window.open("", "_blank");
   w.document.write(html); w.document.close();
   setTimeout(() => w.print(), 500);
+}
+
+// Renders the receipt into an offscreen iframe, rasterizes it (html2canvas)
+// and wraps it in an A5-landscape PDF (jsPDF) — same libraries, same
+// approach used nowhere else in this app yet, loaded once via CDN in <head>.
+// Returns the jsPDF Blob so both "Download PDF" and "Share via WhatsApp"
+// can reuse the exact same render instead of duplicating it.
+async function renderReceiptPDFBlob(r) {
+  const html = buildReceiptHTML(r);
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:794px;height:562px;border:0;";
+  document.body.appendChild(iframe);
+  iframe.srcdoc = html;
+  await new Promise(resolve => { iframe.onload = resolve; });
+  await new Promise(resolve => setTimeout(resolve, 150)); // let the logo <img> paint
+  const doc = iframe.contentDocument;
+  const canvas = await html2canvas(doc.body, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
+  document.body.removeChild(iframe);
+  const imgData = canvas.toDataURL("image/png");
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a5" });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const imgH = (canvas.height * pageW) / canvas.width;
+  pdf.addImage(imgData, "PNG", 0, Math.max(0, (pageH - imgH) / 2), pageW, Math.min(imgH, pageH));
+  return pdf.output("blob");
+}
+function receiptFileName(r) {
+  return "Receipt_" + (r.receiptNo || r.uhid || "KBDC") + ".pdf";
+}
+async function generateReceiptPDF(r) {
+  try {
+    const blob = await renderReceiptPDFBlob(r);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = receiptFileName(r);
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (e) {
+    alert("Could not generate the PDF: " + (e.message || e));
+  }
+}
+// Shares the receipt PDF straight into WhatsApp via the device's native
+// Share sheet (works on Android/iOS Chrome and most modern mobile
+// browsers — staff picks WhatsApp from the list and the file arrives
+// already attached). Desktop Chrome mostly doesn't support sharing files
+// this way, so there it falls back to downloading the PDF and opening a
+// WhatsApp chat with a text summary for staff to attach it to manually.
+async function shareReceiptWhatsApp(r) {
+  try {
+    const blob = await renderReceiptPDFBlob(r);
+    const file = new File([blob], receiptFileName(r), { type: "application/pdf" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        files: [file],
+        title: "K.B. Dental Clinic — Receipt",
+        text: "Receipt " + (r.receiptNo ? "#" + r.receiptNo + " " : "") + "for " + fmtRs(r.fee) + " — K.B. Dental Clinic"
+      });
+      return;
+    }
+    // Fallback: download the PDF, then open WhatsApp with a text message —
+    // there's no URL scheme that can attach a file directly.
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = receiptFileName(r);
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    const phone = String(r.phone || "").replace(/\D/g, "");
+    const text = encodeURIComponent(
+      "K.B. Dental Clinic — Receipt" + (r.receiptNo ? " #" + r.receiptNo : "") +
+      "\nAmount: " + fmtRs(r.fee) +
+      "\n(PDF just downloaded — please attach it to this chat.)"
+    );
+    window.open("https://wa.me/" + (phone ? "91" + phone : "") + "?text=" + text, "_blank");
+  } catch (e) {
+    alert("Could not share to WhatsApp: " + (e.message || e));
+  }
 }
 
 // ── Add Receipt — mirrors the clinic's live "Patient Fee Receipt Form" (Google Form)
@@ -23628,9 +23763,14 @@ function FinancePaymentsTab({ globalPat }) {
             React.createElement("td", { style:{ padding:"7px 10px" } }, r.receiptNo || "—"),
             React.createElement("td", { style:{ padding:"7px 10px", color:"#888" } }, r.remarks || "—"),
             React.createElement("td", { style:{ padding:"7px 10px" } },
-              React.createElement("button", { onClick:()=>generateReceiptPrint(r),
-                style:{ padding:"5px 12px", fontSize:11, border:`1px solid ${T}`, borderRadius:6, cursor:"pointer", background:"#fff", color:T, fontWeight:600 } },
-                "🖨 Generate")
+              React.createElement("div", { style:{ display:"flex", gap:4 } },
+                React.createElement("button", { onClick:()=>generateReceiptPDF(r), title:"Download PDF",
+                  style:{ padding:"5px 8px", fontSize:12, border:`1px solid ${T}`, borderRadius:6, cursor:"pointer", background:"#fff", color:T } }, "📄"),
+                React.createElement("button", { onClick:()=>shareReceiptWhatsApp(r), title:"Share via WhatsApp",
+                  style:{ padding:"5px 8px", fontSize:12, border:"1px solid #25D366", borderRadius:6, cursor:"pointer", background:"#fff", color:"#128C7E" } }, "💬"),
+                React.createElement("button", { onClick:()=>generateReceiptPrint(r), title:"Print",
+                  style:{ padding:"5px 8px", fontSize:12, border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#555" } }, "🖨")
+              )
             )
           )
         ))
@@ -23916,9 +24056,17 @@ function GenerateReceiptSubTab({ globalPat }) {
           React.createElement("div", { style:{ fontSize:11.5, color:"#888", marginTop:2 } }, (r.date?fmtDMY(r.date):"—") + " · " + (r.service||"—") + " · " + (r.mode||"—") + (r.receiptNo?(" · Receipt #"+r.receiptNo):"")),
           React.createElement("div", { style:{ fontSize:15, fontWeight:800, color:"#059669", marginTop:4 } }, fmtRs(r.fee))
         ),
-        React.createElement("button", { onClick:()=>generateReceiptPrint(r),
-          style:{ padding:"9px 18px", fontSize:12.5, border:"none", borderRadius:7, cursor:"pointer", background:T, color:"#fff", fontWeight:700 } },
-          "🖨 Generate Receipt")
+        React.createElement("div", { style:{ display:"flex", gap:6, flexWrap:"wrap" } },
+          React.createElement("button", { onClick:()=>generateReceiptPDF(r),
+            style:{ padding:"9px 16px", fontSize:12.5, border:"none", borderRadius:7, cursor:"pointer", background:T, color:"#fff", fontWeight:700 } },
+            "📄 PDF"),
+          React.createElement("button", { onClick:()=>shareReceiptWhatsApp(r),
+            style:{ padding:"9px 16px", fontSize:12.5, border:"none", borderRadius:7, cursor:"pointer", background:"#25D366", color:"#fff", fontWeight:700 } },
+            "💬 WhatsApp"),
+          React.createElement("button", { onClick:()=>generateReceiptPrint(r),
+            style:{ padding:"9px 16px", fontSize:12.5, border:`1px solid ${BORDER}`, borderRadius:7, cursor:"pointer", background:"#fff", color:"#555", fontWeight:700 } },
+            "🖨 Print")
+        )
       ))
     )
   );
