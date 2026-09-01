@@ -85,8 +85,12 @@ const fieldValues = (page, fieldsId) => page.evaluate((fieldsId) => {
     const file = extract('IMP_PROSTHETIC_B64', 'ip.html');
     const errors = await withPage(file, async (page) => {
       await postTemplates(page, [{ situation: 'Prosthetic Delivered', text: 'Prosthesis delivered at tooth {tooth}.', category: 'Implant Prosthetic' }]);
+      // Implant Prosthetic's tooth picker now matches Crown & Bridge's
+      // multi-select/range modal (selTeeth, not a bare window.selTooth) —
+      // pick a tooth the same way staff would, by clicking it in the grid.
       await page.evaluate(() => document.querySelector('#impTbody .tbtn').click());
-      await page.evaluate(() => { window.selTooth = 36; document.getElementById('modalConfirm').click(); });
+      await page.evaluate(() => document.querySelector('.ft[data-n="36"]').click());
+      await page.evaluate(() => document.getElementById('modalConfirm').click());
       await pickTemplate(page, 'cnTplSelect');
       const vals = await fieldValues(page, 'cnTplFields');
       eq('implant prosthetic: tooth auto-resolved from the row just added', vals.tooth, '36');
