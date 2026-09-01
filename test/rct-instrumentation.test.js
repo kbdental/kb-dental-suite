@@ -1,6 +1,8 @@
 // Checks four RCT form additions:
-// 1. Instrumentation: a free-text "Instrument" field alongside Instrument
-//    Retrieved/Bypass, plus a new "Gutta Percha Removed" yes/no.
+// 1. Instrumentation: a free-text "Instrument" field, first in the card,
+//    alongside Instrument Retrieved/Bypass and a "Gutta Percha Removed"
+//    yes/no. Rotary NiTi/Reciproc/Hand Files Only moved out of Filing
+//    Technique into Rotary System (they're instruments, not techniques).
 // 2. Complications: an "Other" toggle that reveals a free-text line, and
 //    that text folds into the saved complication string.
 // 3. Biomechanical Prep -> Intracanal Medicament gains "Calcipex".
@@ -61,7 +63,21 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
   await click('rctType', 'Re-RCT');
   eq('Re-RCT selectable', await active('rctType'), ['Re-RCT']);
 
-  // --- 1. Instrumentation: Instrument text field + Gutta Percha Removed --
+  // --- 1. Instrumentation: Instrument is the first field in the card, and
+  // Rotary NiTi/Reciproc/Hand Files Only moved out of Filing Technique into
+  // the Rotary System group (those are instruments, not techniques).
+  const rowLabels = await page.evaluate(() => {
+    const card = Array.from(document.querySelectorAll('#p2 .card')).find(c => c.querySelector('.ch').textContent.includes('Instrumentation'));
+    return Array.from(card.querySelectorAll('.fr .fl')).map(el => el.textContent.trim());
+  });
+  eq('Instrument is the first field in the Instrumentation card', rowLabels[0], 'Instrument');
+  eq('Filing Technique keeps only Step-back/Crown-down', await page.evaluate(() =>
+    Array.from(document.getElementById('fTech').querySelectorAll('.btn')).map(b => b.textContent.trim())),
+    ['Step-back', 'Crown-down']);
+  eq('Rotary System now also lists Rotary NiTi/Reciproc/Hand Files Only', await page.evaluate(() =>
+    Array.from(document.getElementById('rotSys').querySelectorAll('.btn')).map(b => b.textContent.trim())),
+    ['Rotary NiTi', 'Reciproc', 'Hand Files Only', 'ProTaper Gold', 'ProTaper Universal', 'ProTaper Next', 'WaveOne Gold', 'Reciproc Blue']);
+
   await page.evaluate(() => { document.getElementById('instrUsed').value = '25/.06 rotary'; });
   await click('instrRetr', 'Yes');
   await click('instrByp', 'No');
