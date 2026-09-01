@@ -5898,6 +5898,11 @@ function Appointments({ globalPat, setGlobalPat }) {
       : await api("saveAppointment", payload);
     setSaving(false);
     if (res.success) {
+      // The "Notify Patient — WhatsApp" checkbox used to be collected and
+      // never actually used for anything. Honor it: open a WhatsApp chat
+      // addressed to the patient, pre-filled with the confirmation, the
+      // same way the receipt's WhatsApp button works.
+      if (notifyPatientWA && payload.mobile) openAppointmentWhatsAppChat(payload);
       setShowForm(false);
       resetForm();
       refreshAll();
@@ -6046,7 +6051,18 @@ function Appointments({ globalPat, setGlobalPat }) {
               "Status: ", React.createElement("span", { style:{ fontWeight:700, color:STATUS_COL[a.status]||"#888" } }, a.status||"Scheduled")),
             a.checkinTime && React.createElement("div", { style:{ fontSize:11, color:"#888", marginTop:4 } }, "Checked in: "+hhmm(a.checkinTime)),
             a.engagedTime && React.createElement("div", { style:{ fontSize:11, color:"#888" } }, "Engaged: "+a.engagedTime),
-            a.checkoutTime && React.createElement("div", { style:{ fontSize:11, color:"#888" } }, "Checked out: "+a.checkoutTime)
+            a.checkoutTime && React.createElement("div", { style:{ fontSize:11, color:"#888" } }, "Checked out: "+a.checkoutTime),
+            React.createElement("div", { style:{ display:"flex", gap:6, flexWrap:"wrap", marginTop:12, paddingTop:12, borderTop:`1px solid ${BORDER}` } },
+              React.createElement("button", { onClick:()=>generateAppointmentPDF(a),
+                style:{ padding:"7px 14px", fontSize:12, border:"none", borderRadius:6, cursor:"pointer", background:T, color:"#fff", fontWeight:700 } },
+                "📄 PDF"),
+              React.createElement("button", { onClick:()=>shareAppointmentWhatsApp(a),
+                style:{ padding:"7px 14px", fontSize:12, border:"none", borderRadius:6, cursor:"pointer", background:"#25D366", color:"#fff", fontWeight:700 } },
+                "💬 WhatsApp"),
+              React.createElement("button", { onClick:()=>generateAppointmentPrint(a),
+                style:{ padding:"7px 14px", fontSize:12, border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#555", fontWeight:700 } },
+                "🖨 Print")
+            )
           ),
 
           popupMode === "cancel" && React.createElement("div", null,
@@ -6618,11 +6634,12 @@ function QuickApptModal({ show, defaultDate, onClose, onSaved }) {
     }
 
     setSaving(true);
-    const res = await api("saveAppointment", {
+    const apptPayload = {
       date: fDate, uhid: fUhid, patientName: finalName,
       time: fTime, type: fReason, doctor: fDoctor, chair: fChair,
       mobile: fMobile, notes: fNotes, status: "Scheduled"
-    });
+    };
+    const res = await api("saveAppointment", apptPayload);
     // A walk-in is standing at the desk, so they are checked in the moment the
     // record is made. saveAppointment always writes a blank CheckinTime;
     // moving the status is what stamps it, and doing it here means the time is
@@ -6632,6 +6649,9 @@ function QuickApptModal({ show, defaultDate, onClose, onSaved }) {
     }
     setSaving(false);
     if (res.success) {
+      // Same as the main booking form: honor "Notify Patient — WhatsApp"
+      // instead of collecting it and doing nothing with it.
+      if (notifyPatientWA && apptPayload.mobile) openAppointmentWhatsAppChat(apptPayload);
       resetForm();
       onClose();
       if (onSaved) onSaved();
@@ -23493,13 +23513,15 @@ function generateReceiptPrint(r) {
   setTimeout(() => w.print(), 500);
 }
 
-// Renders the receipt into an offscreen iframe, rasterizes it (html2canvas)
-// and wraps it in an A5-landscape PDF (jsPDF) — same libraries, same
-// approach used nowhere else in this app yet, loaded once via CDN in <head>.
-// Returns the jsPDF Blob so both "Download PDF" and "Share via WhatsApp"
-// can reuse the exact same render instead of duplicating it.
-async function renderReceiptPDFBlob(r) {
-  const html = buildReceiptHTML(r);
+// Renders arbitrary receipt/slip HTML into an offscreen iframe, rasterizes
+// it (html2canvas) and wraps it in a PDF (jsPDF) — same libraries, loaded
+// once via CDN in <head>. Shared by every "Download PDF" / "Share via
+// WhatsApp" pair in the app (fee receipts, appointment confirmations) so
+// each one doesn't duplicate the render pipeline.
+async function renderHTMLToPDFBlob(html, opts) {
+  const o = opts || {};
+  const orientation = o.orientation || "landscape";
+  const format = o.format || "a5";
   const iframe = document.createElement("iframe");
   iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:794px;height:562px;border:0;";
   document.body.appendChild(iframe);
@@ -23511,63 +23533,184 @@ async function renderReceiptPDFBlob(r) {
   document.body.removeChild(iframe);
   const imgData = canvas.toDataURL("image/png");
   const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a5" });
+  const pdf = new jsPDF({ orientation, unit: "mm", format });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
   const imgH = (canvas.height * pageW) / canvas.width;
   pdf.addImage(imgData, "PNG", 0, Math.max(0, (pageH - imgH) / 2), pageW, Math.min(imgH, pageH));
   return pdf.output("blob");
 }
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+// Shares a PDF blob straight into WhatsApp via the device's native Share
+// sheet (works on Android/iOS Chrome and most modern mobile browsers —
+// staff picks WhatsApp from the list and the file arrives already
+// attached). Desktop Chrome mostly doesn't support sharing files this way,
+// so there it falls back to downloading the PDF and opening a WhatsApp
+// chat (pre-addressed to the given phone, when one is known) with a text
+// summary for staff to attach it to manually.
+async function sharePDFToWhatsApp(blob, filename, { title, text, phone }) {
+  const file = new File([blob], filename, { type: "application/pdf" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    await navigator.share({ files: [file], title, text });
+    return;
+  }
+  downloadBlob(blob, filename);
+  const digits = String(phone || "").replace(/\D/g, "");
+  const waText = encodeURIComponent(text + "\n(PDF just downloaded — please attach it to this chat.)");
+  window.open("https://wa.me/" + (digits ? "91" + digits : "") + "?text=" + waText, "_blank");
+}
 function receiptFileName(r) {
   return "Receipt_" + (r.receiptNo || r.uhid || "KBDC") + ".pdf";
 }
 async function generateReceiptPDF(r) {
   try {
-    const blob = await renderReceiptPDFBlob(r);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = receiptFileName(r);
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    downloadBlob(await renderHTMLToPDFBlob(buildReceiptHTML(r), { orientation: "landscape", format: "a5" }), receiptFileName(r));
   } catch (e) {
     alert("Could not generate the PDF: " + (e.message || e));
   }
 }
-// Shares the receipt PDF straight into WhatsApp via the device's native
-// Share sheet (works on Android/iOS Chrome and most modern mobile
-// browsers — staff picks WhatsApp from the list and the file arrives
-// already attached). Desktop Chrome mostly doesn't support sharing files
-// this way, so there it falls back to downloading the PDF and opening a
-// WhatsApp chat with a text summary for staff to attach it to manually.
 async function shareReceiptWhatsApp(r) {
   try {
-    const blob = await renderReceiptPDFBlob(r);
-    const file = new File([blob], receiptFileName(r), { type: "application/pdf" });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({
-        files: [file],
-        title: "K.B. Dental Clinic — Receipt",
-        text: "Receipt " + (r.receiptNo ? "#" + r.receiptNo + " " : "") + "for " + fmtRs(r.fee) + " — K.B. Dental Clinic"
-      });
-      return;
-    }
-    // Fallback: download the PDF, then open WhatsApp with a text message —
-    // there's no URL scheme that can attach a file directly.
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = receiptFileName(r);
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    const phone = String(r.phone || "").replace(/\D/g, "");
-    const text = encodeURIComponent(
-      "K.B. Dental Clinic — Receipt" + (r.receiptNo ? " #" + r.receiptNo : "") +
-      "\nAmount: " + fmtRs(r.fee) +
-      "\n(PDF just downloaded — please attach it to this chat.)"
-    );
-    window.open("https://wa.me/" + (phone ? "91" + phone : "") + "?text=" + text, "_blank");
+    const blob = await renderHTMLToPDFBlob(buildReceiptHTML(r), { orientation: "landscape", format: "a5" });
+    await sharePDFToWhatsApp(blob, receiptFileName(r), {
+      title: "K.B. Dental Clinic — Receipt",
+      text: "Receipt " + (r.receiptNo ? "#" + r.receiptNo + " " : "") + "for " + fmtRs(r.fee) + " — K.B. Dental Clinic",
+      phone: r.phone
+    });
   } catch (e) {
     alert("Could not share to WhatsApp: " + (e.message || e));
   }
+}
+
+// ── Printable single-appointment confirmation slip — same visual language
+// as the fee receipt (CARES header, boxed fields), covering what a patient
+// needs to know: when, with which doctor, in which chair, and why.
+function buildAppointmentHTML(a) {
+  const logo = window.LOGO_B64;
+  const box = (label, value, opts) => {
+    const flex = (opts && opts.flex) ? "flex:" + opts.flex + ";" : "";
+    const w = (opts && opts.width) ? "width:" + opts.width + ";" : "";
+    return `<div style="display:flex;align-items:center;${flex}${w}">
+      <span style="white-space:nowrap;padding-right:8pt;">${label}</span>
+      <span style="flex:1;border:1.3pt solid #333;border-radius:3pt;min-height:22pt;padding:3pt 8pt;font-weight:700;display:flex;align-items:center;">${value || "&nbsp;"}</span>
+    </div>`;
+  };
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>
+@page{size:A5 landscape;margin:8mm}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;font-size:10.5pt;color:#111}
+.sheet{border:1.5pt solid #000;padding:10pt 14pt 14pt;}
+.hdr{text-align:center;margin-bottom:8pt;display:flex;align-items:center;gap:10pt;}
+.logo{width:48pt;height:48pt;object-fit:contain;flex-shrink:0;}
+.hdrmid{flex:1;}
+.cares{font-size:14pt;font-weight:800;color:#C0392B;text-align:center;}
+.tagline{font-size:8.5pt;font-weight:700;color:#0078B4;text-align:center;}
+.addr{font-size:8.5pt;font-weight:700;text-align:center;}
+.contact{font-size:8.5pt;text-align:center;}
+.title{text-align:center;font-size:12pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:.06em;margin:8pt 0;border:1.5pt solid #0078B4;padding:4pt;border-radius:4pt;}
+.fld{margin:7pt 0;}
+.two{display:flex;gap:14pt;}
+.foot{margin-top:14pt;font-size:7.5pt;color:#888;text-align:center;}
+</style></head><body>
+<div class="sheet">
+<div class="hdr">
+  <img class="logo" src="${logo}"/>
+  <div class="hdrmid">
+    <div class="cares">C. A. R. E. S.</div>
+    <div class="tagline">COMFORT, AWARENESS, RESPECT, EMPATHY, SAFETY</div>
+    <div class="addr">BLOCK R - 74 B, DILSHAD GARDEN, DELHI - 110095</div>
+    <div class="contact">📞 011-22131942 &nbsp; 📱 7866939786, 9319990912 &nbsp; 📧 kbdentaldelhi@gmail.com</div>
+  </div>
+</div>
+<div class="title">Appointment Confirmation</div>
+<div class="two fld">
+  ${box("Patient Name", a.patientName, { flex: 2 })}
+  ${box("UHID", a.uhid, { flex: 1 })}
+</div>
+<div class="two fld">
+  ${box("Date", a.date ? fmtDMY(a.date + "T00:00:00") : "", { flex: 1 })}
+  ${box("Time", a.time, { flex: 1 })}
+</div>
+<div class="two fld">
+  ${box("Doctor", a.doctor, { flex: 2 })}
+  ${box("Chair", a.chair, { flex: 1 })}
+</div>
+<div class="fld">
+  ${box("Reason for Visit", a.type)}
+</div>
+${a.notes ? `<div class="fld">${box("Notes", a.notes)}</div>` : ""}
+<div style="font-size:9pt;color:#555;margin-top:10pt;">Please arrive 10 minutes early. Call 7866939786 / 9319990912 to reschedule.</div>
+</div>
+<div class="foot">This is a computer-generated appointment confirmation — K.B. Dental Clinic</div>
+</body></html>`;
+}
+function generateAppointmentPrint(a) {
+  const html = buildAppointmentHTML(a);
+  const w = window.open("", "_blank");
+  w.document.write(html); w.document.close();
+  setTimeout(() => w.print(), 500);
+}
+function appointmentFileName(a) {
+  return "Appointment_" + (a.uhid || "KBDC") + "_" + (a.date || "") + ".pdf";
+}
+async function generateAppointmentPDF(a) {
+  try {
+    downloadBlob(await renderHTMLToPDFBlob(buildAppointmentHTML(a), { orientation: "landscape", format: "a5" }), appointmentFileName(a));
+  } catch (e) {
+    alert("Could not generate the PDF: " + (e.message || e));
+  }
+}
+const APPT_MONTHS_LONG = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+function apptDateLong(iso) {
+  if (!iso) return "";
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d.getTime())) return "";
+  return d.getDate() + " " + APPT_MONTHS_LONG[d.getMonth()];
+}
+function apptTime12h(t) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ""));
+  if (!m) return t || "";
+  const h = Number(m[1]);
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = (h % 12) || 12;
+  return h12 + ":" + m[2] + period;
+}
+// Matches the wording the clinic already sends manually — kept identical
+// so patients see the same message they're used to, just sent from the app.
+function appointmentWhatsAppText(a) {
+  return "Gentle reminder for your appointment on " + apptDateLong(a.date) + " at " + apptTime12h(a.time) +
+    " with " + (a.doctor || "the doctor") + " at K B Dental Clinic. Any query call 9319990912";
+}
+async function shareAppointmentWhatsApp(a) {
+  try {
+    const blob = await renderHTMLToPDFBlob(buildAppointmentHTML(a), { orientation: "landscape", format: "a5" });
+    await sharePDFToWhatsApp(blob, appointmentFileName(a), {
+      title: "K.B. Dental Clinic — Appointment Confirmation",
+      text: appointmentWhatsAppText(a),
+      phone: a.mobile
+    });
+  } catch (e) {
+    alert("Could not share to WhatsApp: " + (e.message || e));
+  }
+}
+// Text-only WhatsApp send (no PDF) — used right after booking to open a
+// chat addressed to the patient's own number, pre-filled with the
+// confirmation. Kept separate from shareAppointmentWhatsApp (which prefers
+// the native file-share sheet and only falls back to a plain wa.me link
+// when a specific number isn't the point) because right after booking we
+// DO know the number and want it addressed there directly, not routed
+// through a generic share sheet that may ask staff to pick a contact.
+function openAppointmentWhatsAppChat(a) {
+  const digits = String(a.mobile || "").replace(/\D/g, "");
+  if (!digits) return false;
+  window.open("https://wa.me/91" + digits + "?text=" + encodeURIComponent(appointmentWhatsAppText(a)), "_blank");
+  return true;
 }
 
 // ── Add Receipt — mirrors the clinic's live "Patient Fee Receipt Form" (Google Form)
