@@ -11222,7 +11222,26 @@ function ClinicalSheets({ globalPat, setGlobalPat }) {
 // ════════════════════════════════════════════════════════
 // MODULE 10 — DAILY REGISTER
 // ════════════════════════════════════════════════════════
-function DailyRegister({ globalPat, setGlobalPat }) {
+// A procedure typed straight into the Daily Register (skipping the clinical
+// form) for one of the four form-tracked procedure types — nothing is
+// auto-filled from free text, but staff get a prompt to open the real form
+// too, so RCT/Crown & Bridge/Implant work stays captured in structured
+// clinical data, not just a register line.
+const CLINICAL_FORM_PROMPTS = [
+  { keywords: ["rct", "root canal"], label: "RCT" },
+  { keywords: ["crown", "bridge"], label: "Crown & Bridge" },
+  { keywords: ["implant prosthetic", "implant crown", "implant restoration"], label: "Implant Prosthetic" },
+  { keywords: ["implant"], label: "Implant Surgery" }
+];
+function matchClinicalFormPrompt(text) {
+  const t = String(text || "").toLowerCase();
+  for (const p of CLINICAL_FORM_PROMPTS) {
+    if (p.keywords.some(k => t.indexOf(k) >= 0)) return p.label;
+  }
+  return null;
+}
+
+function DailyRegister({ globalPat, setGlobalPat, setPage }) {
   const todayISO = new Date().toISOString().split("T")[0];
   const [fromDate, setFromDate] = React.useState(todayISO);
   const [toDate, setToDate] = React.useState(todayISO);
@@ -11267,6 +11286,11 @@ function DailyRegister({ globalPat, setGlobalPat }) {
   const [nInitialAssessment, setNInitialAssessment] = React.useState("");
   const [nCarePlanDocumented, setNCarePlanDocumented] = React.useState("");
   const [nErrors, setNErrors] = React.useState({});
+  // Set after a save whose Procedure Done text looks like RCT/Crown &
+  // Bridge/Implant work — offers to open that clinical form for the same
+  // patient, since a register line alone doesn't capture the structured
+  // clinical detail (canals, materials, implant brand/size, etc.).
+  const [formPrompt, setFormPrompt] = React.useState(null); // {label, patient}
   const [nSaving, setNSaving] = React.useState(false);
 
   const findPatient = async () => {
@@ -11346,7 +11370,11 @@ function DailyRegister({ globalPat, setGlobalPat }) {
     });
     if (res.success && nAddToDaysheet) await ensureDaysheetVisit();
     setNSaving(false);
-    if (res.success) { setShowAdd(false); resetAddForm(); loadEntries(); loadApptTimes(); }
+    if (res.success) {
+      const matched = matchClinicalFormPrompt(nProcedureDone);
+      if (matched) setFormPrompt({ label: matched, patient: nPat });
+      setShowAdd(false); resetAddForm(); loadEntries(); loadApptTimes();
+    }
     else alert("Save error: " + (res.error || "Unknown"));
   };
 
@@ -11425,6 +11453,21 @@ function DailyRegister({ globalPat, setGlobalPat }) {
       React.createElement("button",{onClick:()=>setShowAdd(v=>!v),
         style:{padding:"8px 16px",fontSize:12.5,border:"none",borderRadius:7,cursor:"pointer",background:T,color:"#fff",fontWeight:700}},
         showAdd ? "✕ Close" : "+ New Entry")
+    ),
+
+    formPrompt && React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",
+        gap:12,flexWrap:"wrap",background:"#fff7ed",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px",marginBottom:16}},
+      React.createElement("div",{style:{fontSize:12.5,color:"#7c4a03"}},
+        "📋 This looks like ", React.createElement("b",null,formPrompt.label),
+        " — record it in the clinical form too for ", React.createElement("b",null,formPrompt.patient.name || formPrompt.patient.uhid), "?"),
+      React.createElement("div",{style:{display:"flex",gap:8}},
+        setPage && React.createElement("button",{onClick:()=>{ setGlobalPat(formPrompt.patient); setPage("clinical_records"); setFormPrompt(null); },
+          style:{padding:"6px 14px",fontSize:12,border:"none",borderRadius:6,cursor:"pointer",background:"#f59e0b",color:"#fff",fontWeight:700}},
+          "Open " + formPrompt.label + " form"),
+        React.createElement("button",{onClick:()=>setFormPrompt(null),
+          style:{padding:"6px 14px",fontSize:12,border:`1px solid ${BORDER}`,borderRadius:6,cursor:"pointer",background:"#fff",color:"#777"}},
+          "Dismiss")
+      )
     ),
 
     showAdd && React.createElement("div",{style:{background:"#fff",border:`1px solid ${BORDER}`,borderRadius:10,padding:"16px 20px",marginBottom:16}},
@@ -25364,7 +25407,8 @@ function App() {
     globalPat: globalPat
   }), page === "daily_register" && /*#__PURE__*/React.createElement(DailyRegister, {
     globalPat: globalPat,
-    setGlobalPat: setGlobalPat
+    setGlobalPat: setGlobalPat,
+    setPage: setPage
   }), page === "finance" && /*#__PURE__*/React.createElement(FinanceModule, {
     globalPat: globalPat,
     setGlobalPat: setGlobalPat
