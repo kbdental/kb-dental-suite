@@ -23983,8 +23983,16 @@ function FinanceExpenseSubTab() {
   };
 
   const total = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  // Same form as expense.html — a standalone page for anyone (e.g. an
+  // accountant) who only ever needs this one screen and shouldn't have to
+  // open the full clinical suite to log an expense.
+  const standaloneExpenseLink = location.href.split(/[?#]/)[0].replace(/[^/]*$/, "expense.html");
 
   return React.createElement("div", null,
+    React.createElement("div", { style:{ fontSize:12, marginBottom:14 } },
+      React.createElement("a", { href:standaloneExpenseLink, target:"_blank", rel:"noopener", style:{ color:T, fontWeight:600 } },
+        "🔗 Open as a standalone page (for sharing with someone who doesn't need the full app)")
+    ),
     React.createElement("div", { style:{ background:"#fff", border:`1.5px solid ${T}`, borderRadius:10, padding:"18px 22px", maxWidth:560, marginBottom:20 } },
       React.createElement("div", { style:{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginBottom:14 } },
         React.createElement("div", null, React.createElement(Lbl,{c:"Date of Expense *"}),
