@@ -77,8 +77,10 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
   eq('cord sizes', await opts('cordSize'), ['000', '00', '0', '1', '2']);
   eq('tray now includes Triple Tray', await opts('trayUsed'),
     ['Stock Tray', 'Custom Tray', 'Triple Tray']);
-  eq('bite registered is yes/no', await opts('biteReg'), ['Yes', 'No']);
-  eq('bite material', await opts('biteType'), ['Resin (Jet Bite)', 'Wax']);
+  eq('bite material, matching the reference form (no more yes/no gate)',
+    await opts('biteType'), ['Resin (Jet Bite)', 'Wax']);
+  eq('local anesthesia matches the reference form', await opts('localAnes'),
+    ['Nerve Block', 'Infiltration', 'Not Used']);
 
   // --- conditional: cord size ---------------------------------------------
   eq('cord size hidden before a retraction is chosen', await visible('cordSizeRow'), false);
@@ -87,14 +89,6 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
   await click('cordSize', '00');
   await click('retraction', 'Astringent Gel');
   eq('cord size hidden again for Astringent Gel', await visible('cordSizeRow'), false);
-
-  // --- conditional: bite material ------------------------------------------
-  eq('bite material hidden before bite registered is answered', await visible('biteMatRow'), false);
-  await click('biteReg', 'Yes');
-  eq('bite material appears for Yes', await visible('biteMatRow'), true);
-  await click('biteType', 'Wax');
-  await click('biteReg', 'No');
-  eq('bite material hidden again for No', await visible('biteMatRow'), false);
 
   // --- what actually gets saved -------------------------------------------
   await page.evaluate(() => {
@@ -110,9 +104,9 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
   await click('flexistrip', 'Used');
   await click('retraction', 'Cord');
   await click('cordSize', '1');
-  await click('biteReg', 'Yes');
   await click('biteType', 'Resin (Jet Bite)');
   await click('trayUsed', 'Triple Tray');
+  await click('localAnes', 'Nerve Block');
 
   // collect() is closure-scoped, so read what the summary renders instead.
   await page.evaluate(() => {
@@ -127,8 +121,9 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
   has('margin and gingiva', 'Chamfer / Sub-gingival');
   has('flexistrip', 'Used');
   has('retraction with cord size', 'Cord (size 1)');
-  has('bite registered with material', 'Yes — Resin (Jet Bite)');
+  has('bite material', 'Resin (Jet Bite)');
   has('tray', 'Triple Tray');
+  has('local anesthesia', 'Nerve Block');
 
   // A cord size chosen and then abandoned must not be reported.
   await page.evaluate(() => {

@@ -28,8 +28,8 @@ const SAVED_RECORD = {
   pName: 'Test Patient', pId: 'AL0999', doctor: 'Dr. Viveyk',
   anaType: 'Mepivacaine', anaQty: '1.5', anaMethod: 'Both',
   investigation: 'OPG',
-  finalImp: 'Vinyl Poly-siloxane (Putty)', trayUsed: 'Triple Tray',
-  biteRegistered: 'Yes', biteType: 'Resin (Jet Bite)',
+  finalImp: 'Digital Scan', trayUsed: 'Custom Tray',
+  biteType: 'Resin (Jet Bite)',
   n1: 'Impression taken, bite registered.',
   implants: [{ n: 1, site: '36', date: '20/08/2026' }]
 };
@@ -61,11 +61,9 @@ const SAVED_RECORD = {
   eq('anaesthesia quantity restored', await value('anaQty'), '1.5');
   eq('anaesthesia method restored', await active('anaMethod'), ['Both']);
   eq('investigation restored', await active('investGrp'), ['OPG']);
-  eq('final impression restored', await active('finalImp'), ['Vinyl Poly-siloxane (Putty)']);
-  eq('tray restored', await active('trayUsed'), ['Triple Tray']);
-  eq('bite registered restored', await active('biteReg'), ['Yes']);
-  eq('bite material row visible since bite was registered Yes', await visible('biteMatRow'), true);
-  eq('bite material restored', await active('biteType'), ['Resin (Jet Bite)']);
+  eq('impression restored', await active('finalImp'), ['Digital Scan']);
+  eq('tray restored', await active('trayUsed'), ['Custom Tray']);
+  eq('bite restored', await active('biteType'), ['Resin (Jet Bite)']);
   eq('impression-step notes restored', await value('n1'), 'Impression taken, bite registered.');
 
   const toothLabel = await page.evaluate(() => {
