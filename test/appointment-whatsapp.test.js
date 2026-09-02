@@ -1,19 +1,18 @@
-// Checks the appointment-side of the same PDF/WhatsApp/Print system already
-// shipped for fee receipts:
+// Checks the appointment WhatsApp reminder: plain text only (no PDF/receipt-
+// style document — that was tried and then deliberately removed in favor of
+// a simple text message the clinic can review and tweak).
+//
 //  - the "Notify Patient — WhatsApp" checkbox (previously collected and
-//    never used for anything) now produces a real WhatsApp message
+//    never used for anything) opens a WhatsApp chat addressed to the
+//    patient's own number, pre-filled with a plain-text reminder
 //  - that message matches the exact wording the clinic already sends
 //    manually ("Gentle reminder for your appointment on 1 September at
 //    10:00AM with Dr. Manika Mittel at K B Dental Clinic. Any query call
 //    9319990912"), just generated from the app instead of typed by hand
-//  - the appointment confirmation slip (for the PDF/Print buttons) carries
-//    the actual appointment details
 //
-// Extracted from index.html by line range and run under Node's vm, the
-// same approach fee-receipt-redesign.test.js uses — these are pure
-// string-building functions; the html2canvas/jsPDF wiring around them is
-// exercised by hand (this sandbox's network policy blocks the CDN scripts
-// a real browser load of index.html would need).
+// Extracted from index.html by line range and run under Node's vm — same
+// approach fee-receipt-redesign.test.js uses for its pure string-building
+// functions.
 
 const fs = require('fs');
 const path = require('path');
@@ -30,16 +29,12 @@ function extract(startMarker, endMarker) {
   return lines.slice(start, end).join('\n');
 }
 
-const src = [
-  extract('function fmtDMY', 'function getDoctors'),
-  extract('function buildAppointmentHTML', 'function generateAppointmentPrint'),
-  extract('const APPT_MONTHS_LONG', 'async function shareAppointmentWhatsApp'),
-].join('\n\n');
+const src = extract('const APPT_MONTHS_LONG', '// ── Add Receipt');
 
-const ctx = { window: { LOGO_B64: 'data:image/png;base64,STUB' }, console };
+const ctx = { window: {}, console };
 vm.createContext(ctx);
 vm.runInContext(src, ctx);
-const { apptDateLong, apptTime12h, appointmentWhatsAppText, buildAppointmentHTML } = ctx;
+const { apptDateLong, apptTime12h, appointmentWhatsAppText, openAppointmentWhatsAppChat } = ctx;
 
 const checks = [];
 const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === JSON.stringify(want), got, want });
@@ -65,25 +60,23 @@ eq('template holds for a different doctor/date/time',
   appointmentWhatsAppText({ doctor: 'Dr. Viveyk Mittel', date: '2026-12-25', time: '16:45' }),
   'Gentle reminder for your appointment on 25 December at 4:45PM with Dr. Viveyk Mittel at K B Dental Clinic. Any query call 9319990912');
 
-// --- the PDF/Print confirmation slip carries the real details -------------
-const html = buildAppointmentHTML(SAMPLE);
-ok('slip has CARES header', html.includes('C. A. R. E. S.'));
-ok('slip is titled Appointment Confirmation', html.includes('Appointment Confirmation'));
-ok('slip shows the patient name', html.includes('Test Patient'));
-ok('slip shows the UHID', html.includes('AL0777'));
-ok('slip shows the doctor', html.includes('Dr. Manika Mittel'));
-ok('slip shows the chair', html.includes('Chair 1'));
-ok('slip shows the reason', html.includes('Consultation'));
+// --- opening the chat: plain text, no file, addressed to the patient -----
+let opened = null;
+ctx.window.open = (url) => { opened = url; };
+const sent = openAppointmentWhatsAppChat(SAMPLE);
+eq('reports success when a mobile number is present', sent, true);
+ok('opens wa.me addressed to the patient\'s own number (with country code)', opened && opened.startsWith('https://wa.me/919319990912?text='));
+const urlText = decodeURIComponent(opened.split('?text=')[1]);
+eq('the URL carries exactly the plain-text reminder, nothing else', urlText, appointmentWhatsAppText(SAMPLE));
 
-// Notes are optional — only rendered when present, not as a literal blank box.
-const htmlNoNotes = buildAppointmentHTML(SAMPLE);
-ok('no Notes field when none given', !htmlNoNotes.includes('>Notes<'));
-const htmlWithNotes = buildAppointmentHTML({ ...SAMPLE, notes: 'Bring previous X-ray' });
-ok('Notes field appears and shows the text when given', htmlWithNotes.includes('>Notes<') && htmlWithNotes.includes('Bring previous X-ray'));
+opened = null;
+const noPhone = openAppointmentWhatsAppChat({ ...SAMPLE, mobile: '' });
+eq('does nothing and reports failure when there is no mobile number', noPhone, false);
+eq('does not attempt to open anything without a number', opened, null);
 
 let pass = 0, fail = 0;
 console.log('\n' + '='.repeat(78));
-console.log('APPOINTMENTS — WHATSAPP CONFIRMATION (SAME SYSTEM AS RECEIPTS)');
+console.log('APPOINTMENTS — WHATSAPP REMINDER (PLAIN TEXT ONLY)');
 console.log('='.repeat(78));
 for (const c of checks) {
   c.ok ? pass++ : fail++;
