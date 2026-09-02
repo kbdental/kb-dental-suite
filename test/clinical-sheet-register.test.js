@@ -48,18 +48,29 @@ eq('Implant Surgery -> toothNo from implants[].site', impPre.toothNo, '46');
 eq('Implant Surgery -> workDone from n3', impPre.workDone, 'Implant placed at 46.');
 
 // --- RCT: entries array, one object per tooth ----------------------------
+// RCT's per-tooth entry carries its own rich "notes" summary (built from
+// anaesthesia/WL/instrumentation/complications/etc. in collectCurrentTooth())
+// — that's the ONLY place RCT's actual work done lives, since staff never
+// type the same thing again into the top-level Step 2/3 free-text notes.
+// It has to win over t.n3/t.n2 or the register's Work Done column comes
+// back blank for every RCT visit.
 const rct = {
   uhid: 'AL0999', patientName: 'RCT Patient', sheetType: 'RCT',
-  allTeeth: { pName: 'RCT Patient', pId: 'AL0999', doctor: 'Dr. Mittel',
+  allTeeth: { pName: 'RCT Patient', pId: 'AL0999', doctor: 'Dr. Mittel', n2: '', n3: '',
     entries: [{ tooth: '36', notes: 'Access opening done wrt 36.' }] }
 };
-// RCT entries carry notes per-tooth, not a top-level n2/n3 — falls back to "" here,
-// which is fine: the register entry still reaches the confirm screen with tooth +
-// doctor filled in, and staff can paste the note in manually if the per-entry
-// notes field isn't wired to n2/n3 at the top level.
 const rctPre = clinicalSheetRegisterPrefill(rct);
 eq('RCT -> toothNo from entries[].tooth', rctPre.toothNo, '36');
 eq('RCT -> procedureDone is "RCT"', rctPre.procedureDone, 'RCT');
+eq('RCT -> workDone from the per-tooth entry\'s own notes summary', rctPre.workDone, 'Access opening done wrt 36.');
+
+// A top-level n2/n3 (typed separately from the per-tooth summary) is still
+// the fallback when the entry itself has no notes — never silently drop it.
+const rctNoEntryNotes = clinicalSheetRegisterPrefill({
+  uhid: 'AL0999', sheetType: 'RCT',
+  allTeeth: { doctor: 'Dr. Mittel', n3: 'Typed separately in Step 2.', entries: [{ tooth: '36' }] }
+});
+eq('RCT -> falls back to n3 when the entry has no notes of its own', rctNoEntryNotes.workDone, 'Typed separately in Step 2.');
 
 // --- no uhid -> no prefill (never silently write a blank register row) --
 eq('no uhid -> null', clinicalSheetRegisterPrefill({ sheetType: 'RCT', allTeeth: {} }), null);

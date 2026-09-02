@@ -24832,7 +24832,14 @@ function clinicalSheetRegisterPrefill(d, merged) {
     date: toISODate(new Date()),
     procedureDone: String(d.sheetType || "").trim(),
     toothNo: String(last.tooth || last.site || "").trim(),
-    workDone: String(t.n3 || t.n2 || "").trim(),
+    // RCT's per-tooth entries carry their own rich "notes" summary (built
+    // from anaesthesia/working length/instrumentation/complications/etc. in
+    // collectCurrentTooth()) — richer than the top-level Step 2/3 free-text
+    // notes, and the only place RCT's actual work done lives at all, since
+    // it never gets typed into n2/n3. Preferred when present; other forms
+    // (Crown & Bridge, Implant Surgery/Prosthetic) don't put notes on the
+    // item, so they fall through to the top-level fields unchanged.
+    workDone: String(last.notes || t.n3 || t.n2 || "").trim(),
     operatingDoctor: String(t.doctor || "").trim()
   };
 }
