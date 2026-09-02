@@ -7,8 +7,9 @@
 //    patient's own number, pre-filled with a plain-text reminder
 //  - that message matches the exact wording the clinic already sends
 //    manually ("Gentle reminder for your appointment on 1 September at
-//    10:00AM with Dr. Manika Mittel at K B Dental Clinic. Any query call
-//    9319990912"), just generated from the app instead of typed by hand
+//    10:00AM with Dr. Manika Mittel at K B Dental Clinic. Please arrive 5
+//    minutes early. Any query call 9319990912"), just generated from the
+//    app instead of typed by hand
 //
 // Extracted from index.html by line range and run under Node's vm — same
 // approach fee-receipt-redesign.test.js uses for its pure string-building
@@ -53,12 +54,12 @@ const SAMPLE = { patientName: 'Test Patient', uhid: 'AL0777', date: '2026-09-01'
   doctor: 'Dr. Manika Mittel', chair: 'Chair 1', type: 'Consultation', mobile: '9319990912' };
 eq('WhatsApp text matches the clinic\'s existing wording exactly',
   appointmentWhatsAppText(SAMPLE),
-  'Gentle reminder for your appointment on 1 September at 10:00AM with Dr. Manika Mittel at K B Dental Clinic. Any query call 9319990912');
+  'Gentle reminder for your appointment on 1 September at 10:00AM with Dr. Manika Mittel at K B Dental Clinic. Please arrive 5 minutes early. Any query call 9319990912');
 
 // A different doctor/date/time still fits the same template correctly.
 eq('template holds for a different doctor/date/time',
   appointmentWhatsAppText({ doctor: 'Dr. Viveyk Mittel', date: '2026-12-25', time: '16:45' }),
-  'Gentle reminder for your appointment on 25 December at 4:45PM with Dr. Viveyk Mittel at K B Dental Clinic. Any query call 9319990912');
+  'Gentle reminder for your appointment on 25 December at 4:45PM with Dr. Viveyk Mittel at K B Dental Clinic. Please arrive 5 minutes early. Any query call 9319990912');
 
 // --- opening the chat: plain text, no file, addressed to the patient -----
 let opened = null;
