@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>K.B. Dental Clinic — Expense Entry</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f0;color:#1a1a1a;font-size:15px;line-height:1.5}
+.wrap{max-width:760px;margin:0 auto;padding:16px 16px 60px}
+.card{background:#fff;border:1px solid #e5e5e0;border-radius:12px;padding:20px;margin-bottom:16px}
+.hdr{text-align:center;padding:18px 12px;background:#fff;border:1px solid #e5e5e0;border-radius:12px;margin-bottom:16px}
+.cares{font-size:20px;font-weight:800;color:#C0392B;letter-spacing:.12em}
+.tag{font-size:11px;font-weight:700;color:#0078B4;letter-spacing:.04em;margin-top:2px}
+.sub{font-size:11px;color:#666;margin-top:4px}
+h2{font-size:12px;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:.07em;padding:6px 10px;border-left:3px solid #0078B4;background:#f0f6fb;margin:0 0 14px}
+label{display:block;font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+input,select,textarea{width:100%;padding:11px 12px;font-size:15px;font-family:inherit;border:1px solid #e5e5e0;border-radius:8px;background:#fff;color:#1a1a1a}
+input:focus,select:focus,textarea:focus{outline:2px solid #0078B4;outline-offset:1px}
+textarea{resize:vertical;min-height:60px}
+.f{margin-bottom:14px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+@media(max-width:560px){.g2{grid-template-columns:1fr}}
+.row{display:flex;gap:8px;align-items:flex-end}
+.row .f{flex:1;margin-bottom:0}
+.btn{width:100%;padding:14px;font-size:16px;font-weight:700;color:#fff;background:#0078B4;border:none;border-radius:9px;cursor:pointer;font-family:inherit}
+.btn[disabled]{background:#9ab;cursor:wait}
+.btn2{padding:11px 16px;font-size:13px;background:#fff;color:#555;border:1px solid #e5e5e0;border-radius:8px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.btn3{padding:8px 12px;font-size:12.5px;background:#0078B4;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit}
+.err{font-size:13px;color:#c0392b;background:#fff0f0;border:1px solid #e24b4a;border-radius:8px;padding:11px 14px;margin-bottom:14px}
+.ok{font-size:13px;color:#059669;background:#ecfdf5;border:1px solid #10b981;border-radius:8px;padding:11px 14px;margin-bottom:14px}
+.hide{display:none}
+.center{text-align:center}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;padding:7px 8px;background:#f5f5f0;color:#555;font-weight:700;border-bottom:1px solid #e5e5e0}
+td{padding:7px 8px;border-bottom:1px solid #f0f0eb}
+.total{font-size:13.5px;font-weight:700;color:#0078B4;background:#f0f6fb;border-radius:8px;padding:10px 14px;margin-bottom:12px}
+.muted{color:#888;font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div class="cares">C. A. R. E. S.</div>
+    <div class="tag">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div>
+    <div class="sub">K. B. Dental Clinic &middot; Block R-74B, Dilshad Garden, Delhi-110095</div>
+    <div class="sub">011-22131942 &middot; 7866939786, 9319990912</div>
+  </div>
+  <div id="app"></div>
+</div>
+
+<script>
+// Standalone Expense Entry — the same form as the in-app Finance > Payments >
+// Expense tab (FinanceExpenseSubTab in index.html), field-for-field, but
+// reachable on its own without opening the full clinical suite. Useful for
+// an accountant/admin who only ever needs this one screen.
+//
+// Talks to the exact same backend actions the in-app version uses
+// (getEmployeesList, getExpenseCategoriesList, getPaymentModesList,
+// getExpenses, saveExpense, saveEmployeesList, saveExpenseCategoriesList) —
+// same data, same "Expenses" sheet tab, same category/payer lists. Since
+// those actions carry real financial data they are not in the backend's
+// PUBLIC_ACTIONS list, so this page has its own lightweight staff login
+// (same staffLogin/authStatus endpoints and session token the main app
+// uses) rather than being left open.
+var SCRIPT_URL = "https://script.google.com/macros/s/AKfycby-OX-qvGE2U9Zt3b-_rpFqc5WQxRT5WMn1A030IcQIKXEaso36cMTbJ6c5xiP5O_6Zvg/exec";
+var TOKEN_KEY = "kb_expense_token";
+
+function getToken() { try { return sessionStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; } }
+function setToken(t) { try { sessionStorage.setItem(TOKEN_KEY, t || ""); } catch (e) {} }
+
+function api(action, data) {
+  var p = new URLSearchParams({ action: action });
+  Object.keys(data || {}).forEach(function (k) {
+    var v = data[k];
+    p.append(k, typeof v === "object" ? JSON.stringify(v) : String(v == null ? "" : v));
+  });
+  var tok = getToken();
+  if (tok) p.append("token", tok);
+  return fetch(SCRIPT_URL + "?" + p.toString())
+    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(function (res) {
+      if (res && res.authRequired) { setToken(""); state.screen = "login"; render(); }
+      return res;
+    })
+    .catch(function (e) { console.error("API:", e); return { success: false, error: e.message }; });
+}
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+function fmtRs(n) { return "₹" + (Number(n) || 0).toLocaleString("en-IN"); }
+function todayISO() { return new Date().toISOString().split("T")[0]; }
+function fmtDMY(iso) {
+  if (!iso) return "—";
+  var p = String(iso).split("-");
+  return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : iso;
+}
+
+var EXPENSE_MODES = ["Cash", "UPI", "NEFT/RTGS", "Cheque", "Credit Card"];
+
+var app = document.getElementById("app");
+var state = {
+  screen: "checking", // checking | login | form
+  loginPw: "", loginBusy: false, loginErr: "",
+  payers: [], categories: [], modes: [],
+  date: todayISO(), paidBy: "", expenseName: "", amount: "", mode: "", remarks: "",
+  newPayerMode: false, newPayerText: "",
+  newCatMode: false, newCatText: "",
+  saving: false, msg: "", errors: {},
+  expenses: [], loadingLog: false
+};
+
+function render() {
+  if (state.screen === "checking") { app.innerHTML = '<div class="card center muted">Checking sign-in...</div>'; return; }
+  if (state.screen === "login") { renderLogin(); return; }
+  renderForm();
+}
+
+function renderLogin() {
+  app.innerHTML =
+    '<div class="card">' +
+      '<h2 style="margin-bottom:16px">Staff Sign In</h2>' +
+      '<div class="sub" style="margin-bottom:14px">Enter the clinic app password to record an expense.</div>' +
+      (state.loginErr ? '<div class="err">⚠ ' + esc(state.loginErr) + '</div>' : "") +
+      '<div class="f"><label>Password</label><input type="password" id="l-pw" autofocus/></div>' +
+      '<button class="btn" id="l-go"' + (state.loginBusy ? " disabled" : "") + '>' + (state.loginBusy ? "Signing in..." : "Sign In") + '</button>' +
+    '</div>';
+  var pwEl = document.getElementById("l-pw");
+  pwEl.onkeydown = function (e) { if (e.key === "Enter") doLogin(); };
+  document.getElementById("l-go").onclick = doLogin;
+}
+
+function doLogin() {
+  var pw = document.getElementById("l-pw").value;
+  if (!pw.trim()) return;
+  state.loginBusy = true; state.loginErr = ""; render();
+  api("staffLogin", { password: pw }).then(function (res) {
+    state.loginBusy = false;
+    if (res && res.success && res.token) {
+      setToken(res.token);
+      loadReferenceData();
+    } else {
+      state.loginErr = (res && res.error) || "Sign-in failed";
+      render();
+    }
+  });
+}
+
+function checkAuth() {
+  api("authStatus").then(function (res) {
+    if (res && res.success && res.authRequired && !res.valid) {
+      state.screen = "login"; render();
+    } else {
+      loadReferenceData();
+    }
+  });
+}
+
+function loadReferenceData() {
+  state.screen = "form"; render();
+  api("getEmployeesList").then(function (res) {
+    if (res.success && res.employees) {
+      state.payers = res.employees.map(function (e) { return e.name; });
+      if (!state.paidBy) state.paidBy = state.payers[0] || "";
+      render();
+    }
+  });
+  api("getExpenseCategoriesList").then(function (res) {
+    if (res.success && res.categories) {
+      state.categories = res.categories;
+      if (!state.expenseName) state.expenseName = state.categories[0] || "";
+      render();
+    }
+  });
+  api("getPaymentModesList").then(function (res) {
+    state.modes = (res.success && res.modes && res.modes.length) ? res.modes : EXPENSE_MODES;
+    render();
+  });
+  loadExpenses();
+}
+
+function loadExpenses() {
+  state.loadingLog = true; render();
+  api("getExpenses", {}).then(function (res) {
+    state.loadingLog = false;
+    state.expenses = (res.success && res.expenses) ? res.expenses : [];
+    render();
+  });
+}
+
+function renderForm() {
+  var total = state.expenses.reduce(function (s, e) { return s + (Number(e.amount) || 0); }, 0);
+  app.innerHTML =
+    '<div class="card">' +
+      '<h2>Record an Expense</h2>' +
+      (state.msg ? '<div class="' + (state.msg.indexOf("✅") === 0 ? "ok" : "err") + '">' + esc(state.msg) + '</div>' : "") +
+      '<div class="g2 f">' +
+        '<div><label>Date of Expense *</label><input type="date" id="f-date" value="' + esc(state.date) + '"/></div>' +
+        '<div><label>Amount *</label><input type="number" id="f-amount" value="' + esc(state.amount) + '"' +
+          (state.errors.amount ? ' style="border-color:#e24b4a"' : "") + '/></div>' +
+      '</div>' +
+      '<div class="f"><label>Payment Done By *</label>' +
+        (state.newPayerMode
+          ? '<div class="row"><input id="f-newpayer" placeholder="New name..." value="' + esc(state.newPayerText) + '"/>' +
+            '<button class="btn3" id="f-newpayer-add">Add</button><button class="btn2" id="f-newpayer-cancel">Cancel</button></div>'
+          : '<div class="row"><select id="f-paidby"' + (state.errors.paidBy ? ' style="border-color:#e24b4a"' : "") + '>' +
+            '<option value="">Select</option>' +
+            state.payers.map(function (p) { return '<option' + (state.paidBy === p ? " selected" : "") + '>' + esc(p) + '</option>'; }).join("") +
+            '</select><button class="btn2" id="f-newpayer-open">+ New</button></div>') +
+      '</div>' +
+      '<div class="f"><label>Name of Expense *</label>' +
+        (state.newCatMode
+          ? '<div class="row"><input id="f-newcat" placeholder="New expense category..." value="' + esc(state.newCatText) + '"/>' +
+            '<button class="btn3" id="f-newcat-add">Add</button><button class="btn2" id="f-newcat-cancel">Cancel</button></div>'
+          : '<div class="row"><select id="f-expname"' + (state.errors.expenseName ? ' style="border-color:#e24b4a"' : "") + '>' +
+            '<option value="">Select</option>' +
+            state.categories.map(function (c) { return '<option' + (state.expenseName === c ? " selected" : "") + '>' + esc(c) + '</option>'; }).join("") +
+            '</select><button class="btn2" id="f-newcat-open">+ New</button></div>') +
+      '</div>' +
+      '<div class="f"><label>Mode of Expense *</label><select id="f-mode"' + (state.errors.mode ? ' style="border-color:#e24b4a"' : "") + '>' +
+        '<option value="">Select</option>' +
+        state.modes.map(function (m) { return '<option' + (state.mode === m ? " selected" : "") + '>' + esc(m) + '</option>'; }).join("") +
+        '</select></div>' +
+      '<div class="f"><label>Remarks (Detail of Expense) *</label><textarea id="f-remarks"' + (state.errors.remarks ? ' style="border-color:#e24b4a"' : "") + '>' + esc(state.remarks) + '</textarea></div>' +
+      '<button class="btn" id="f-save"' + (state.saving ? " disabled" : "") + '>' + (state.saving ? "Saving..." : "💾 Save Expense") + '</button>' +
+    '</div>' +
+    '<div class="card">' +
+      '<h2>Expense Log</h2>' +
+      (state.loadingLog ? '<div class="muted">Loading...</div>' :
+        (state.expenses.length === 0
+          ? '<div class="muted">No expenses recorded yet.</div>'
+          : '<div class="total">' + state.expenses.length + ' expense' + (state.expenses.length !== 1 ? "s" : "") + ' · Total: ' + fmtRs(total) + '</div>' +
+            '<div style="overflow-x:auto"><table><thead><tr><th>Date</th><th>Paid By</th><th>Expense</th><th>Amount</th><th>Mode</th><th>Remarks</th></tr></thead><tbody>' +
+            state.expenses.map(function (e) {
+              return '<tr><td>' + esc(fmtDMY(e.date)) + '</td><td>' + esc(e.paidBy || "—") + '</td><td>' + esc(e.expenseName || "—") +
+                '</td><td>' + fmtRs(e.amount) + '</td><td>' + esc(e.mode || "—") + '</td><td>' + esc(e.remarks || "—") + '</td></tr>';
+            }).join("") + '</tbody></table></div>')) +
+    '</div>';
+  wireForm();
+}
+
+function wireForm() {
+  var byId = function (id) { return document.getElementById(id); };
+  if (byId("f-date")) byId("f-date").oninput = function (e) { state.date = e.target.value; };
+  if (byId("f-amount")) byId("f-amount").oninput = function (e) { state.amount = e.target.value; };
+  if (byId("f-paidby")) byId("f-paidby").onchange = function (e) { state.paidBy = e.target.value; };
+  if (byId("f-expname")) byId("f-expname").onchange = function (e) { state.expenseName = e.target.value; };
+  if (byId("f-mode")) byId("f-mode").onchange = function (e) { state.mode = e.target.value; };
+  if (byId("f-remarks")) byId("f-remarks").oninput = function (e) { state.remarks = e.target.value; };
+
+  if (byId("f-newpayer-open")) byId("f-newpayer-open").onclick = function () { state.newPayerMode = true; state.newPayerText = ""; render(); };
+  if (byId("f-newpayer-cancel")) byId("f-newpayer-cancel").onclick = function () { state.newPayerMode = false; render(); };
+  if (byId("f-newpayer")) byId("f-newpayer").oninput = function (e) { state.newPayerText = e.target.value; };
+  if (byId("f-newpayer-add")) byId("f-newpayer-add").onclick = addNewPayer;
+
+  if (byId("f-newcat-open")) byId("f-newcat-open").onclick = function () { state.newCatMode = true; state.newCatText = ""; render(); };
+  if (byId("f-newcat-cancel")) byId("f-newcat-cancel").onclick = function () { state.newCatMode = false; render(); };
+  if (byId("f-newcat")) byId("f-newcat").oninput = function (e) { state.newCatText = e.target.value; };
+  if (byId("f-newcat-add")) byId("f-newcat-add").onclick = addNewCategory;
+
+  if (byId("f-save")) byId("f-save").onclick = saveExpenseEntry;
+}
+
+function addNewPayer() {
+  var v = (state.newPayerText || "").trim();
+  if (!v) return;
+  if (state.payers.indexOf(v) < 0) state.payers.push(v);
+  state.paidBy = v; state.newPayerText = ""; state.newPayerMode = false; render();
+  api("saveEmployeesList", {
+    employees: JSON.stringify(state.payers.map(function (n) { return { name: n, phone: "", email: "", role: "" }; }))
+  });
+}
+function addNewCategory() {
+  var v = (state.newCatText || "").trim();
+  if (!v) return;
+  if (state.categories.indexOf(v) < 0) state.categories.push(v);
+  state.expenseName = v; state.newCatText = ""; state.newCatMode = false; render();
+  api("saveExpenseCategoriesList", { categories: JSON.stringify(state.categories) });
+}
+
+function saveExpenseEntry() {
+  var e = {};
+  if (!state.paidBy) e.paidBy = true;
+  if (!state.expenseName) e.expenseName = true;
+  if (!state.amount) e.amount = true;
+  if (!state.mode) e.mode = true;
+  if (!state.remarks.trim()) e.remarks = true;
+  state.errors = e;
+  if (Object.keys(e).length) { render(); return; }
+  state.saving = true; state.msg = ""; render();
+  api("saveExpense", {
+    date: state.date, paidBy: state.paidBy, expenseName: state.expenseName,
+    amount: state.amount, mode: state.mode, remarks: state.remarks.trim()
+  }).then(function (res) {
+    state.saving = false;
+    if (res.success) {
+      state.msg = "✅ Saved!";
+      state.amount = ""; state.remarks = ""; state.mode = ""; state.date = todayISO(); state.errors = {};
+      render();
+      setTimeout(function () { state.msg = ""; render(); }, 1500);
+      loadExpenses();
+    } else {
+      state.msg = "❌ " + (res.error || "Save failed");
+      render();
+    }
+  });
+}
+
+// ── start ────────────────────────────────────────────────────────
+render();
+checkAuth();
+</script>
+</body>
+</html>
