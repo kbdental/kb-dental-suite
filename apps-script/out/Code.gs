@@ -1337,52 +1337,136 @@ function getTreatmentProgress(p) {
 // CLINICAL SHEETS (RCT / Implant / Crown-Bridge)
 // ════════════════════════════════════════════════════════════
 
+// Each of the four forms gets its own tab instead of all of them sharing one.
+// NOTE the "Clinical Sheets - " prefix: flat tabs named "RCT", "Implant
+// Surgery", "Implant Prosthetic" and "Crown & Bridge" already exist in this
+// same spreadsheet for pasting in historical records, and reusing those names
+// would have written JSON blobs straight over them.
+var CLINICAL_SHEETS_SHARED_TAB = "Clinical Sheets";
+var CLINICAL_SHEET_HEADERS = ["UHID", "Patient Name", "Sheet Type", "All Teeth Data", "Saved At"];
+var CLINICAL_SHEET_TABS = {
+  "RCT":                "Clinical Sheets - RCT",
+  "Implant Surgery":    "Clinical Sheets - Implant Surgery",
+  "Implant Prosthetic": "Clinical Sheets - Implant Prosthetic",
+  "Crown Bridge":       "Clinical Sheets - Crown Bridge"
+};
+
+function clinicalSheetTabName_(sheetType) {
+  return CLINICAL_SHEET_TABS[String(sheetType || "").trim()] || CLINICAL_SHEETS_SHARED_TAB;
+}
+
+// Locates a patient's row WITHOUT touching the "All Teeth Data" column.
+// That column holds the entire record for every tooth as JSON, so reading the
+// whole range just to find one row pulled and parsed every record in the tab
+// on every open and every save. Only the three key columns are read here; the
+// blob is fetched afterwards, for the single row that matched.
+function findClinicalRow_(sh, uhid, sheetType) {
+  var last = sh.getLastRow();
+  if (last < 2) return -1;
+  var keys = sh.getRange(2, 1, last - 1, 3).getValues();
+  for (var i = keys.length - 1; i >= 0; i--) {
+    if (String(keys[i][0]).trim().toUpperCase() !== uhid) continue;
+    if (sheetType && String(keys[i][2]).trim() !== sheetType) continue;
+    return i + 2;
+  }
+  return -1;
+}
+
+function readClinicalRow_(sh, row) {
+  var vals = sh.getRange(row, 1, 1, 5).getValues()[0];
+  return {
+    success: true,
+    allTeeth: safeParseJSON(vals[3]),
+    sheetType: vals[2],
+    savedAt: vals[4]
+  };
+}
+
 function getClinicalSheets(p) {
-  var sh = getSheet("Clinical Sheets");
-  var data = sh.getDataRange().getValues();
   var uhid = String(p.uhid || "").trim().toUpperCase();
   var sheetType = p.sheetType ? String(p.sheetType).trim() : null;
-  // Return latest row for this patient — filtered by sheetType if provided
-  for (var i = data.length - 1; i >= 1; i--) {
-    if (String(data[i][0]).trim().toUpperCase() === uhid) {
-      if (sheetType && String(data[i][2]).trim() !== sheetType) continue;
-      return {
-        success: true,
-        allTeeth: safeParseJSON(data[i][3]),
-        sheetType: data[i][2],
-        savedAt: data[i][4]
-      };
-    }
+
+  // Its own tab first, then the shared one — so a record written before the
+  // split is still found whether or not the migration has been run.
+  var names = [];
+  if (sheetType) {
+    names.push(clinicalSheetTabName_(sheetType));
+  } else {
+    for (var k in CLINICAL_SHEET_TABS) names.push(CLINICAL_SHEET_TABS[k]);
   }
-  return { success: true, allTeeth: null };
+  names.push(CLINICAL_SHEETS_SHARED_TAB);
+
+  var best = null;
+  for (var n = 0; n < names.length; n++) {
+    var sh = getSheet(names[n]);
+    var row = findClinicalRow_(sh, uhid, sheetType);
+    if (row < 0) continue;
+    var hit = readClinicalRow_(sh, row);
+    // With a sheetType the first hit is the answer. Without one the caller
+    // wants this patient's most recent record, whichever form it came from.
+    if (sheetType) return hit;
+    if (!best || String(hit.savedAt || "") > String(best.savedAt || "")) best = hit;
+  }
+  return best || { success: true, allTeeth: null };
 }
 
 function saveClinicalSheets(p) {
-  var sh = getSheet("Clinical Sheets");
-  if (sh.getLastRow() === 0) {
-    sh.appendRow(["UHID","Patient Name","Sheet Type","All Teeth Data","Saved At"]);
-  }
-
-  // Update existing row for this patient+sheetType
-  var data = sh.getDataRange().getValues();
   var uhid = String(p.uhid || "").trim().toUpperCase();
   var sheetType = String(p.sheetType || "").trim();
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]).trim().toUpperCase() === uhid &&
-        String(data[i][2]).trim() === sheetType) {
-      sh.getRange(i + 1, 1, 1, 5).setValues([[
-        p.uhid, p.patientName, sheetType,
-        safeJSON(p.allTeeth), new Date().toISOString()
-      ]]);
-      return { success: true };
-    }
-  }
+  var sh = getSheet(clinicalSheetTabName_(sheetType));
+  if (sh.getLastRow() === 0) sh.appendRow(CLINICAL_SHEET_HEADERS);
 
-  sh.appendRow([
-    p.uhid, p.patientName, sheetType,
-    safeJSON(p.allTeeth), new Date().toISOString()
-  ]);
+  var rowValues = [p.uhid, p.patientName, sheetType, safeJSON(p.allTeeth), new Date().toISOString()];
+  var row = findClinicalRow_(sh, uhid, sheetType);
+  if (row > 0) sh.getRange(row, 1, 1, 5).setValues([rowValues]);
+  else sh.appendRow(rowValues);
+
+  // The same record may still sit in the shared tab from before the split.
+  // Drop it only now that the newer copy is safely written, so the row is
+  // moved rather than deleted — two copies would otherwise drift apart.
+  if (sh.getName() !== CLINICAL_SHEETS_SHARED_TAB) {
+    var shared = getSheet(CLINICAL_SHEETS_SHARED_TAB);
+    var stale = findClinicalRow_(shared, uhid, sheetType);
+    if (stale > 0) shared.deleteRow(stale);
+  }
   return { success: true };
+}
+
+// ── One-off, safe to re-run ──────────────────────────────────────────────
+// Copies existing records out of the shared tab into each form's own tab.
+// Nothing is deleted: rows stay in the shared tab until the next save of that
+// record moves them. Run it from the Apps Script editor and read the log.
+function migrateClinicalSheetsToOwnTabs() {
+  var shared = getSheet(CLINICAL_SHEETS_SHARED_TAB);
+  var last = shared.getLastRow();
+  if (last < 2) { Logger.log("Shared tab is empty — nothing to migrate."); return; }
+
+  var moved = 0, skipped = 0, unknown = 0;
+  var keys = shared.getRange(2, 1, last - 1, 3).getValues();
+  for (var i = 0; i < keys.length; i++) {
+    var uhid = String(keys[i][0]).trim().toUpperCase();
+    var sheetType = String(keys[i][2]).trim();
+    if (!uhid) continue;
+    var tab = CLINICAL_SHEET_TABS[sheetType];
+    if (!tab) { unknown++; continue; }
+
+    var target = getSheet(tab);
+    if (target.getLastRow() === 0) target.appendRow(CLINICAL_SHEET_HEADERS);
+
+    var existing = findClinicalRow_(target, uhid, sheetType);
+    var src = shared.getRange(i + 2, 1, 1, 5).getValues()[0];
+    if (existing > 0) {
+      // Never overwrite a newer record with an older one.
+      var there = target.getRange(existing, 5, 1, 1).getValues()[0][0];
+      if (String(there || "") >= String(src[4] || "")) { skipped++; continue; }
+      target.getRange(existing, 1, 1, 5).setValues([src]);
+    } else {
+      target.appendRow(src);
+    }
+    moved++;
+  }
+  Logger.log("Copied %s record(s) into their own tabs. %s already current, %s of an unrecognised type left alone.", moved, skipped, unknown);
+  Logger.log("Nothing was deleted — the shared tab still holds every row.");
 }
 
 // ════════════════════════════════════════════════════════════
