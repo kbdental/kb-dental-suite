@@ -84,24 +84,21 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
 
   const finalImpOpts = await page.evaluate(() =>
     Array.from(document.getElementById('finalImp').querySelectorAll('.btn')).map(b => b.textContent.trim()));
-  eq('final impression options match Crown & Bridge', finalImpOpts,
-    ['Vinyl Poly-siloxane (Putty)', 'Digital Scan', 'Alginate']);
+  eq('impression options match the reference form', finalImpOpts,
+    ['Digital Scan', 'Open Tray', 'Closed Tray']);
 
   const trayOpts = await page.evaluate(() =>
     Array.from(document.getElementById('trayUsed').querySelectorAll('.btn')).map(b => b.textContent.trim()));
-  eq('tray options include Triple Tray, matching Crown & Bridge', trayOpts,
-    ['Stock Tray', 'Custom Tray', 'Triple Tray']);
+  eq('tray options match the reference form (no more Triple Tray)', trayOpts,
+    ['Custom Tray', 'Stock Tray']);
 
-  await click('finalImp', 'Vinyl Poly-siloxane (Putty)');
-  await click('trayUsed', 'Triple Tray');
+  await click('finalImp', 'Digital Scan');
+  await click('trayUsed', 'Custom Tray');
 
-  eq('bite material hidden before bite registered is answered', await visible('biteMatRow'), false);
-  await click('biteReg', 'Yes');
-  eq('bite material appears for Yes', await visible('biteMatRow'), true);
-  await click('biteType', 'Wax');
-  await click('biteReg', 'No');
-  eq('bite material hidden again for No', await visible('biteMatRow'), false);
-  await click('biteReg', 'Yes');
+  const biteOpts = await page.evaluate(() =>
+    Array.from(document.getElementById('biteType').querySelectorAll('.btn')).map(b => b.textContent.trim()));
+  eq('bite options match the reference form (no more yes/no gate)', biteOpts,
+    ['Resin (Jet Bite)', 'Wax', 'None']);
   await click('biteType', 'Resin (Jet Bite)');
 
   // --- what actually gets saved ----------------------------------------------
@@ -119,9 +116,9 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
   const has = (label, text) => eq('summary shows ' + label, summary.includes(text), true);
   has('anaesthesia with quantity and method', 'Mepivacaine (1.5 ml) / Both');
   has('investigation', 'OPG');
-  has('final impression', 'Vinyl Poly-siloxane (Putty)');
-  has('tray', 'Triple Tray');
-  has('bite registered with material', 'Yes — Resin (Jet Bite)');
+  has('impression', 'Digital Scan');
+  has('tray', 'Custom Tray');
+  has('bite', 'Resin (Jet Bite)');
 
   // --- reaching the summary via the tab rebuilds it, not just via Continue --
   await click('anaMethod', 'Infiltration');

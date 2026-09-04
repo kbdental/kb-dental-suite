@@ -68,8 +68,17 @@ const prescriptionHtml = (() => {
 })();
 const ok = (name, cond, detail) => checks.push({ name, ok: !!cond, got: detail, want: 'truthy' });
 ok('Prescription form listens for KB_TODAYS_PROCEDURES', prescriptionHtml.includes("d.type === 'KB_TODAYS_PROCEDURES'"));
-ok('Prescription auto-fill reads treatmentRendered/workDone (what getTreatmentProgress -> clinicalSheetRegisterPrefill produce)',
-  prescriptionHtml.includes('p.treatmentRendered || p.workDone'));
+// Procedure Done is required in the register, so treatmentRendered is always
+// set. This used to assert `p.treatmentRendered || p.workDone` — an either/or
+// that meant Work Done could never reach the pad — so it asserts the three
+// field names are each read now, not the shape of the expression joining them.
+// Behaviour is covered by test/prescription-todays-procedures.test.js.
+ok('Prescription auto-fill reads treatmentRendered (what getTreatmentProgress -> clinicalSheetRegisterPrefill produce)',
+  prescriptionHtml.includes('p.treatmentRendered'));
+ok('Prescription auto-fill also reads workDone, not only treatmentRendered',
+  prescriptionHtml.includes('p.workDone'));
+ok('Prescription auto-fill carries the tooth number across too',
+  prescriptionHtml.includes('p.toothNo'));
 ok('Prescription pulls its data via getTreatmentProgress (same source Daily Register / Procedure Done Sheet use)',
   html.includes('api("getTreatmentProgress", { uhid: globalPat.uhid })'));
 

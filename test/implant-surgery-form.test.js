@@ -55,17 +55,26 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
   eq('Investigation no longer appears in the old Follow-up step',
     step3Headers.some(h => h.includes('Investigation')), false);
 
-  // --- Investigation is single-choice with the RCT/Crown & Bridge options --
+  // --- Investigation is single-choice, matching the reference Google Form --
   const investOpts = await page.evaluate(() =>
     Array.from(document.getElementById('investGrp').querySelectorAll('.btn')).map(b => b.textContent.trim()));
-  eq('investigation options match RCT / Crown & Bridge', investOpts,
-    ['RVG', 'Digital Scan', 'Pre-op Impression']);
+  eq('investigation options match the reference form', investOpts,
+    ['RVG', 'OPG', 'None', 'Other']);
 
   await click('investGrp', 'RVG');
-  await click('investGrp', 'Digital Scan');
+  await click('investGrp', 'OPG');
   const investActive = await page.evaluate(() =>
     Array.from(document.getElementById('investGrp').querySelectorAll('.btn.active')).map(b => b.textContent.trim()));
-  eq('investigation is single-choice, not multi-select', investActive, ['Digital Scan']);
+  eq('investigation is single-choice, not multi-select', investActive, ['OPG']);
+
+  // --- "On -1 Abutment" matches the reference form's literal wording -------
+  const coverOpts = await page.evaluate(() =>
+    Array.from(document.getElementById('coverType').querySelectorAll('.btn')).map(b => b.textContent.trim()));
+  eq('cover over implant includes "On -1 Abutment" (space before hyphen)', coverOpts.includes('On -1 Abutment'), true);
+
+  // --- Treating Doctor is marked required, matching the reference form -----
+  const docLabel = await page.evaluate(() => document.querySelector('#pDoc').closest('.pf').querySelector('label').textContent.trim());
+  eq('treating doctor label is required', docLabel, 'Treating Doctor *');
 
   // --- brand list -----------------------------------------------------------
   const brandOpts = await page.evaluate(() => {
@@ -89,7 +98,7 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
   const summary = await page.evaluate(() => document.getElementById('summaryContent').innerText);
   const has = (label, text) => eq('summary shows ' + label, summary.includes(text), true);
   has('anaesthesia with quantity and method', 'Articaine (1.8 ml) / Block');
-  has('investigation', 'Digital Scan');
+  has('investigation', 'OPG');
 
   // --- reaching the summary via the tab rebuilds it, not just via Continue -
   await click('anaMethod', 'Infiltration');
