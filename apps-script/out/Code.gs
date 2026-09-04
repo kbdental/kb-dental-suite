@@ -559,6 +559,8 @@ function route(p) {
       case "saveTreatmentsMaster":     return saveTreatmentsMaster(p);
       case "getMedicinesMaster":       return getMedicinesMaster();
       case "saveMedicinesMaster":      return saveMedicinesMaster(p);
+      case "getImplantBrandsList":         return getImplantBrandsList();
+      case "saveImplantBrandsList":       return saveImplantBrandsList(p);
       case "getMedicineDosagesList":       return getMedicineDosagesList();
       case "saveMedicineDosagesList":      return saveMedicineDosagesList(p);
       case "getMedicineFrequenciesList":   return getMedicineFrequenciesList();
@@ -3756,6 +3758,32 @@ function saveMedicinesMaster(p) {
 // fields (Dosage/Frequency/Duration/Instructions/Notes) — each is a plain
 // string list, same shape as Payment Modes / Chairs, so staff can pick a
 // common value instead of retyping it every time.
+// Implant brands and the sizes each is stocked in — maintained by the clinic
+// in Master (Clinic > Implant Brands & Sizes) rather than fixed in the app,
+// so a new system or a discontinued size is a sheet edit, not a code change.
+// Sizes are one comma-separated string per brand; the form splits them and
+// still accepts anything typed, so an unlisted size never blocks a case.
+function getImplantBrandsList() {
+  var sh = getSheet("Implant Brands");
+  var data = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    items.push({ name: String(data[i][0]).trim(), sizes: String(data[i][1] || "").trim() });
+  }
+  return { success: true, brands: items };
+}
+function saveImplantBrandsList(p) {
+  var sh = getSheet("Implant Brands");
+  sh.clearContents();
+  sh.appendRow(["Brand", "Sizes", "Updated At"]);
+  var arr = [];
+  try { arr = JSON.parse(p.brands); } catch (e) { if (Array.isArray(p.brands)) arr = p.brands; }
+  var now = new Date().toISOString();
+  arr.forEach(function(b) { sh.appendRow([b.name, b.sizes || "", now]); });
+  return { success: true };
+}
+
 function getMedicineDosagesList() {
   var sh = getSheet("Medicine Dosages");
   var data = sh.getDataRange().getValues();

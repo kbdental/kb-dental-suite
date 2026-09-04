@@ -81,8 +81,13 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
     const sel = document.querySelector('[id^="brand_"]');
     return Array.from(sel.options).map(o => o.textContent.trim()).filter(Boolean);
   });
-  eq('implant brand list matches the new spec', brandOpts,
-    ['Select…', 'Nobel Active', 'Nobel CC', 'Straumann', 'Alpha Bio', 'Ifix', 'Osstem', 'Norris', 'MIS', 'Nobel Replace (tri-channel)']);
+  // The clinic now maintains this list in Master (Clinic > Implant Brands &
+  // Sizes); what ships is only the fallback shown until they fill theirs in,
+  // and its order follows the size catalogue. So the brands are pinned as a
+  // set — ordering one list the clinic can reorder itself says nothing.
+  // Master-driven behaviour is covered by test/implant-brands-master.test.js.
+  eq('built-in implant brands are the agreed set', brandOpts.slice().sort(),
+    ['Select…', 'Nobel Active', 'Nobel CC', 'Straumann', 'Alpha Bio', 'Ifix', 'Osstem', 'Norris', 'MIS', 'Nobel Replace (tri-channel)'].sort());
 
   // --- what actually gets saved ---------------------------------------------
   await page.evaluate(() => {
