@@ -120,7 +120,7 @@ const send = (page, brands) => page.evaluate(bs => {
   ok('backend exposes saveImplantBrandsList', gs.includes('function saveImplantBrandsList(p)'));
   ok('both are routed', gs.includes('case "getImplantBrandsList"') && gs.includes('case "saveImplantBrandsList"'));
   ok('there is a paste-in patch note for the backend half',
-    fs.existsSync(path.join(REPO, 'IMPLANT-BRANDS-MASTER-PATCH.md')));
+    fs.existsSync(path.join(REPO, 'APPS-SCRIPT-PENDING.md')));
 
   await browser.close();
 
