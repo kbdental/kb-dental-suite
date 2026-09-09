@@ -61,7 +61,13 @@ const SAVED_RECORD = {
   eq('anaesthesia quantity restored', await value('anaQty'), '1.5');
   eq('anaesthesia method restored', await active('anaMethod'), ['Both']);
   eq('investigation restored', await active('investGrp'), ['OPG']);
-  eq('impression restored', await active('finalImp'), ['Digital Scan']);
+  // This fixture is a genuine pre-rename record: that row is the impression
+  // coping and stored the technique as "Digital Scan", where the button now
+  // reads "Digital". Restoring it as Digital is the point — otherwise an
+  // existing case reopens with the coping unanswered. See
+  // test/implant-prosthetic-coping.test.js.
+  eq('an older "Digital Scan" coping is restored as Digital',
+    await active('finalImp'), ['Digital']);
   eq('tray restored', await active('trayUsed'), ['Custom Tray']);
   eq('bite restored', await active('biteType'), ['Resin (Jet Bite)']);
   eq('impression-step notes restored', await value('n1'), 'Impression taken, bite registered.');
