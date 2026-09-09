@@ -178,6 +178,7 @@ const GRAFT = 'Osteotomy &amp; Grafting';
       placed: Array.from(document.getElementById('graftPlaced').querySelectorAll('.btn.active')).map(b => b.textContent.trim()),
       types: Array.from(document.getElementById('graftGrp').querySelectorAll('.btn.active')).map(b => b.textContent.trim()),
       typeRowOpen: (() => { const e = document.getElementById('graftTypeRow'); return !!e && e.style.display !== 'none'; })(),
+      other: (document.getElementById('graftOther') || {}).value || '',
     }));
     await p2.close();
     return out;
@@ -186,6 +187,22 @@ const GRAFT = 'Osteotomy &amp; Grafting';
   const oldNone = await resumed({ pName: 'X', pId: 'AL0777', graft: 'None', implants: [{ n: 1, site: '46' }] });
   eq("an older record's graft:'None' comes back as Not Placed", oldNone.placed, ['Not Placed']);
   eq('and leaves the graft types put away', oldNone.typeRowOpen, false);
+
+  // Membrane and Mesh are no longer offered as graft materials — a membrane is
+  // a barrier, and it has its own Placed question two rows below. A record
+  // that chose one must not lose the answer.
+  eq('Type of Graft no longer offers Membrane or Mesh',
+    await page.evaluate(() => Array.from(document.querySelectorAll('#graftGrp [data-tm]')).map(b => b.textContent.trim())),
+    ['Autogenous', 'Allograft', 'Other']);
+
+  const oldMembrane = await resumed({ pName: 'X', pId: 'AL0777', graft: 'Membrane', implants: [{ n: 1, site: '46' }] });
+  eq('a record that chose Membrane still reads as a graft placed', oldMembrane.placed, ['Placed']);
+  eq('and comes back as Other rather than blank', oldMembrane.types, ['Other']);
+  eq('with what was used written into the specify box', oldMembrane.other, 'Membrane');
+
+  const oldMesh = await resumed({ pName: 'X', pId: 'AL0777', graft: 'Allograft, Mesh', implants: [{ n: 1, site: '46' }] });
+  eq('a material still offered keeps its own button', oldMesh.types.includes('Allograft'), true);
+  eq('and the dropped one is named in the specify box', oldMesh.other, 'Mesh');
 
   const oldGraft = await resumed({ pName: 'X', pId: 'AL0777', graft: 'Allograft', implants: [{ n: 1, site: '46' }] });
   eq('an older record with a material comes back as Placed', oldGraft.placed, ['Placed']);
