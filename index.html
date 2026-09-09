@@ -5561,7 +5561,7 @@ function MiniCalendar({ selDate, onSelect }) {
   );
 }
 
-function Appointments({ globalPat, setGlobalPat }) {
+function Appointments({ globalPat, setGlobalPat, setPage }) {
   const todayISO = new Date().toISOString().split("T")[0];
   const [selDate, setSelDate] = useState(todayISO);
   const [viewMode, setViewMode] = useState("chairs"); // "month" | "week" | "chairs"
@@ -5575,6 +5575,8 @@ function Appointments({ globalPat, setGlobalPat }) {
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [apiMsg, setApiMsg] = useState("");
+  // A completed RCT/crown/implant visit with no clinical record anywhere.
+  const [sheetWarn, setSheetWarn] = useState(null);
   const [selectedAppt, setSelectedAppt] = useState(null);
   const [popupMode, setPopupMode] = useState("view"); // "view" | "cancel"
   const [cancelReason, setCancelReason] = useState(CANCEL_REASONS[0]);
@@ -5919,6 +5921,25 @@ function Appointments({ globalPat, setGlobalPat }) {
     setAppts(prev => prev.map(a => a.id===apptId ? {...a, status} : a));
     setRangeAppts(prev => prev.map(a => a.id===apptId ? {...a, status} : a));
     setSelectedAppt(null);
+    if (status === "Completed") {
+      checkClinicalSheet(appts.find(a => a.id === apptId) || rangeAppts.find(a => a.id === apptId));
+    }
+  };
+
+  // Completing the appointment is the last moment anyone is still thinking
+  // about this visit, so it is the only moment a missing clinical record can
+  // be caught. Nine of ten recent RCT/crown/implant patients had no record at
+  // all: the treatment happened, the form was never saved, and nothing said
+  // so. This never blocks the completion — the visit is already done.
+  const checkClinicalSheet = async (a) => {
+    if (!a || !a.uhid) return;
+    // Only the appointment type and the tracked procedure name, not the free
+    // notes: "call about the crown" is not an appointment for one.
+    const form = clinicalFormFor([a.type, a.procedureName].filter(Boolean).join(" "));
+    if (!form) return;
+    if (await clinicalSheetMissing(a.uhid, form)) {
+      setSheetWarn({ uhid: a.uhid, name: a.patientName || a.uhid, label: form.label });
+    }
   };
 
   // V2 completion flow: fetch the case's actual current pending stages (not
@@ -5973,6 +5994,7 @@ function Appointments({ globalPat, setGlobalPat }) {
     if (!res || !res.success) {
       setApiMsg("Visit completed, but could not update the case: " + ((res && res.error) || "Unknown error"));
     }
+    checkClinicalSheet(a);
   };
 
   const confirmCancel = async () => {
@@ -6259,6 +6281,22 @@ function Appointments({ globalPat, setGlobalPat }) {
     ),
 
     apiMsg && React.createElement("div", { style:{ background:"#fff0f0", border:"1px solid #e24b4a", borderRadius:6, padding:"7px 12px", marginBottom:10, fontSize:12, color:"#c0392b" } }, apiMsg),
+
+    sheetWarn && React.createElement("div", { style:{ background:"#fff8ed", border:"1px solid #f59e0b",
+        borderRadius:8, padding:"10px 14px", marginBottom:10, fontSize:12.5, color:"#92400e",
+        display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" } },
+      React.createElement("div", { style:{ flex:1, minWidth:260 } },
+        React.createElement("b", null, "⚠ No " + sheetWarn.label + " record saved for " + sheetWarn.name + "."),
+        React.createElement("div", { style:{ marginTop:2 } },
+          "The visit is completed, but nothing was written to the clinical record — so the next visit will open a blank form.")),
+      React.createElement("button", {
+        onClick: () => { setGlobalPat({ uhid: sheetWarn.uhid, name: sheetWarn.name }); setSheetWarn(null); if (setPage) setPage("clinical_records"); },
+        style:{ padding:"7px 14px", fontSize:12, fontWeight:700, border:"none", borderRadius:7,
+                cursor:"pointer", background:"#b45309", color:"#fff" } }, "Open the " + sheetWarn.label + " form"),
+      React.createElement("button", {
+        onClick: () => setSheetWarn(null),
+        style:{ padding:"7px 12px", fontSize:12, border:"1px solid #f59e0b", borderRadius:7,
+                cursor:"pointer", background:"#fff", color:"#92400e", fontWeight:600 } }, "Not now")),
 
     React.createElement("div", { style:{ display:"flex", gap:16, alignItems:"flex-start" } },
       renderSidebar(),
@@ -11227,12 +11265,44 @@ function ClinicalSheets({ globalPat, setGlobalPat }) {
 // auto-filled from free text, but staff get a prompt to open the real form
 // too, so RCT/Crown & Bridge/Implant work stays captured in structured
 // clinical data, not just a register line.
+// sheetType is the label getClinicalSheets matches on (note "Crown Bridge",
+// with no ampersand) and tab is the flat historical tab. Both are needed to
+// answer "has this treatment been written down anywhere at all".
 const CLINICAL_FORM_PROMPTS = [
-  { keywords: ["rct", "root canal"], label: "RCT" },
-  { keywords: ["crown", "bridge"], label: "Crown & Bridge" },
-  { keywords: ["implant prosthetic", "implant crown", "implant restoration"], label: "Implant Prosthetic" },
-  { keywords: ["implant"], label: "Implant Surgery" }
+  { keywords: ["rct", "root canal"], label: "RCT", sheetType: "RCT", tab: "RCT" },
+  { keywords: ["crown", "bridge"], label: "Crown & Bridge", sheetType: "Crown Bridge", tab: "Crown & Bridge" },
+  { keywords: ["implant prosthetic", "implant prosthesis", "implant crown", "implant restoration"], label: "Implant Prosthetic", sheetType: "Implant Prosthetic", tab: "Implant Prosthetic" },
+  { keywords: ["implant"], label: "Implant Surgery", sheetType: "Implant Surgery", tab: "Implant Surgery" }
 ];
+function clinicalFormFor(text) {
+  const t = String(text || "").toLowerCase();
+  return CLINICAL_FORM_PROMPTS.find(p => p.keywords.some(k => t.indexOf(k) >= 0)) || null;
+}
+// True when a form-tracked treatment has been recorded nowhere: not as a
+// structured record, and not as a row in the form's own historical tab. Only
+// then is a warning worth showing — nagging about work that is already
+// written down is how staff learn to ignore warnings.
+async function clinicalSheetMissing(uhid, form) {
+  if (!uhid || !form) return false;
+  // A lookup that did not succeed is not evidence of a missing record, so any
+  // failure — a throw, a network error, an expired session coming back as
+  // AUTH_REQUIRED — stays quiet. Telling a doctor their work is unrecorded
+  // because a request was rejected is worse than saying nothing.
+  try {
+    const res = await api("getClinicalSheets", { uhid, sheetType: form.sheetType });
+    if (!res || !res.success) return false;
+    if (res.allTeeth) return false;
+    const any = await api("getClinicalSheets", { uhid });
+    if (!any || !any.success) return false;
+    if (any.allTeeth) return false;
+    const hist = await api("getClinicalRecords", { tabName: form.tab, uhid });
+    if (!hist || !hist.success) return false;
+    if (Array.isArray(hist.records) && hist.records.length) return false;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 function matchClinicalFormPrompt(text) {
   const t = String(text || "").toLowerCase();
   for (const p of CLINICAL_FORM_PROMPTS) {
@@ -26096,7 +26166,8 @@ function App() {
     onNavigate: navigateFromSearch
   }), page === "appointments" && /*#__PURE__*/React.createElement(Appointments, {
     globalPat: globalPat,
-    setGlobalPat: setGlobalPat
+    setGlobalPat: setGlobalPat,
+    setPage: setPage
   }), page === "daysheet" && /*#__PURE__*/React.createElement(Daysheet, {
     globalPat: globalPat,
     setGlobalPat: setGlobalPat
