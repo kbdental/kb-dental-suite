@@ -21528,6 +21528,38 @@ function csMergeFields(oldObj, newObj) {
   Object.keys(newObj).forEach(k => { if (!csBlank(newObj[k])) out[k] = newObj[k]; });
   return out;
 }
+// The merged record answers "what is the state of this case"; it cannot answer
+// "what was done on which visit", because a later visit's value simply
+// replaces the earlier one. These build a visit log alongside the merge: the
+// merged view is untouched, this only records how it got there.
+//
+// Identity and bookkeeping are not clinical findings, so they never count as
+// something a visit recorded.
+const CS_VISIT_SKIP = new Set(["visits", "pName", "pId", "age", "gender", "doctor", "date"]);
+function csChangedFields(oldObj, newObj) {
+  const out = [];
+  Object.keys(newObj).forEach(k => {
+    if (CS_VISIT_SKIP.has(k) || csBlank(newObj[k])) return;
+    const before = oldObj ? oldObj[k] : undefined;
+    if (JSON.stringify(before) !== JSON.stringify(newObj[k])) out.push(k);
+  });
+  return out;
+}
+// A visit is a day, not a save. Staff save the same form several times in one
+// sitting — as they finish a section, before a phone call, after a correction
+// — and counting each of those as its own visit would make the log lie.
+function csAppendVisit(prevVisits, entry) {
+  const visits = (prevVisits || []).map(v => ({ ...v }));
+  const union = (a, b) => Array.from(new Set([...(a || []), ...(b || [])]));
+  const last = visits[visits.length - 1];
+  if (last && last.date === entry.date) {
+    last.fields = union(last.fields, entry.fields);
+    last.items = union(last.items, entry.items);
+    if (entry.doctor) last.doctor = entry.doctor;
+    return visits;
+  }
+  return visits.concat([{ ...entry, n: visits.length + 1 }]);
+}
 async function mergeClinicalSheet(d) {
   const fresh = d.allTeeth || {};
   const itemsKey = CS_ITEMS_KEY[d.sheetType];
@@ -21551,7 +21583,12 @@ async function mergeClinicalSheet(d) {
     const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(v || "").trim());
     return m ? m[1].padStart(2, "0") + "/" + m[2].padStart(2, "0") + "/" + m[3] : v;
   };
-  const visitDate = padDMY(fresh.date) || fmtDMY(new Date());
+  // Not every form carries a top-level date, but each tooth/implant row does,
+  // and that is the date the dentist actually filled in. Preferring it keeps a
+  // back-dated visit logged on the day it happened rather than on the day it
+  // was typed up.
+  const firstItemDate = fresh[itemsKey].map(it => padDMY(it.date)).find(d => !csBlank(d));
+  const visitDate = padDMY(fresh.date) || firstItemDate || fmtDMY(new Date());
   const stamped = fresh[itemsKey].map(it => ({ ...it, date: padDMY(it.date) || visitDate }));
   // A tooth/implant already on file gets updated in place — the same tooth
   // coming back for a second visit is normal, not a new row. Only an item
@@ -21565,7 +21602,14 @@ async function mergeClinicalSheet(d) {
     const id = idOf(it);
     if (id && indexById.has(id)) {
       const i = indexById.get(id);
+      // The date a tooth was first treated is part of the record. Letting the
+      // merge overwrite it meant a tooth that came back for a second visit
+      // silently lost the date it was started on — the record then claimed
+      // the whole thing happened on the later date.
+      const firstDate = merged[i].date || it.date;
       merged[i] = csMergeFields(merged[i], it);
+      merged[i].date = firstDate;
+      merged[i].lastVisit = it.date || merged[i].lastVisit || firstDate;
     } else {
       merged.push(it);
     }
@@ -21576,7 +21620,18 @@ async function mergeClinicalSheet(d) {
   // was already on file — the exact bug this whole fix exists for.
   const { [itemsKey]: _omit, ...freshTop } = fresh;
   const mergedTop = existing ? csMergeFields(existing, freshTop) : freshTop;
-  return { ...mergedTop, [itemsKey]: allItems };
+  // What this visit actually added, recorded before the merge flattens it away.
+  const changed = csChangedFields(existing, freshTop);
+  const touched = stamped.map(idOf).filter(Boolean);
+  const visits = (changed.length || touched.length)
+    ? csAppendVisit(existing && existing.visits, {
+        date: visitDate,
+        doctor: csBlank(fresh.doctor) ? "" : fresh.doctor,
+        fields: changed,
+        items: touched,
+      })
+    : ((existing && existing.visits) || []);
+  return { ...mergedTop, visits, [itemsKey]: allItems };
 }
 // A clinical record sheet holds four teeth, as the printed RCT sheet does, so
 // records are laid out four columns at a time and the last sheet is padded out
@@ -21857,11 +21912,52 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
     React.createElement("div", { style:{ fontSize:11.5, color:"#bbb", maxWidth:560, margin:"18px auto 0" } },
       "Work saved on these forms before this update never reached Google Sheets \u2014 it was held in one computer\u2019s browser only, so it does not appear here."));
 
+  // ── Visit history ──────────────────────────────────────────────────────
+  // The record above is the case as it stands now. This says how it got there:
+  // one line per visit, what was recorded that day, and on which teeth. It is
+  // the only place the record can answer "what did we do last time".
+  const csLabel = key => {
+    // RCT names its case fields "fields"; the other three name them
+    // "topFields". Look through both so no form falls back to raw keys.
+    const known = [...(cfg.topFields || []), ...(cfg.fields || []),
+                   ...(cfg.itemFields || [])].find(([k]) => k === key);
+    if (known) return known[1];
+    // A field the config never named still reads better spaced out than as a
+    // camelCase key the dentist has to decode.
+    return String(key).replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, c => c.toUpperCase());
+  };
+  const visitPanel = () => {
+    const visits = Array.isArray(data.visits) ? data.visits : [];
+    if (!visits.length) return null;
+    return React.createElement("div", { key:"visits", style:{ background:"#fff", border:`1px solid ${BORDER}`,
+        borderRadius:10, padding:"14px 18px", marginBottom:14 } },
+      React.createElement("div", { style:{ fontSize:13, fontWeight:700, color:T, marginBottom:10 } },
+        "🗓 Visit History  (" + visits.length + (visits.length === 1 ? " visit)" : " visits)")),
+      visits.map((v, i) => React.createElement("div", { key:i,
+        style:{ display:"flex", gap:12, padding:"8px 0",
+                borderTop: i ? `1px solid ${BORDER}` : "none" } },
+        React.createElement("div", { style:{ width:120, flexShrink:0 } },
+          React.createElement("div", { style:{ fontSize:12.5, fontWeight:700, color:"#222" } },
+            "Visit " + (v.n || i + 1)),
+          React.createElement("div", { style:{ fontSize:11.5, color:"#888" } }, v.date || "—")),
+        React.createElement("div", { style:{ flex:1, fontSize:12 } },
+          React.createElement("div", { style:{ color:"#222", marginBottom:2 } },
+            (v.fields || []).length
+              ? (v.fields || []).map(csLabel).join(", ")
+              : React.createElement("span", { style:{ color:"#aaa" } }, "no new findings recorded")),
+          React.createElement("div", { style:{ color:"#888", fontSize:11.5 } },
+            [(v.items || []).length ? cfg.itemLabel + " " + (v.items || []).join(", ") : "",
+             v.doctor || ""].filter(Boolean).join("  ·  ")))
+      ))
+    );
+  };
+
   if (cfg.mode === "entries") {
     const entries = data.entries || [];
     if (!entries.length) return React.createElement("div", { style:{ padding:40, textAlign:"center", color:"#888", fontSize:13 } },
       "No teeth saved yet for this patient.");
     return React.createElement("div", { style:{ padding:"20px 28px" } },
+      visitPanel(),
       entries.map((en, i) => React.createElement("div", { key:i,
         style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10, padding:"14px 18px", marginBottom:14 } },
         React.createElement("div", { style:{ fontSize:14, fontWeight:700, color:T, marginBottom:8 } },
@@ -21928,6 +22024,7 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
       FRow("Age / Gender", [data.age, data.gender].filter(v => v && v !== "—").join(" / ")),
       FRow("Doctor", data.doctor)
     ),
+    visitPanel(),
     sheetTable(),
     groups.map((group, gi) => {
       const row = rowIn(group);
@@ -22071,6 +22168,25 @@ function printClinicalRecord(cfg, data, items, sheetType) {
       shared.forEach(([k, l]) => {
         body += `<tr><td class="l">${esc(l)}</td>` +
                 `<td colspan="${CS_COLS_PER_SHEET}">${esc(data[k])}</td></tr>`;
+      });
+    }
+    // Treatment split across visits reads as one flat record on paper unless
+    // the sheet says which day recorded what, so the log closes the document.
+    const visits = Array.isArray(data.visits) ? data.visits : [];
+    if (gi === groups.length - 1 && visits.length) {
+      body += `<tr><td class="sec" colspan="${CS_COLS_PER_SHEET + 1}">Visit History</td></tr>`;
+      visits.forEach((v, i) => {
+        const what = (v.fields || []).map(k => {
+          const known = [...(cfg.topFields || []), ...(cfg.fields || []),
+                         ...(cfg.itemFields || [])].find(([kk]) => kk === k);
+          return known ? known[1] : String(k).replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, c => c.toUpperCase());
+        }).join(", ");
+        const who = [(v.items || []).length ? cfg.itemLabel + " " + (v.items || []).join(", ") : "",
+                     v.doctor || ""].filter(Boolean).join(" · ");
+        body += `<tr><td class="l">Visit ${esc(v.n || i + 1)} — ${esc(v.date || "")}</td>` +
+                `<td colspan="${CS_COLS_PER_SHEET}">${esc(what || "—")}` +
+                (who ? `<br/><span style="color:#666;font-size:8pt;">${esc(who)}</span>` : "") +
+                `</td></tr>`;
       });
     }
     return crPage((sheetType || "") + " — Clinical Record", patientRow, body, code, gi + 1, groups.length);
