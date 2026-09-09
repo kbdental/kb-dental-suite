@@ -84,15 +84,17 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
 
   const finalImpOpts = await page.evaluate(() =>
     Array.from(document.getElementById('finalImp').querySelectorAll('.btn')).map(b => b.textContent.trim()));
-  eq('impression options match the reference form', finalImpOpts,
-    ['Digital Scan', 'Open Tray', 'Closed Tray']);
+  // This row is the impression coping, and is now named for it. Impression
+  // Material is a separate row — see test/implant-prosthetic-coping.test.js.
+  eq('the coping options match the reference form', finalImpOpts,
+    ['Digital', 'Closed Tray', 'Open Tray']);
 
   const trayOpts = await page.evaluate(() =>
     Array.from(document.getElementById('trayUsed').querySelectorAll('.btn')).map(b => b.textContent.trim()));
   eq('tray options match the reference form (no more Triple Tray)', trayOpts,
     ['Custom Tray', 'Stock Tray']);
 
-  await click('finalImp', 'Digital Scan');
+  await click('finalImp', 'Digital');
   await click('trayUsed', 'Custom Tray');
 
   const biteOpts = await page.evaluate(() =>
@@ -116,7 +118,7 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
   const has = (label, text) => eq('summary shows ' + label, summary.includes(text), true);
   has('anaesthesia with quantity and method', 'Mepivacaine (1.5 ml) / Both');
   has('investigation', 'OPG');
-  has('impression', 'Digital Scan');
+  has('impression coping', 'Digital');
   has('tray', 'Custom Tray');
   has('bite', 'Resin (Jet Bite)');
 
