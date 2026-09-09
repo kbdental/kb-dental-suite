@@ -55,7 +55,7 @@ const GRAFT = 'Osteotomy &amp; Grafting';
   // ── where each row lives ────────────────────────────────────────────────
   for (const id of ['osteoType', 'addProc', 'graftPlaced', 'graftGrp', 'graftTypeRow',
                     'osteoOtherRow', 'graftOtherRow', 'graftDetailRow',
-                    'membraneUsed', 'membraneDetailRow']) {
+                    'membraneUsed', 'membraneDetailRow', 'meshUsed', 'meshDetailRow']) {
     ok(id + ' sits under Osteotomy & Grafting', /Osteotomy/.test(cardOf(html, id) || ''), cardOf(html, id));
   }
   ok('torque stays in Torque & Cover', /Torque/.test(cardOf(html, 'torqueVal') || ''), cardOf(html, 'torqueVal'));
@@ -76,6 +76,11 @@ const GRAFT = 'Osteotomy &amp; Grafting';
     order('graftDetailRow') > order('graftGrp'), null);
   ok('membrane brand/size follows the membrane question',
     order('membraneDetailRow') > order('membraneUsed'), null);
+  // Graft, then membrane, then mesh — the order they are placed in.
+  ok('membrane comes after the graft', order('membraneUsed') > order('graftDetailRow'), null);
+  ok('mesh comes after the membrane', order('meshUsed') > order('membraneDetailRow'), null);
+  ok('mesh brand/size follows the mesh question',
+    order('meshDetailRow') > order('meshUsed'), null);
 
   // Nothing may have been duplicated by the move.
   for (const id of ['graftDetailRow', 'membraneUsed', 'membraneDetailRow', 'osteoOtherRow',
@@ -136,8 +141,21 @@ const GRAFT = 'Osteotomy &amp; Grafting';
   await clickOpt('graftPlaced', 'Placed');
   await clickOpt('graftGrp', 'Other');
 
+  // ── mesh is its own call, like the membrane ────────────────────────────
+  eq('mesh offers Used / Not Used',
+    await page.evaluate(() => Array.from(document.querySelectorAll('#meshUsed .btn')).map(b => b.textContent.trim())),
+    ['Used', 'Not Used']);
+  eq('mesh brand/size is hidden until a mesh was used', await visible('meshDetailRow'), false);
+
   await clickOpt('membraneUsed', 'Used');
   eq('a membrane still asks for brand/size', await visible('membraneDetailRow'), true);
+  eq('and using a membrane does not ask about a mesh', await visible('meshDetailRow'), false);
+
+  await clickOpt('meshUsed', 'Used');
+  eq('a mesh asks for its own brand/size', await visible('meshDetailRow'), true);
+  await clickOpt('meshUsed', 'Not Used');
+  eq('Not Used puts the mesh detail away again', await visible('meshDetailRow'), false);
+  await clickOpt('meshUsed', 'Used');
 
   // The point of the card is that the answers still reach the record.
   await page.evaluate(() => {
@@ -146,6 +164,8 @@ const GRAFT = 'Osteotomy &amp; Grafting';
     document.getElementById('graftQty').value = '0.5 g';
     document.getElementById('membraneBrand').value = 'Bio-Gide';
     document.getElementById('membraneSize').value = '15×20 mm';
+    document.getElementById('meshBrand').value = 'Ti-Mesh';
+    document.getElementById('meshSize').value = '20×30 mm';
     document.getElementById('osteoOther').value = 'Ridge split';
     document.getElementById('graftOther').value = 'Xenograft mix';
     document.getElementById('pId').value = 'AL0777';
@@ -158,7 +178,8 @@ const GRAFT = 'Osteotomy &amp; Grafting';
   });
   for (const [what, text] of [['graft brand', 'Bio-Oss'], ['graft amount', '0.5 g'],
                               ['membrane brand', 'Bio-Gide'], ['osteotomy detail', 'Ridge split'],
-                              ['which graft', 'Xenograft mix']]) {
+                              ['which graft', 'Xenograft mix'],
+                              ['mesh brand', 'Ti-Mesh'], ['mesh size', '20×30 mm']]) {
     ok('the printed record still carries the ' + what, summary.includes(text),
       (summary.match(new RegExp('.{0,30}' + text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '.{0,20}')) || [''])[0]);
   }
@@ -179,6 +200,8 @@ const GRAFT = 'Osteotomy &amp; Grafting';
       types: Array.from(document.getElementById('graftGrp').querySelectorAll('.btn.active')).map(b => b.textContent.trim()),
       typeRowOpen: (() => { const e = document.getElementById('graftTypeRow'); return !!e && e.style.display !== 'none'; })(),
       other: (document.getElementById('graftOther') || {}).value || '',
+      mesh: Array.from(document.getElementById('meshUsed').querySelectorAll('.btn.active')).map(b => b.textContent.trim()),
+      membrane: Array.from(document.getElementById('membraneUsed').querySelectorAll('.btn.active')).map(b => b.textContent.trim()),
     }));
     await p2.close();
     return out;
@@ -191,18 +214,21 @@ const GRAFT = 'Osteotomy &amp; Grafting';
   // Membrane and Mesh are no longer offered as graft materials — a membrane is
   // a barrier, and it has its own Placed question two rows below. A record
   // that chose one must not lose the answer.
-  eq('Type of Graft no longer offers Membrane or Mesh',
+  eq('Type of Graft offers the four materials and Other, and not Membrane or Mesh',
     await page.evaluate(() => Array.from(document.querySelectorAll('#graftGrp [data-tm]')).map(b => b.textContent.trim())),
-    ['Autogenous', 'Allograft', 'Other']);
+    ['Autogenous', 'Allograft', 'Xenograft', 'Alloplast', 'Other']);
 
   const oldMembrane = await resumed({ pName: 'X', pId: 'AL0777', graft: 'Membrane', implants: [{ n: 1, site: '46' }] });
   eq('a record that chose Membrane still reads as a graft placed', oldMembrane.placed, ['Placed']);
-  eq('and comes back as Other rather than blank', oldMembrane.types, ['Other']);
-  eq('with what was used written into the specify box', oldMembrane.other, 'Membrane');
+  eq('and answers the Membrane question instead', oldMembrane.membrane, ['Used']);
+  eq('rather than being dumped into the graft specify box', oldMembrane.other, '');
 
   const oldMesh = await resumed({ pName: 'X', pId: 'AL0777', graft: 'Allograft, Mesh', implants: [{ n: 1, site: '46' }] });
   eq('a material still offered keeps its own button', oldMesh.types.includes('Allograft'), true);
-  eq('and the dropped one is named in the specify box', oldMesh.other, 'Mesh');
+  // Mesh has its own question now, so an old record naming it as a graft
+  // material answers that question rather than landing in the specify box.
+  eq('an old Mesh graft answers the Mesh question', oldMesh.mesh, ['Used']);
+  eq('and is not dumped into the graft specify box', oldMesh.other, '');
 
   const oldGraft = await resumed({ pName: 'X', pId: 'AL0777', graft: 'Allograft', implants: [{ n: 1, site: '46' }] });
   eq('an older record with a material comes back as Placed', oldGraft.placed, ['Placed']);
