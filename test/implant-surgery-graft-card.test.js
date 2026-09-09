@@ -4,10 +4,14 @@
 // the cover screw have nothing to do with a membrane.
 //
 // They now live under "Osteotomy & Grafting", each specify row directly below
-// the question it belongs to. This is a move and nothing else: the checks
-// below pin where each row sits, that Torque & Cover keeps only its own two
-// questions, and — the part that matters clinically — that every row still
-// appears when the answer above calls for it and still saves.
+// the question it belongs to. The graft question itself reads Placed / Not
+// Placed, the way Suture Placed already does — a "None" button said the same
+// thing in a different voice, and the graft types now sit behind the answer.
+//
+// The checks below pin where each row sits, that Torque & Cover keeps only its
+// own two questions, and — the part that matters clinically — that every row
+// still appears when the answer above calls for it and still reaches the
+// record, including a case saved before the question was worded this way.
 
 const { chromium } = require('playwright');
 const path = require('path');
@@ -49,8 +53,9 @@ const GRAFT = 'Osteotomy &amp; Grafting';
   const { file, html } = extract();
 
   // ── where each row lives ────────────────────────────────────────────────
-  for (const id of ['osteoType', 'addProc', 'graftGrp', 'osteoOtherRow',
-                    'graftOtherRow', 'graftDetailRow', 'membraneUsed', 'membraneDetailRow']) {
+  for (const id of ['osteoType', 'addProc', 'graftPlaced', 'graftGrp', 'graftTypeRow',
+                    'osteoOtherRow', 'graftOtherRow', 'graftDetailRow',
+                    'membraneUsed', 'membraneDetailRow']) {
     ok(id + ' sits under Osteotomy & Grafting', /Osteotomy/.test(cardOf(html, id) || ''), cardOf(html, id));
   }
   ok('torque stays in Torque & Cover', /Torque/.test(cardOf(html, 'torqueVal') || ''), cardOf(html, 'torqueVal'));
@@ -73,7 +78,8 @@ const GRAFT = 'Osteotomy &amp; Grafting';
     order('membraneDetailRow') > order('membraneUsed'), null);
 
   // Nothing may have been duplicated by the move.
-  for (const id of ['graftDetailRow', 'membraneUsed', 'membraneDetailRow', 'osteoOtherRow', 'graftOtherRow']) {
+  for (const id of ['graftDetailRow', 'membraneUsed', 'membraneDetailRow', 'osteoOtherRow',
+                    'graftOtherRow', 'graftPlaced', 'graftTypeRow']) {
     eq(id + ' appears exactly once', html.split('id="' + id + '"').length - 1, 1);
   }
 
@@ -105,12 +111,30 @@ const GRAFT = 'Osteotomy &amp; Grafting';
   await clickOpt('osteoType', 'Other');
   eq('Osteotomy "Other" still reveals its box', await visible('osteoOtherRow'), true);
 
-  await clickOpt('graftGrp', 'Allograft');
-  eq('choosing a graft still asks for brand/size/amount', await visible('graftDetailRow'), true);
-  eq('and does not ask which graft, since one was named', await visible('graftOtherRow'), false);
+  // ── the graft question reads Placed / Not Placed ──────────────────────
+  eq('the graft question offers Placed and Not Placed',
+    await page.evaluate(() => Array.from(document.querySelectorAll('#graftPlaced .btn')).map(b => b.textContent.trim())),
+    ['Placed', 'Not Placed']);
+  eq('the old "None" button is gone',
+    await page.evaluate(() => !!document.querySelector('[data-ss="graftNone"]')), false);
+  eq('the graft types are hidden until a graft was placed', await visible('graftTypeRow'), false);
 
+  await clickOpt('graftPlaced', 'Placed');
+  eq('Placed reveals the graft types', await visible('graftTypeRow'), true);
+  eq('and asks for brand/size/amount', await visible('graftDetailRow'), true);
+  eq('but does not ask which graft until Other is chosen', await visible('graftOtherRow'), false);
+
+  await clickOpt('graftGrp', 'Allograft');
+  eq('a named graft leaves the specify box shut', await visible('graftOtherRow'), false);
   await clickOpt('graftGrp', 'Other');
   eq('graft "Other" still reveals its box', await visible('graftOtherRow'), true);
+
+  await clickOpt('graftPlaced', 'Not Placed');
+  eq('Not Placed puts every graft question away',
+    [await visible('graftTypeRow'), await visible('graftOtherRow'), await visible('graftDetailRow')],
+    [false, false, false]);
+  await clickOpt('graftPlaced', 'Placed');
+  await clickOpt('graftGrp', 'Other');
 
   await clickOpt('membraneUsed', 'Used');
   eq('a membrane still asks for brand/size', await visible('membraneDetailRow'), true);
@@ -138,6 +162,41 @@ const GRAFT = 'Osteotomy &amp; Grafting';
     ok('the printed record still carries the ' + what, summary.includes(text),
       (summary.match(new RegExp('.{0,30}' + text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '.{0,20}')) || [''])[0]);
   }
+
+  // ── a case saved before this wording ───────────────────────────────────
+  // Older records carry graft:'None' for a case with no graft and a material
+  // name for one with a graft. Both have to come back as an answer, or a
+  // reopened record looks like nobody ever decided.
+  const resumed = async record => {
+    const p2 = await browser.newPage();
+    p2.on('pageerror', e => errors.push('resume: ' + e.message));
+    await p2.goto('file://' + file);
+    await p2.waitForTimeout(300);
+    await p2.evaluate(r => window.postMessage({ type: 'KB_CLINICAL_RECORD', record: r }, '*'), record);
+    await p2.waitForTimeout(300);
+    const out = await p2.evaluate(() => ({
+      placed: Array.from(document.getElementById('graftPlaced').querySelectorAll('.btn.active')).map(b => b.textContent.trim()),
+      types: Array.from(document.getElementById('graftGrp').querySelectorAll('.btn.active')).map(b => b.textContent.trim()),
+      typeRowOpen: (() => { const e = document.getElementById('graftTypeRow'); return !!e && e.style.display !== 'none'; })(),
+    }));
+    await p2.close();
+    return out;
+  };
+
+  const oldNone = await resumed({ pName: 'X', pId: 'AL0777', graft: 'None', implants: [{ n: 1, site: '46' }] });
+  eq("an older record's graft:'None' comes back as Not Placed", oldNone.placed, ['Not Placed']);
+  eq('and leaves the graft types put away', oldNone.typeRowOpen, false);
+
+  const oldGraft = await resumed({ pName: 'X', pId: 'AL0777', graft: 'Allograft', implants: [{ n: 1, site: '46' }] });
+  eq('an older record with a material comes back as Placed', oldGraft.placed, ['Placed']);
+  eq('with the material still selected', oldGraft.types, ['Allograft']);
+  eq('and the types on show so it can be changed', oldGraft.typeRowOpen, true);
+
+  const answered = await resumed({ pName: 'X', pId: 'AL0777', graftPlaced: 'Not Placed', graft: 'Not Placed', implants: [{ n: 1, site: '46' }] });
+  eq('a record saved with the new answer reads straight back', answered.placed, ['Not Placed']);
+
+  const unanswered = await resumed({ pName: 'X', pId: 'AL0777', graft: '—', implants: [{ n: 1, site: '46' }] });
+  eq('a record that never answered stays unanswered', unanswered.placed, []);
 
   eq('no uncaught page errors', errors, []);
   await browser.close();
