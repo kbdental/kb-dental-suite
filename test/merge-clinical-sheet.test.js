@@ -65,8 +65,14 @@ function makeCtx(existingRecord) {
       allTeeth: { teeth: [{ n: 1, tooth: '16', date: '27/08/2026' }] }
     });
     eq('still exactly two teeth, not three', merged.teeth.length, 2);
-    eq('tooth 16 kept its position and its date was updated', merged.teeth[0],
-      { n: 1, tooth: '16', date: '27/08/2026' });
+    // This used to assert the return visit overwrote `date`, which meant a
+    // crown started on the 20th and continued on the 27th read as though the
+    // whole thing happened on the 27th. `date` is now the day the tooth was
+    // first treated and `lastVisit` the day it was last seen — see
+    // test/visit-history.test.js.
+    eq('tooth 16 kept its position, its start date, and gained a last-seen date',
+      merged.teeth[0],
+      { n: 1, tooth: '16', date: '20/08/2026', lastVisit: '27/08/2026' });
     eq('tooth 17 untouched', merged.teeth[1], { n: 2, tooth: '17', date: '20/08/2026' });
   }
 
