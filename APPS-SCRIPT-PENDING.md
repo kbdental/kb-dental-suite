@@ -1,95 +1,182 @@
-# Apps Script — the three changes still waiting
+# Apps Script — one change waiting: clinical records in their own spreadsheet
 
-All three are `Code.gs`, which cannot be deployed from here. Do the three
-pastes below, then **one** redeploy at the end — not one each.
-
-Nothing here is urgent enough to interrupt a clinic day. Everything keeps
-working as it does today until this is applied; #1 is the one that stops a
-new problem appearing.
-
-This supersedes `UHID-FORMAT-PATCH.md`, `IMPLANT-BRANDS-MASTER-PATCH.md` and
-`CLINICAL-SHEETS-SPLIT-PATCH.md`, which are now removed.
+**The previous batch is done.** The three changes this file used to list —
+the UHID fix, the Clinical Sheets split, and Implant Brands — are confirmed
+live: `getNextUHID` returns the new format (`AL0901`) and
+`getImplantBrandsList` answers. This replaces them.
 
 ---
 
-## 1. Stop patients being stranded without a registration (do this one first)
+## What this does
 
-This is why AL0808 (Dr Garima Chahal) had appointments and a clinical sheet but
-did not exist in Patient Search.
+Today every clinical form's records — RCT, Crown & Bridge, both implant
+forms, Local Anesthesia, Denture, Pedo, Restoration and the rest — sit in the
+main PMS spreadsheet, alongside Registrations, Appointments and the Daily
+Register. This moves them into a spreadsheet of their own.
 
-`getNextUHID` builds `KBDC-2026-0043`, which is not the clinic's format, and
-numbers from the sheet's **row count** — so deleting any row hands the next
-patient a UHID that already belongs to someone. It also had a fallback that
-invented `"AL" + four timestamp digits`, which looks like a real UHID but lands
-in an impossible month.
+- **All form records go to one new file**, one tab per form — the same tabs
+  you have today.
+- **Existing records are copied across.** Nothing in the PMS spreadsheet is
+  deleted or edited; the originals stay exactly where they are.
+- **The app only switches to the new file after every copy has been checked**
+  against its original — same number of rows, same number of columns. If any
+  copy does not match, it does not switch and nothing changes.
+- **Registrations, Appointments, the Daily Register and Finance stay where
+  they are.** Only clinical form data moves.
 
-**Ctrl+F for `function getNextUHID()`. Select from that line down to its
-closing `}` and paste this in its place:**
+It is done in two parts. Part 1 can be done any time — on its own it changes
+nothing. Part 2 is the actual move and should be done outside clinic hours.
+
+---
+
+## Part 1 — paste and deploy (safe any time)
+
+On its own this changes nothing: until Part 2 is done, every record keeps
+saving to the PMS spreadsheet exactly as now.
+
+### Block A
+
+**Ctrl+F for `CLINICAL RECORDS — Secondary Sheet`.** Select from that line
+down to the closing `}` of `function getClinicalSheet` — the last line before
+`// Generic fetch by UHID from any clinical tab`. Paste this in its place:
 
 ```javascript
-// UHID format: two-letter year code + 2-digit month + that month's running
-// number. The year code started at AA for 2015 and advances one letter a year,
-// so 2026 is AL — AL0777 is the 77th new patient of July 2026. The number
-// restarts at 01 on the 1st of every month.
-function uhidYearCode_(year) {
-  var i = year - 2015;
-  if (i < 0) i = 0;
-  return String.fromCharCode(65 + Math.floor(i / 26)) + String.fromCharCode(65 + (i % 26));
+// CLINICAL RECORDS — their own spreadsheet
+// ════════════════════════════════════════════════════════════
+// Every clinical form's records live in a spreadsheet of their own, kept apart
+// from Registrations, Appointments and Finance. Which spreadsheet is set by the
+// Script Property CLINICAL_SHEET_ID — never by editing code — the same way
+// Finance's is.
+//
+// Until that property is set, everything stays in this (the PMS) spreadsheet
+// exactly as before, so this can be deployed before the new file exists.
+// Setting it is done by copyClinicalRecordsToNewFile below, not by hand, so the
+// app is never pointed at a file its records have not been copied into yet.
+var CLINICAL_SHEET_ID_DEFAULT = "1DtoZ3MNFq2Enr-ClAjENWFzk8SF2dYN9e1nGf7tAJC4";
+
+function getClinicalSheetId() {
+  var stored = PropertiesService.getScriptProperties().getProperty("CLINICAL_SHEET_ID");
+  return stored || CLINICAL_SHEET_ID_DEFAULT;
 }
 
-function getNextUHID() {
-  var tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
-  var now = new Date();
-  var prefix = uhidYearCode_(Number(Utilities.formatDate(now, tz, "yyyy")))
-             + Utilities.formatDate(now, tz, "MM");
+// Kept for setupClinicalRecordTabs, which opens the clinical file by this name.
+var CLINICAL_SHEET_ID = getClinicalSheetId();
 
-  // Read the highest number already issued this month instead of counting
-  // rows: a row deleted for any reason would otherwise send the counter
-  // backwards and reissue a UHID that already belongs to a patient.
-  var sh = getSheet("Registrations");
-  var data = sh.getDataRange().getValues();
-  var highest = 0;
-  if (data.length > 1) {
-    var uhidCol = findRegColumn_(data[0], ["UHID", "Registration ID"]);
-    if (uhidCol >= 0) {
-      for (var i = 1; i < data.length; i++) {
-        var v = String(data[i][uhidCol] || "").trim().toUpperCase();
-        if (v.indexOf(prefix) !== 0) continue;
-        var n = parseInt(v.substring(prefix.length), 10);
-        if (!isNaN(n) && n > highest) highest = n;
-      }
-    }
+function getClinicalSheet(tabName) {
+  var ss = SpreadsheetApp.openById(getClinicalSheetId());
+  var sh = ss.getSheetByName(tabName);
+  if (!sh) {
+    sh = ss.insertSheet(tabName);
+  }
+  return sh;
+}
+
+// ── One-off: move the clinic's form records into their own spreadsheet ───
+// Copies every clinical tab from this spreadsheet into the new one, checks
+// that each copy holds exactly as many rows and columns as its original, and
+// only then points the app at the new file. Nothing in this spreadsheet is
+// deleted or edited — the originals stay exactly as they are.
+//
+// Before running it:
+//   1. Make a new, empty Google Sheet. Copy the long ID out of its address
+//      bar — the part between /d/ and /edit.
+//   2. Project Settings → Script Properties → Add script property
+//        CLINICAL_SHEET_ID_NEW   =   that ID
+//   3. Pick copyClinicalRecordsToNewFile in the function list, Run, and read
+//      the Execution log.
+// Run it outside clinic hours: a record saved while it runs lands in this
+// file after its tab has already been copied, and would not be in the new one.
+//
+// Safe to re-run until it has switched over — a tab left by an earlier,
+// interrupted run is replaced rather than duplicated. Once it has switched it
+// refuses to run, so the live file can never be overwritten from here.
+var CLINICAL_FLAT_TABS = [
+  "Pathology", "Radiology", "Radiograph", "Local Anesthesia", "Intra Oral Scan",
+  "Scaling", "Minor Surgery", "TMJoint", "Restoration", "Orthodontics",
+  "Orthodontics Progress", "Denture", "Pedo", "Lab Log", "Prescriptions",
+  // Historical flat tabs for the four JSON-blob forms.
+  "RCT", "Implant Surgery", "Implant Prosthetic", "Crown & Bridge"
+];
+
+function clinicalTabsToCopy_() {
+  var names = CLINICAL_FLAT_TABS.slice();
+  names.push(CLINICAL_SHEETS_SHARED_TAB);
+  for (var k in CLINICAL_SHEET_TABS) names.push(CLINICAL_SHEET_TABS[k]);
+  return names;
+}
+
+function copyClinicalRecordsToNewFile() {
+  var props = PropertiesService.getScriptProperties();
+  var newId = String(props.getProperty("CLINICAL_SHEET_ID_NEW") || "").trim();
+  if (!newId) {
+    Logger.log("Set the Script Property CLINICAL_SHEET_ID_NEW to the new spreadsheet's ID first. Nothing was done.");
+    return;
+  }
+  if (newId === CLINICAL_SHEET_ID_DEFAULT) {
+    Logger.log("CLINICAL_SHEET_ID_NEW is this spreadsheet's own ID — it has to be a different, new file. Nothing was done.");
+    return;
+  }
+  if (props.getProperty("CLINICAL_SHEET_ID") === newId) {
+    Logger.log("The app already uses that spreadsheet. Refusing to copy over live records. Nothing was done.");
+    return;
   }
 
-  // Two digits normally (AL0801 … AL0899); a month busy enough to pass 99
-  // simply grows to three (AL08100) rather than wrapping or colliding.
-  return { success: true, uhid: prefix + String(highest + 1).padStart(2, "0") };
+  var from = SpreadsheetApp.openById(CLINICAL_SHEET_ID_DEFAULT);
+  var to = SpreadsheetApp.openById(newId);
+  var copied = [], absent = [], problems = [];
+
+  clinicalTabsToCopy_().forEach(function(name) {
+    var src = from.getSheetByName(name);
+    if (!src) { absent.push(name); return; }
+    var copy = src.copyTo(to);
+    // A tab by this name in the new file can only be left over from an
+    // earlier, interrupted run — the new file is not live yet — so replace it.
+    var old = to.getSheetByName(name);
+    if (old) to.deleteSheet(old);
+    copy.setName(name);
+    var rs = src.getLastRow(), cs = src.getLastColumn();
+    var rc = copy.getLastRow(), cc = copy.getLastColumn();
+    if (rs !== rc || cs !== cc) {
+      problems.push(name + ": original " + rs + " rows x " + cs + " cols, copy " + rc + " x " + cc);
+    } else {
+      copied.push(name + " (" + Math.max(rs - 1, 0) + " records)");
+    }
+  });
+
+  // A new spreadsheet starts with an empty "Sheet1"; drop it so the file holds
+  // only the clinic's own tabs.
+  var blank = to.getSheetByName("Sheet1");
+  if (blank && blank.getLastRow() === 0 && to.getSheets().length > 1) to.deleteSheet(blank);
+
+  Logger.log("Copied " + copied.length + " tab(s):\n  " + copied.join("\n  "));
+  if (absent.length) Logger.log("Not in this spreadsheet, so nothing to copy: " + absent.join(", "));
+
+  if (problems.length) {
+    Logger.log("NOT SWITCHED — these copies do not match their originals:\n  " + problems.join("\n  "));
+    Logger.log("The app still uses this spreadsheet and nothing here was changed. Run this again.");
+    return;
+  }
+  props.setProperty("CLINICAL_SHEET_ID", newId);
+  Logger.log("Every copy matches its original. The app now reads and saves form records in the new spreadsheet.");
+  Logger.log("Nothing in this spreadsheet was deleted or changed.");
 }
 ```
 
-To check it before trusting it: pick `getNextUHID` from the function dropdown,
-Run, and open the Execution log. It prints the UHID it would issue next without
-writing anything. If your newest patient this month is `AL0812`, it should say
-`AL0813`.
+### Block B
 
----
-
-## 2. Clinical Sheets — the slowness on RCT / Implant / Crown &amp; Bridge
-
-`getClinicalSheets` read every column of every row — including `All Teeth Data`,
-the column holding a patient's whole record for every tooth as JSON. Finding one
-patient fetched and parsed every record in the tab. `saveClinicalSheets` did the
-same to locate the row it was about to update. All four forms also shared one
-tab, so it grew every time any of them was used.
-
-Row lookup now reads only the three key columns and fetches the blob afterwards,
-for the row that matched. On a 200-row tab that is 605 cells instead of 1000.
-
-**Ctrl+F for `function getClinicalSheets(p) {`. Select from that line down to —
-but NOT including — the `// DAILY REGISTER` banner comment below it. That block
-is `getClinicalSheets` and `saveClinicalSheets`. Paste this in its place:**
+**Ctrl+F for `Each of the four forms gets its own tab`.** Select from that
+line down to the closing `}` of `function migrateClinicalSheetsToOwnTabs` — the
+last line before the `DAILY REGISTER` banner. Paste this in its place:
 
 ```javascript
+// All four open the clinical spreadsheet through getClinicalSheet, like every
+// other form — not the PMS file through getSheet. The stale-row clean-up in
+// saveClinicalSheets therefore only ever deletes within that one file.
+// Each of the four forms gets its own tab instead of all of them sharing one.
+// NOTE the "Clinical Sheets - " prefix: flat tabs named "RCT", "Implant
+// Surgery", "Implant Prosthetic" and "Crown & Bridge" already exist in this
+// same spreadsheet for pasting in historical records, and reusing those names
+// would have written JSON blobs straight over them.
 var CLINICAL_SHEETS_SHARED_TAB = "Clinical Sheets";
 var CLINICAL_SHEET_HEADERS = ["UHID", "Patient Name", "Sheet Type", "All Teeth Data", "Saved At"];
 var CLINICAL_SHEET_TABS = {
@@ -146,7 +233,7 @@ function getClinicalSheets(p) {
 
   var best = null;
   for (var n = 0; n < names.length; n++) {
-    var sh = getSheet(names[n]);
+    var sh = getClinicalSheet(names[n]);
     var row = findClinicalRow_(sh, uhid, sheetType);
     if (row < 0) continue;
     var hit = readClinicalRow_(sh, row);
@@ -161,7 +248,7 @@ function getClinicalSheets(p) {
 function saveClinicalSheets(p) {
   var uhid = String(p.uhid || "").trim().toUpperCase();
   var sheetType = String(p.sheetType || "").trim();
-  var sh = getSheet(clinicalSheetTabName_(sheetType));
+  var sh = getClinicalSheet(clinicalSheetTabName_(sheetType));
   if (sh.getLastRow() === 0) sh.appendRow(CLINICAL_SHEET_HEADERS);
 
   var rowValues = [p.uhid, p.patientName, sheetType, safeJSON(p.allTeeth), new Date().toISOString()];
@@ -173,7 +260,7 @@ function saveClinicalSheets(p) {
   // Drop it only now that the newer copy is safely written, so the row is
   // moved rather than deleted — two copies would otherwise drift apart.
   if (sh.getName() !== CLINICAL_SHEETS_SHARED_TAB) {
-    var shared = getSheet(CLINICAL_SHEETS_SHARED_TAB);
+    var shared = getClinicalSheet(CLINICAL_SHEETS_SHARED_TAB);
     var stale = findClinicalRow_(shared, uhid, sheetType);
     if (stale > 0) shared.deleteRow(stale);
   }
@@ -185,7 +272,7 @@ function saveClinicalSheets(p) {
 // Nothing is deleted: rows stay in the shared tab until the next save of that
 // record moves them. Run it from the Apps Script editor and read the log.
 function migrateClinicalSheetsToOwnTabs() {
-  var shared = getSheet(CLINICAL_SHEETS_SHARED_TAB);
+  var shared = getClinicalSheet(CLINICAL_SHEETS_SHARED_TAB);
   var last = shared.getLastRow();
   if (last < 2) { Logger.log("Shared tab is empty — nothing to migrate."); return; }
 
@@ -198,7 +285,7 @@ function migrateClinicalSheetsToOwnTabs() {
     var tab = CLINICAL_SHEET_TABS[sheetType];
     if (!tab) { unknown++; continue; }
 
-    var target = getSheet(tab);
+    var target = getClinicalSheet(tab);
     if (target.getLastRow() === 0) target.appendRow(CLINICAL_SHEET_HEADERS);
 
     var existing = findClinicalRow_(target, uhid, sheetType);
@@ -218,83 +305,77 @@ function migrateClinicalSheetsToOwnTabs() {
 }
 ```
 
-Note the `Clinical Sheets - ` prefix on the new tab names. Flat tabs named
-`RCT`, `Implant Surgery`, `Implant Prosthetic` and `Crown & Bridge` already
-exist in the same spreadsheet for pasting in historical records, and the bare
-names would have written JSON blobs over them.
+### Deploy, once
 
-**After deploying**, optionally run `migrateClinicalSheetsToOwnTabs` from the
-function dropdown. It copies existing records into the new tabs and prints what
-it moved. Nothing is deleted, it is safe to re-run, and a newer record is never
-overwritten by an older one. You do not have to run it for things to work —
-reads still check the shared tab — it is what makes the shared tab shrink.
+1. **Ctrl+S.**
+2. **Deploy → Manage deployments → pencil → Version: New version → Deploy.**
+
+Saving alone does nothing; the new version has to be deployed. After this the
+app should behave exactly as it did before — that is the point of Part 1.
 
 ---
 
-## 3. Implant brands and sizes, maintained by you
+## Part 2 — make the new file and move the records
 
-Puts the implant brand list and each brand's sizes in
-**Master → Clinic → Implant Brands &amp; Sizes**, so a new system or a
-discontinued size is something you change yourself.
+**Do this outside clinic hours.** Anything saved while the copy is running
+lands in the PMS spreadsheet after its tab has already been copied, and would
+not be in the new file.
 
-**3a. Ctrl+F for this line:**
+1. **Make a new, empty Google Sheet** from the same Google account that owns
+   this Apps Script project. Name it something like *KB Dental — Clinical
+   Records*.
+2. **Copy its ID** from the address bar — the long part between `/d/` and
+   `/edit`.
+3. In the Apps Script editor: **Project Settings (the gear) → Script
+   Properties → Add script property**
+   - Property: `CLINICAL_SHEET_ID_NEW`
+   - Value: the ID you copied
 
-```javascript
-      case "getMedicineDosagesList":       return getMedicineDosagesList();
-```
+   **Save script properties.**
+4. Back in the editor, pick **`copyClinicalRecordsToNewFile`** in the function
+   list at the top, and press **Run**. If Google asks for permission, allow it.
+5. **Read the Execution log.** It should end with:
 
-**and paste these two lines directly ABOVE it:**
+   > Every copy matches its original. The app now reads and saves form
+   > records in the new spreadsheet.
+   > Nothing in this spreadsheet was deleted or changed.
 
-```javascript
-      case "getImplantBrandsList":         return getImplantBrandsList();
-      case "saveImplantBrandsList":       return saveImplantBrandsList(p);
-```
+   If it says **NOT SWITCHED** instead, the app is still using the PMS
+   spreadsheet and nothing has changed. The log names the tab that did not
+   copy cleanly — just run it again. It is safe to re-run: a half-copied tab
+   is replaced, not duplicated.
 
-**3b. Ctrl+F for `function getMedicineDosagesList() {` and paste this directly
-ABOVE that line:**
+**No redeploy is needed for Part 2.** The app reads which spreadsheet to use
+on every request, so the switch takes effect the moment the copy finishes.
 
-```javascript
-// Implant brands and the sizes each is stocked in — maintained by the clinic
-// in Master (Clinic > Implant Brands & Sizes) rather than fixed in the app,
-// so a new system or a discontinued size is a sheet edit, not a code change.
-// Sizes are one comma-separated string per brand; the form splits them and
-// still accepts anything typed, so an unlisted size never blocks a case.
-function getImplantBrandsList() {
-  var sh = getSheet("Implant Brands");
-  var data = sh.getDataRange().getValues();
-  var items = [];
-  for (var i = 1; i < data.length; i++) {
-    if (!data[i][0]) continue;
-    items.push({ name: String(data[i][0]).trim(), sizes: String(data[i][1] || "").trim() });
-  }
-  return { success: true, brands: items };
-}
-function saveImplantBrandsList(p) {
-  var sh = getSheet("Implant Brands");
-  sh.clearContents();
-  sh.appendRow(["Brand", "Sizes", "Updated At"]);
-  var arr = [];
-  try { arr = JSON.parse(p.brands); } catch (e) { if (Array.isArray(p.brands)) arr = p.brands; }
-  var now = new Date().toISOString();
-  arr.forEach(function(b) { sh.appendRow([b.name, b.sizes || "", now]); });
-  return { success: true };
-}
-```
+Once it has switched, running `copyClinicalRecordsToNewFile` again does
+nothing — it refuses, so the live records can never be overwritten from the
+editor.
 
 ---
 
-## Now deploy, once
+## How to tell it worked
 
-**Save (Ctrl+S) → Deploy → Manage deployments → edit (pencil) → Version: New
-version → Deploy.**
+- Open the new spreadsheet: it should have a tab for each form, holding the
+  same rows as the PMS spreadsheet's tabs of the same name.
+- In the app, open a patient who already has records — **AD0502** (Crown &
+  Bridge) or **AL0810** (RCT) — and check the Clinical Record still shows.
+- The next real save from any form should appear in the **new** file, and the
+  PMS spreadsheet's copy of that tab should not grow.
 
-Without the redeploy the web app keeps serving the old code and nothing above
-takes effect — that is what cost us several rounds on the tooth-range fix.
+## If something is wrong
 
-## Then
+Delete the `CLINICAL_SHEET_ID` script property (not `_NEW`). The app goes
+straight back to the PMS spreadsheet, where every original still is.
 
-- Open **Master → Clinic → Implant Brands &amp; Sizes** and add the systems you
-  actually stock. Sizes are comma separated. A size that is not on the list can
-  still be typed straight into the form, so the list never blocks a case.
-- Run `findOrphanRegistrations` (from `restore-missing-registration.gs`) if you
-  have not — it is read-only and lists any other patient in AL0808's position.
+One thing to know before doing that: anything saved **after** the switch is
+only in the new file, so it would not show until the property is set back.
+
+---
+
+## What is not changed
+
+- Nothing in the PMS spreadsheet is deleted or edited, by either part.
+- Registrations, Appointments, the Daily Register and Finance are untouched.
+- The app itself (`index.html`) needs no change — it never knew which
+  spreadsheet the records were in.
