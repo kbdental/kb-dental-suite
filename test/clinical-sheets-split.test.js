@@ -65,9 +65,12 @@ function slice(from, to) {
   return GS.slice(a, b);
 }
 const src = slice('var CLINICAL_SHEETS_SHARED_TAB', '// ════════════════════════════════════════════════════════════\n// DAILY REGISTER');
-const api = new Function('getSheet', 'safeParseJSON', 'safeJSON', 'Logger',
+// These functions now open the clinical spreadsheet through getClinicalSheet
+// rather than the PMS file's getSheet. One fake book stands in for both
+// here, since this test is about tabs and lookups, not which file.
+const api = new Function('getSheet', 'getClinicalSheet', 'safeParseJSON', 'safeJSON', 'Logger',
   src + '\nreturn { getClinicalSheets, saveClinicalSheets, migrateClinicalSheetsToOwnTabs, clinicalSheetTabName_, CLINICAL_SHEET_TABS };'
-)(getSheet, safeParseJSON, safeJSON, Logger);
+)(getSheet, getSheet, safeParseJSON, safeJSON, Logger);
 
 // --- each form gets its own tab, and not the historical flat one -----------
 eq('RCT has its own tab', api.clinicalSheetTabName_('RCT'), 'Clinical Sheets - RCT');
