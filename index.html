@@ -91,15 +91,33 @@ const T = "#0078B4",
 // Canonical date-display formatter — always dd/mm/yyyy, whole app.
 // Accepts a Date object, an ISO string (yyyy-mm-dd or full ISO datetime),
 // an already-dd/mm/yyyy string (passed through as-is), or empty/invalid input.
+// Both fmtDMY (dates) and hhmm (times) read stored values in the clinic's own
+// zone. It is declared here, above fmtDMY, because TODAY below is computed at
+// load time and a const declared later would still be in its dead zone.
+// (Kept free of the literal text other tests slice on, which is why it does
+// not spell out that declaration.)
+const CLINIC_TZ = "Asia/Kolkata";
+
+// The clinic's own day, not the viewer's. The sheet stores a visit dated the
+// 8th as 2026-09-07T18:30:00Z — midnight in Delhi — so reading it back with
+// the viewer's local getDate() gives the 7th anywhere west of IST. On an IST
+// browser it happened to be right, which is why it went unnoticed; it is
+// wrong for anyone travelling, and for the test runner, which is UTC.
+//
+// Only dates that came FROM the sheet go through here. Calendar navigation and
+// age work on locally-built dates and are correct in local time.
 function fmtDMY(input) {
   if (!input) return "";
   try {
     if (typeof input === "string" && /^\d{2}\/\d{2}\/\d{4}$/.test(input.trim())) return input.trim();
     const d = input instanceof Date ? input : new Date(input);
     if (isNaN(d.getTime())) return String(input);
-    const dd = String(d.getDate()).padStart(2, "0");
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const yyyy = d.getFullYear();
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: CLINIC_TZ, day: "2-digit", month: "2-digit", year: "numeric"
+    }).formatToParts(d);
+    const part = t => (parts.find(x => x.type === t) || {}).value || "";
+    const dd = part("day"), mm = part("month"), yyyy = part("year");
+    if (!dd || !mm || !yyyy) return String(input);
     return `${dd}/${mm}/${yyyy}`;
   } catch (e) { return String(input); }
 }
@@ -141,8 +159,7 @@ function nowHHMM() {
 // The named zone matters. In 1899 India ran at +05:21:10, not +05:30, so the
 // epoch date carries the historical offset: formatting through Asia/Kolkata
 // recovers the real clock time, while a hardcoded +05:30 would put every
-// stamp 8 minutes 50 seconds late.
-const CLINIC_TZ = "Asia/Kolkata";
+// stamp 8 minutes 50 seconds late. CLINIC_TZ is declared above fmtDMY.
 function hhmm(v) {
   if (v === undefined || v === null || v === "") return "";
   const s = String(v).trim();

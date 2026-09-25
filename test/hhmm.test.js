@@ -14,11 +14,14 @@ const path = require('path');
 const vm = require('vm');
 
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
-const from = html.indexOf('const CLINIC_TZ =');
+// Anchored on hhmm itself, not on CLINIC_TZ: that constant is shared with
+// fmtDMY and now lives further up the file, so slicing from it would drag in
+// half the app.
+const from = html.indexOf('function hhmm(v) {');
 const to = html.indexOf('// Turnaround time between walk-in', from);
 if (from < 0 || to < 0) { console.error('could not locate hhmm() in index.html'); process.exit(1); }
 
-const ctx = {};
+const ctx = { CLINIC_TZ: 'Asia/Kolkata', Intl };
 vm.createContext(ctx);
 vm.runInContext(html.slice(from, to) + ';this.hhmm = hhmm;', ctx);
 const hhmm = ctx.hhmm;

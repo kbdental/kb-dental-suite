@@ -34,17 +34,14 @@ function loadMapper() {
   const src =
     html.slice(html.indexOf('const CS_ITEM_ID_FIELD'), html.indexOf('async function mergeClinicalSheet')) +
     html.slice(html.indexOf('const CS_RECORD_TAB'), html.indexOf('// ── Read-only saved-record viewer'));
-  const ctx = {
-    fmtDMY: input => {
-      if (!input) return '';
-      if (typeof input === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(input.trim())) return input.trim();
-      const d = new Date(input);
-      if (isNaN(d.getTime())) return String(input);
-      return String(d.getDate()).padStart(2, '0') + '/' +
-             String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
-    },
-  };
+  // fmtDMY used to be reimplemented here. A test that keeps its own copy of the
+  // logic can pass while the app is broken, and fail while the app is fine —
+  // which is exactly what happened: the stub read dates in the runner's local
+  // time (UTC), the app now reads them in the clinic's. Take the real one.
+  const fmtSrc = html.slice(html.indexOf('const CLINIC_TZ'), html.indexOf('const TODAY ='));
+  const ctx = { window: {}, Intl };
   vm.createContext(ctx);
+  vm.runInContext(fmtSrc, ctx);
   vm.runInContext(src, ctx);
   return ctx;
 }
