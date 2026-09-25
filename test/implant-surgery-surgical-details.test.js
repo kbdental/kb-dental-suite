@@ -68,12 +68,18 @@ const setVal = (page, id, v) => page.evaluate(({ id, v }) => {
   await clickOpt(page, 'osteoType', 'Other');
   eq('Osteotomy now offers "Other"', await visible(page, 'osteoOtherRow'), true);
 
+  // The graft question now reads Placed / Not Placed, so the types and their
+  // detail follow that answer rather than following "did anyone click a
+  // type" — see test/implant-surgery-graft-card.test.js.
   eq('Graft "Other" box is hidden by default', await visible(page, 'graftOtherRow'), false);
+  eq('the graft types are hidden until a graft was placed', await visible(page, 'graftTypeRow'), false);
+  await clickOpt(page, 'graftPlaced', 'Placed');
+  eq('Placed reveals the graft types', await visible(page, 'graftTypeRow'), true);
   await clickOpt(page, 'graftGrp', 'Other');
   eq('choosing Graft "Other" reveals the box', await visible(page, 'graftOtherRow'), true);
 
-  // --- 6: any graft asks for brand / size / amount -------------------------
-  eq('graft brand/size/amount appear once a graft is chosen', await visible(page, 'graftDetailRow'), true);
+  // --- 6: a placed graft asks for brand / size / amount --------------------
+  eq('graft brand/size/amount appear once a graft is placed', await visible(page, 'graftDetailRow'), true);
 
   // --- 7: membrane ---------------------------------------------------------
   eq('membrane brand/size hidden until it is used', await visible(page, 'membraneDetailRow'), false);
