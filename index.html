@@ -7159,7 +7159,10 @@ function PatientSearch({ setGlobalPat, onNavigate }) {
 // showing just the count, expands on click to show names + greeting links.
 function BirthdayCorner({ birthdays }) {
   const [open, setOpen] = React.useState(false);
-  return React.createElement("div", { style:{ position:"fixed", top:16, right:20, zIndex:200 } },
+  // No fixed positioning of its own: the dashboard lays this out in a row
+  // beside the follow-ups pill, so the two can never sit on top of each other
+  // whatever width the open card takes.
+  return React.createElement("div", null,
     !open
       ? React.createElement("button", { onClick:()=>setOpen(true),
           style:{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px", borderRadius:20, border:"1px solid #FDBA74",
@@ -7289,13 +7292,24 @@ function Dashboard({
     }
   }, s.s)))),
 
-  !birthdaysLoading && birthdays.length > 0 && React.createElement(BirthdayCorner, { birthdays }),
-  !followUpsLoading && followUpCount > 0 && React.createElement("button", {
-    onClick: () => onNavigate("followups"),
-    style:{ position:"fixed", top: (birthdays.length>0 ? 58 : 16), right:20, zIndex:200,
-      display:"flex", alignItems:"center", gap:6, padding:"8px 14px", borderRadius:20, border:`1px solid ${TM}`,
-      background:TL, color:T, fontWeight:700, fontSize:12.5, cursor:"pointer", boxShadow:"0 2px 8px rgba(0,0,0,.08)" }
-  }, "🔁 " + followUpCount + " follow-up" + (followUpCount!==1?"s":"")),
+  // One right-anchored row holding both corner widgets. They used to be
+  // positioned independently, with the follow-ups pill dropped 42px down when
+  // there were birthdays — which put it straight over the first name on the
+  // open birthday card. Side by side in a flex row, the row grows leftwards as
+  // the card opens and neither can cover the other.
+  ((!birthdaysLoading && birthdays.length > 0) || (!followUpsLoading && followUpCount > 0)) &&
+  React.createElement("div", {
+    style:{ position:"fixed", top:16, right:20, zIndex:200,
+      display:"flex", alignItems:"flex-start", gap:8 }
+  },
+    !followUpsLoading && followUpCount > 0 && React.createElement("button", {
+      onClick: () => onNavigate("followups"),
+      style:{ flexShrink:0, display:"flex", alignItems:"center", gap:6, padding:"8px 14px", borderRadius:20,
+        border:`1px solid ${TM}`, background:TL, color:T, fontWeight:700, fontSize:12.5, cursor:"pointer",
+        boxShadow:"0 2px 8px rgba(0,0,0,.08)", whiteSpace:"nowrap" }
+    }, "🔁 " + followUpCount + " follow-up" + (followUpCount!==1?"s":"")),
+    !birthdaysLoading && birthdays.length > 0 && React.createElement(BirthdayCorner, { birthdays })
+  ),
 
   /*#__PURE__*/React.createElement("div", {
     style: {
