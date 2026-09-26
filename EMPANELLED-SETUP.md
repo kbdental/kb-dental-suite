@@ -11,6 +11,17 @@ Do them in this order.
 `?clinic=empanelled` on the app already points at the empanelled
 deployment — that part is live. Everything below is inside Apps Script.
 
+**The books, by ID** — so a log can be read without guessing:
+
+| Book | ID |
+|---|---|
+| K.B. Dental PMS (main) | `1DtoZ3MNFq2Enr-ClAjENWFzk8SF2dYN9e1nGf7tAJC4` |
+| K. B. Dental - Finance Sheet | `1Zdxq3Xf-e41Xak4VDcufrURLkKDAp8MvRCZadC0htUI` |
+| KB Dental — PMS Empaneled | `1yg9Umwwkxao-RUwxXuycjG7CVXjRAQUmMvMHa_l6sjo` |
+
+Patch A verified in the empanelled book on 26 Sep 2026: `reportInstanceFiles`
+resolved both clinical records and finance to `1yg9Umww…`, its own ID.
+
 ---
 
 ## Patch A — stop a copied book writing into the main clinic's files
