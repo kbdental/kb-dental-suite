@@ -18,6 +18,12 @@ deployment — that part is live. Everything below is inside Apps Script.
 | K.B. Dental PMS (main) | `1DtoZ3MNFq2Enr-ClAjENWFzk8SF2dYN9e1nGf7tAJC4` |
 | K. B. Dental - Finance Sheet | `1Zdxq3Xf-e41Xak4VDcufrURLkKDAp8MvRCZadC0htUI` |
 | KB Dental — PMS Empaneled | `1yg9Umwwkxao-RUwxXuycjG7CVXjRAQUmMvMHa_l6sjo` |
+| KB Dental — Clinical Records (main's) | `1g3t7vbpOKcVEkYdTIsge4u2e8LKC12m71AY51Ps6NlU` |
+
+The main clinic keeps its clinical records in that fourth file, via the
+`CLINICAL_SHEET_ID` Script Property. The empanelled book has no such
+property, so its records stay in itself — which is what its own
+`reportInstanceFiles` log showed, and is what was wanted.
 
 **Done in the empanelled book, 26 Sep 2026:**
 

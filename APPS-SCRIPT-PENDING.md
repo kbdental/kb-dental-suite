@@ -1,9 +1,28 @@
-# Apps Script — one change waiting: clinical records in their own spreadsheet
+# Apps Script — nothing pending
 
-**The previous batch is done.** The three changes this file used to list —
-the UHID fix, the Clinical Sheets split, and Implant Brands — are confirmed
-live: `getNextUHID` returns the new format (`AL0901`) and
-`getImplantBrandsList` answers. This replaces them.
+**Everything this file used to list is live.** Confirmed in the main book on
+26 Sep 2026 by running `reportInstanceFiles`:
+
+```
+This book : "K. B. DENTAL SUITE - PMS"
+Is it the main clinic's book? YES
+
+Clinical records -> KB Dental — Clinical Records
+   id 1g3t7vbpOKcVEkYdTIsge4u2e8LKC12m71AY51Ps6NlU
+Finance -> K. B. Dental - Finance Sheet
+```
+
+`getClinicalSheetId` returning the Clinical Records file rather than the PMS
+book means `CLINICAL_SHEET_ID` is set — so **Part 2 below has already been
+run**, and the records already live in their own spreadsheet. The UHID fix,
+the Clinical Sheets split and Implant Brands were confirmed live earlier.
+
+Nothing in this file needs doing. It is kept for what the change was and how
+to undo it, and because the same steps make a new instance's own clinical
+file if one is ever wanted.
+
+For the one change that IS outstanding — Patch A, which stops a copied book
+writing into the main clinic's files — see `EMPANELLED-SETUP.md`.
 
 ---
 
