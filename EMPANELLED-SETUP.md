@@ -19,8 +19,16 @@ deployment — that part is live. Everything below is inside Apps Script.
 | K. B. Dental - Finance Sheet | `1Zdxq3Xf-e41Xak4VDcufrURLkKDAp8MvRCZadC0htUI` |
 | KB Dental — PMS Empaneled | `1yg9Umwwkxao-RUwxXuycjG7CVXjRAQUmMvMHa_l6sjo` |
 
-Patch A verified in the empanelled book on 26 Sep 2026: `reportInstanceFiles`
-resolved both clinical records and finance to `1yg9Umww…`, its own ID.
+**Done in the empanelled book, 26 Sep 2026:**
+
+- Patch A applied. `reportInstanceFiles` resolved both clinical records and
+  finance to `1yg9Umww…`, its own ID — neither flagged as the main clinic's.
+- Cleared. 7764 patient rows removed across 10 tabs; 552 rows of Masters kept.
+  The dry run and the clear agreed exactly, tab for tab.
+
+**Still to do:** Patch A in the MAIN book (nothing changes for it, but the two
+projects must not drift), and the empanelled book's own Doctors, Chairs,
+Payment Modes and Appointment Reasons — those tabs came across empty.
 
 ---
 
