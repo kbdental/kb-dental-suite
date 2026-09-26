@@ -3225,6 +3225,39 @@ function getFinanceSheetId() {
   return stored || defaultSheetId_(FINANCE_SHEET_ID_DEFAULT);
 }
 
+// READ-ONLY. Prints which files this book actually uses, by name and ID.
+// Run it from the editor after copying this project to make a new instance:
+// getClinicalSheetId and getFinanceSheetId only RETURN their answer, so running
+// those from the editor shows an empty log and tells you nothing. This says, in
+// words, whether this book is about to write into the main clinic's files.
+function reportInstanceFiles() {
+  var here = SpreadsheetApp.getActiveSpreadsheet();
+  Logger.log('This book : "%s"', here.getName());
+  Logger.log("Its id    : %s", here.getId());
+  Logger.log("Is it the main clinic's book? %s", SS_ID === MAIN_PMS_SHEET_ID ? "YES" : "no");
+  Logger.log("");
+
+  [["Clinical records", getClinicalSheetId()], ["Finance", getFinanceSheetId()]]
+    .forEach(function (pair) {
+      var name;
+      try { name = SpreadsheetApp.openById(pair[1]).getName(); }
+      catch (e) { name = "COULD NOT OPEN — " + e.message; }
+      Logger.log("%s -> %s", pair[0], name);
+      Logger.log("   id %s%s", pair[1],
+        pair[1] === MAIN_PMS_SHEET_ID || pair[1] === FINANCE_SHEET_ID_DEFAULT
+          ? "   *** THIS IS THE MAIN CLINIC'S FILE ***" : "");
+    });
+
+  Logger.log("");
+  if (SS_ID === MAIN_PMS_SHEET_ID) {
+    Logger.log("This IS the main clinic, so its own files are the right answer.");
+  } else {
+    Logger.log("This is NOT the main clinic's book, so neither line above may say");
+    Logger.log("MAIN CLINIC'S FILE. If either does, do not enter any patient or");
+    Logger.log("any receipt here until it is fixed.");
+  }
+}
+
 // DANGER, historically: this used to insertSheet() whenever a tab was missing,
 // which meant a pure READ could silently mutate the finance workbook — a typo'd
 // or renamed tab would quietly materialise as a new empty tab rather than
