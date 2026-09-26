@@ -3199,6 +3199,19 @@ function saveChatbotAppointment(p) {
 // Excel Master File's "Receipt No" sheet pulled from.
 // ════════════════════════════════════════════════════════════
 
+// A COPY OF THIS BOOK MUST NEVER FALL BACK TO THE MAIN CLINIC'S FILES.
+// This project is copied to make a new instance — the empanelled book, a new
+// branch — and a copy carries these hardcoded IDs with it. Left as plain
+// defaults they would send that instance's clinical records and its money into
+// K. B. Dental's own files, silently and with nothing on screen to show it.
+// So the hardcoded IDs below are the MAIN CLINIC'S, and apply only when this is
+// the main clinic's book. Any other book defaults to keeping its records in
+// itself, until a Script Property says otherwise.
+var MAIN_PMS_SHEET_ID = "1DtoZ3MNFq2Enr-ClAjENWFzk8SF2dYN9e1nGf7tAJC4";
+function defaultSheetId_(mainClinicFileId) {
+  return SS_ID === MAIN_PMS_SHEET_ID ? mainClinicFileId : SS_ID;
+}
+
 var FINANCE_SHEET_ID_DEFAULT = "1Zdxq3Xf-e41Xak4VDcufrURLkKDAp8MvRCZadC0htUI"; // K. B. Dental - Finance Sheet
 // The clinic keeps entering in this one, so it is the live record: today's
 // receipts, 885 expense rows, the FY tabs and the Balance Sheet all live here.
@@ -3209,7 +3222,7 @@ var FINANCE_SHEET_ID_DEFAULT = "1Zdxq3Xf-e41Xak4VDcufrURLkKDAp8MvRCZadC0htUI"; /
 // Script Properties, falling back to the hardcoded default if never changed.
 function getFinanceSheetId() {
   var stored = PropertiesService.getScriptProperties().getProperty("FINANCE_SHEET_ID");
-  return stored || FINANCE_SHEET_ID_DEFAULT;
+  return stored || defaultSheetId_(FINANCE_SHEET_ID_DEFAULT);
 }
 
 // DANGER, historically: this used to insertSheet() whenever a tab was missing,
@@ -4208,11 +4221,13 @@ function safeParseJSON(val) {
 // exactly as before, so this can be deployed before the new file exists.
 // Setting it is done by copyClinicalRecordsToNewFile below, not by hand, so the
 // app is never pointed at a file its records have not been copied into yet.
+// See defaultSheetId_ above: the main clinic keeps its records in its own PMS
+// book by default; any copy keeps them in itself, never in the main clinic's.
 var CLINICAL_SHEET_ID_DEFAULT = "1DtoZ3MNFq2Enr-ClAjENWFzk8SF2dYN9e1nGf7tAJC4";
 
 function getClinicalSheetId() {
   var stored = PropertiesService.getScriptProperties().getProperty("CLINICAL_SHEET_ID");
-  return stored || CLINICAL_SHEET_ID_DEFAULT;
+  return stored || defaultSheetId_(CLINICAL_SHEET_ID_DEFAULT);
 }
 
 // Kept for setupClinicalRecordTabs, which opens the clinical file by this name.
@@ -4268,16 +4283,19 @@ function copyClinicalRecordsToNewFile() {
     Logger.log("Set the Script Property CLINICAL_SHEET_ID_NEW to the new spreadsheet's ID first. Nothing was done.");
     return;
   }
-  if (newId === CLINICAL_SHEET_ID_DEFAULT) {
-    Logger.log("CLINICAL_SHEET_ID_NEW is this spreadsheet's own ID — it has to be a different, new file. Nothing was done.");
-    return;
-  }
+  // The switched-over case first: it is the same refusal, but it can say
+  // exactly why, and it is the one someone re-running this will hit.
   if (props.getProperty("CLINICAL_SHEET_ID") === newId) {
     Logger.log("The app already uses that spreadsheet. Refusing to copy over live records. Nothing was done.");
     return;
   }
+  if (newId === getClinicalSheetId()) {
+    Logger.log("CLINICAL_SHEET_ID_NEW is the file the records are already in — it has to be a different, new file. Nothing was done.");
+    return;
+  }
 
-  var from = SpreadsheetApp.openById(CLINICAL_SHEET_ID_DEFAULT);
+  // This book's own records — never another instance's.
+  var from = SpreadsheetApp.openById(getClinicalSheetId());
   var to = SpreadsheetApp.openById(newId);
   var copied = [], absent = [], problems = [];
 
