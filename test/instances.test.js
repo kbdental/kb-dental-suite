@@ -53,15 +53,37 @@ const state = (page) => page.evaluate(() => ({
   const explicit = await open('?clinic=main');
   eq('asking for main explicitly is the same thing', explicit.url, main.url);
 
-  // --- an unconfigured instance must REFUSE, not fall through -------------
+  // --- a configured instance loads, on its OWN backend ---------------------
   const emp = await open('?clinic=empanelled');
+  eq('the empanelled instance is itself, not main', emp.id, 'empanelled');
+  ok('it has a backend URL of its own', /script\.google\.com/.test(emp.url || ''), emp.url);
+  // The whole point of a separate book. Sharing main's deployment would put
+  // empanelled patients straight into the main clinic's sheet.
+  ok('and it is NOT the main clinic\'s backend', emp.url !== main.url, emp.url);
+  ok('it says on screen which book it is', /Empanelled/i.test(emp.title), emp.title);
+
+  // --- an instance with no backend still refuses, rather than falling through
+  // Exercised against a copy of the real page with the URL blanked, so the
+  // guard stays tested now that every shipped instance is configured.
+  const tmp = path.join(require('os').tmpdir(), 'kb-instances-unconfigured.html');
+  const unconfEmp = await (async () => {
+    fs.writeFileSync(tmp, html.replace(
+      /(empanelled: \{[\s\S]*?scriptUrl: )"[^"]*"/, '$1""'));
+    const p2 = await ctx.newPage();
+    await p2.goto('file://' + tmp + '?clinic=empanelled');
+    await p2.waitForTimeout(350);
+    const st = await state(p2);
+    await p2.close();
+    fs.unlinkSync(tmp);
+    return st;
+  })();
   ok('an instance with no backend does not load the app',
-    /not connected yet/i.test(emp.bodyText), emp.bodyText);
+    /not connected yet/i.test(unconfEmp.bodyText), unconfEmp.bodyText);
   ok('it says plainly that nothing was touched',
-    /never write into another clinic|not open/i.test(emp.bodyText), emp.bodyText);
+    /never write into another clinic|not open/i.test(unconfEmp.bodyText), unconfEmp.bodyText);
   ok('it never adopts the main clinic\'s backend URL',
-    !(emp.url && /script\.google\.com/.test(emp.url)), emp.url);
-  ok('it offers a way back', /Back to the main clinic/i.test(emp.bodyText), emp.bodyText);
+    !(unconfEmp.url && /script\.google\.com/.test(unconfEmp.url)), unconfEmp.url);
+  ok('it offers a way back', /Back to the main clinic/i.test(unconfEmp.bodyText), unconfEmp.bodyText);
 
   // --- an unknown id must refuse too, not silently become main ------------
   const bogus = await open('?clinic=doesnotexist');
@@ -91,9 +113,15 @@ const state = (page) => page.evaluate(() => ({
   // --- the source contract the above relies on ----------------------------
   ok('SCRIPT_URL comes from the selected instance, not a literal',
     /const SCRIPT_URL = \(window\.KB_INSTANCE/.test(html));
-  ok('no second hardcoded backend URL remains',
-    (html.match(/script\.google\.com\/macros/g) || []).length === 1,
-    (html.match(/script\.google\.com\/macros/g) || []).length);
+  // Every backend URL in the file must belong to an instance and be distinct;
+  // a stray literal, or two instances sharing one, means data in the wrong book.
+  const urls = html.match(/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+/g) || [];
+  const declared = Object.values(JSON.parse(JSON.stringify(
+    await (async () => { const p3 = await ctx.newPage(); await p3.goto(FILE);
+      const v = await p3.evaluate(() => window.KB_INSTANCES); await p3.close(); return v; })()
+  ))).map(i => i.scriptUrl).filter(Boolean);
+  eq('every backend URL in the file belongs to an instance', urls.length, declared.length);
+  eq('no two instances share a backend', new Set(declared).size, declared.length);
   ok('a non-main instance carries a badge for the sidebar',
     /badge: "EMPANELLED"/.test(html));
   ok('the sidebar renders that badge',
