@@ -90,6 +90,10 @@ function slice(from, to) {
 const regionB = slice('var CLINICAL_SHEETS_SHARED_TAB',
   '// ════════════════════════════════════════════════════════════\n// DAILY REGISTER');
 const regionA = slice('var CLINICAL_SHEET_ID_DEFAULT', '// ── One-time setup');
+// The copy-safe default guard, which getClinicalSheetId now goes through: a
+// copied book keeps its records in itself rather than in the main clinic's.
+// It is sliced in with the rest so this runs the real fallback, not a stub.
+const guard = slice('var MAIN_PMS_SHEET_ID', 'var FINANCE_SHEET_ID_DEFAULT');
 
 function boot() {
   const books = { [PMS]: new FakeBook(PMS), [NEW]: new FakeBook(NEW) };
@@ -109,8 +113,10 @@ function boot() {
     safeParseJSON: v => { try { return JSON.parse(v); } catch (e) { return null; } },
     safeJSON: v => (typeof v === 'string' ? v : JSON.stringify(v)),
   };
-  const names = ['SpreadsheetApp', 'PropertiesService', 'Logger', 'getSheet', 'safeParseJSON', 'safeJSON'];
-  env.api = new Function(...names, regionB + '\n' + regionA +
+  // This book IS the main clinic's here, which is what these cases are about.
+  env.SS_ID = PMS;
+  const names = ['SpreadsheetApp', 'PropertiesService', 'Logger', 'getSheet', 'safeParseJSON', 'safeJSON', 'SS_ID'];
+  env.api = new Function(...names, guard + '\n' + regionB + '\n' + regionA +
     '\nreturn { getClinicalSheetId, getClinicalSheet, copyClinicalRecordsToNewFile, clinicalTabsToCopy_,' +
     ' getClinicalSheets, saveClinicalSheets, getClinicalRecords, saveClinicalRecord, CLINICAL_SHEET_ID_DEFAULT };'
   )(...names.map(n => env[n]));
