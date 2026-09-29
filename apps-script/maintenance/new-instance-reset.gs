@@ -45,7 +45,14 @@ var PATIENT_DATA_TABS = [
   "Intra Oral Scanning", "Scaling", "Minor Surgery", "TMJoint", "Restoration",
   "Orthodontics", "Orthodontics Progress", "Denture", "Pedo", "Lab Log",
   "Patient Documents", "Consents", "Care Plan", "Treatment Plan",
-  "Patient Fee Receipt", "Receipts", "Expenses", "Signatures"
+  "Patient Fee Receipt", "Receipts", "Expenses", "Signatures",
+  // Prescriptions is patient data like any other form's tab. It was missed
+  // when this list was first written, and the empanelled book's own report
+  // is what caught it — a row would have been left behind.
+  "Prescriptions",
+  // A report about the ORIGINAL clinic's document migration. It says nothing
+  // about the new instance and only confuses whoever reads it there.
+  "Document Migration Report"
 ];
 
 // Settings and lists the clinic set up — kept, so a new book is usable at once.
@@ -55,7 +62,11 @@ var KEEP_TABS = [
   "Document Categories", "Appointment Reasons", "Clinical Note Templates",
   "Medicines Master", "Medicine Dosages", "Medicine Frequencies",
   "Medicine Durations", "Medicine Instructions", "Medicine Notes",
-  "Implant Brands"
+  "Implant Brands",
+  // The live tab is "Treatments Master"; "Treatments" above is kept in case an
+  // older book uses that name. Naming both means neither is cleared by
+  // accident — 112 rows of the clinic's treatment list sit in this one.
+  "Treatments Master", "Expense Payers"
 ];
 
 function thisBook_() {
