@@ -28,7 +28,11 @@ var CONFIRM_MASTERS = "";
 
 // The lists worth carrying into a new instance. Patient data is never here.
 var MASTER_TABS = [
-  "Doctors", "Employees", "Chairs", "Payment Modes", "Appointment Reasons",
+  // The doctors master is "Doctor Details" — Code.gs reads getDoctorDetailsList
+  // from it. "Doctors" is a separate, older tab, listed so the report shows
+  // both rather than quietly checking the wrong one.
+  "Doctor Details", "Doctors",
+  "Employees", "Chairs", "Payment Modes", "Appointment Reasons",
   "Medicine Notes", "Implant Brands",
   // Listed so the report shows them too. They normally survive the clear, so
   // they will already have rows here and will be left alone.
@@ -37,6 +41,10 @@ var MASTER_TABS = [
   "Medicine Durations", "Medicine Instructions",
   "Expense Categories", "Expense Payers", "Document Categories"
 ];
+
+// Lists the app supplies a built-in default for, so empty is not a fault and
+// nothing needs copying. Noted in the report to save a wild goose chase.
+var FALLBACK_WHEN_EMPTY = { "Chairs": "Chair 1-4" };
 
 // Deliberately NOT copied. This is the new instance's own identity, and
 // overwriting it would put K. B. Dental's letterhead on empanelled paperwork.
@@ -68,7 +76,7 @@ function reportMastersGap() {
     var a = rows_(mine), b = rows_(theirs);
     var note = "";
     if (!theirs) note = "   not in main — nothing to copy";
-    else if (!b) note = "   empty in main too";
+    else if (!b) note = "   empty in main too" + (FALLBACK_WHEN_EMPTY[name] ? " — the app falls back to " + FALLBACK_WHEN_EMPTY[name] : "");
     else if (a > 0) note = "   already filled here, left alone";
     else { note = "   WOULD COPY " + b + " row(s)"; would.push(name); }
     Logger.log("%s  %s  %s%s", pad_(name, 26), pad_(String(a), 8), pad_(String(b), 7), note);

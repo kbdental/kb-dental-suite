@@ -86,6 +86,25 @@ const clearedCopy = () => new Book(COPY, 'KB Dental — PMS Empaneled', {
   'Treatments Master': [hdr, ['Scaling', 1]],        // already filled
 });
 
+// --- the tab names must be the ones Code.gs actually reads -----------------
+// "Doctors" instead of "Doctor Details" is not a harmless near-miss: the
+// report would say a list is fine while the one the app reads stays empty.
+// This is the same fault that let "Treatments" pass for "Treatments Master".
+{
+  const CODE = fs.readFileSync(path.join(__dirname, '..', 'apps-script/out/Code.gs'), 'utf8');
+  const listed = (GS.match(/var MASTER_TABS = \[([\s\S]*?)\];/)[1].match(/"([^"]+)"/g) || [])
+    .map(s => s.slice(1, -1));
+  // Some tabs are opened through a constant rather than a literal, so match the
+  // quoted name anywhere. "Expense Payers" belongs to Receipt.gs, which is not
+  // in this repo, and is confirmed present in both live books by the gap report.
+  const ELSEWHERE = ['Expense Payers'];
+  const unknown = listed.filter(n =>
+    ELSEWHERE.indexOf(n) < 0 && CODE.indexOf('"' + n + '"') < 0);
+  eq('every list named here is a tab Code.gs actually reads', unknown, []);
+  ok('the doctors master is Doctor Details, the tab getDoctorDetailsList reads',
+    listed.indexOf('Doctor Details') >= 0, listed);
+}
+
 // --- the dry run reports without changing anything -------------------------
 {
   const e = boot(clearedCopy());
