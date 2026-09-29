@@ -129,16 +129,34 @@ const LOWER_T = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38]
 // Whichever instance was selected above. Every api() call goes here, so an
 // instance can only ever read and write its own book.
 const SCRIPT_URL = (window.KB_INSTANCE && window.KB_INSTANCE.scriptUrl) || "";
+// Browser storage is per-ORIGIN, and every instance is served from the same
+// URL — only the ?clinic= query string differs. So a bare key like
+// "kbdc_doctors" is one box shared by every instance on that machine, and
+// editing the doctor list in the empanelled app would silently change the
+// main clinic's. Each instance gets its own key instead.
+//
+// Main keeps the original unprefixed key, so nothing saved on a front-desk
+// machine before this change is lost.
+// Every key in this app starts "kbdc_". For a non-main instance the instance
+// id is inserted after that prefix, so "kbdc_master_unlocked" becomes
+// "kbdc_empanelled_master_unlocked". Main is left exactly as it was, so
+// nothing already saved on a front-desk machine is lost.
+function scopedKey(fullKey) {
+  var id = window.KB_INSTANCE_ID;
+  if (!id || id === "main") return fullKey;
+  return String(fullKey).replace(/^kbdc_/, "kbdc_" + id + "_");
+}
+function lsKey(name) { return scopedKey("kbdc_" + name); }
 const DEFAULT_DOCTORS = ["Dr. Viveyk Mittel", "Dr. Manika Mittel"];
 function getDoctors() {
   try {
-    const s = localStorage.getItem("kbdc_doctors");
+    const s = localStorage.getItem(lsKey("doctors"));
     if (s) { const arr = JSON.parse(s); if (Array.isArray(arr) && arr.length) return arr; }
   } catch(e) {}
   return [...DEFAULT_DOCTORS];
 }
 function saveDoctorsLS(arr) {
-  try { localStorage.setItem("kbdc_doctors", JSON.stringify(arr)); } catch(e) {}
+  try { localStorage.setItem(lsKey("doctors"), JSON.stringify(arr)); } catch(e) {}
 }
 // Wall-clock "HH:MM" from the machine making the entry. Times are taken here
 // rather than server-side because Apps Script stamps in the script project's
@@ -209,8 +227,8 @@ function downloadBlobUrl(url, fileName) {
 // browser session, and attached to every call. Nothing reusable is baked into
 // the page source, so having the /exec URL alone doesn't grant data access.
 const KB_TOKEN_KEY = "kbdc_session_token";
-function getSessionToken() { try { return sessionStorage.getItem(KB_TOKEN_KEY) || ""; } catch (e) { return ""; } }
-function setSessionToken(t) { try { t ? sessionStorage.setItem(KB_TOKEN_KEY, t) : sessionStorage.removeItem(KB_TOKEN_KEY); } catch (e) {} }
+function getSessionToken() { try { return sessionStorage.getItem(scopedKey(KB_TOKEN_KEY)) || ""; } catch (e) { return ""; } }
+function setSessionToken(t) { try { t ? sessionStorage.setItem(scopedKey(KB_TOKEN_KEY), t) : sessionStorage.removeItem(scopedKey(KB_TOKEN_KEY)); } catch (e) {} }
 
 // Lets any API call signal the app to drop back to the login screen when the
 // backend reports the session is missing or expired.
@@ -23147,7 +23165,7 @@ function MasterPasswordChanger() {
     setSaving(false);
     if (res.success) {
       setMsg("✅ Password updated."); setPwSet(true); setNewPw("");
-      sessionStorage.removeItem("kbdc_master_unlocked");
+      sessionStorage.removeItem(scopedKey("kbdc_master_unlocked"));
     } else setMsg("❌ " + (res.error || "Failed to save"));
   };
 
@@ -25469,7 +25487,7 @@ function FinanceProfitLossTab() {
 // for Reports, verifyReportsPassword accepts either of the two people's
 // passwords independently (an OR, not requiring both at once).
 function SimplePasswordGate({ verifyAction, sessionKey, message, children }) {
-  const [unlocked, setUnlocked] = React.useState(() => sessionStorage.getItem(sessionKey) === "1");
+  const [unlocked, setUnlocked] = React.useState(() => sessionStorage.getItem(scopedKey(sessionKey)) === "1");
   const [pw, setPw] = React.useState("");
   const [checking, setChecking] = React.useState(false);
   const [err, setErr] = React.useState("");
@@ -25478,7 +25496,7 @@ function SimplePasswordGate({ verifyAction, sessionKey, message, children }) {
     setChecking(true); setErr("");
     const res = await api(verifyAction, { password: pw });
     setChecking(false);
-    if (res.success && res.correct) { sessionStorage.setItem(sessionKey, "1"); setUnlocked(true); }
+    if (res.success && res.correct) { sessionStorage.setItem(scopedKey(sessionKey), "1"); setUnlocked(true); }
     else setErr("❌ Incorrect password");
   };
 
@@ -25565,8 +25583,8 @@ function FinanceSettingsSubTab() {
     if (res.success) {
       setPwMsg("✅ Password updated.");
       setPwSet(true); setNewPw("");
-      sessionStorage.removeItem("kbdc_fin_unlocked_receipt");
-      sessionStorage.removeItem("kbdc_fin_unlocked_pnl");
+      sessionStorage.removeItem(scopedKey("kbdc_fin_unlocked_receipt"));
+      sessionStorage.removeItem(scopedKey("kbdc_fin_unlocked_pnl"));
     } else setPwMsg("❌ " + (res.error || "Failed to save"));
   };
 
@@ -25631,7 +25649,7 @@ function ReportsPasswordChanger() {
     if (res.success) {
       setMsg(m => ({ ...m, [slot]:"✅ Updated." })); setStatus(s => ({ ...s, [slot]:true }));
       setPw(p => ({ ...p, [slot]:"" }));
-      sessionStorage.removeItem("kbdc_reports_unlocked");
+      sessionStorage.removeItem(scopedKey("kbdc_reports_unlocked"));
     } else setMsg(m => ({ ...m, [slot]:"❌ " + (res.error || "Failed to save") }));
   };
 
