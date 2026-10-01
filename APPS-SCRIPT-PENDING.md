@@ -73,6 +73,19 @@ take rather than eighteen. Nothing else about it changes.
 
 ---
 
+## Everything below is already live — kept for reference only
+
+The clinical-records move described from here down was **already done**.
+Confirmed in the main book on 26 Sep 2026: `reportInstanceFiles` resolved
+clinical records to "KB Dental — Clinical Records"
+(`1g3t7vbpOKcVEkYdTIsge4u2e8LKC12m71AY51Ps6NlU`), not to the PMS book, and
+`getClinicalSheetId` only answers that when `CLINICAL_SHEET_ID` is set. The
+UHID fix, the Clinical Sheets split and Implant Brands were confirmed live
+earlier.
+
+Do not run any of it again. It is kept for what the change was, how to undo
+it, and because the same steps give a future instance its own clinical file.
+
 ## What this does
 
 Today every clinical form's records — RCT, Crown & Bridge, both implant
