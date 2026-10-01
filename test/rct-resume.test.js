@@ -87,7 +87,8 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
 
   // Pull out what visit 1 actually saved, the same way the parent would read
   // it back from the sheet, and hand it to the fresh page as the existing record.
-  const savedEntries = await page.evaluate(() => JSON.parse(localStorage.getItem('kb_rct_sheet') || '{}').entries);
+  const savedEntries = await page.evaluate(() => (() => { const k = Object.keys(localStorage).find(k => k.indexOf('kb_rct_sheet_') === 0);
+      return k ? JSON.parse(localStorage.getItem(k) || '{}') : {}; })().entries);
   eq('visit 1 saved exactly one entry, for tooth 36', savedEntries && savedEntries.map(e => e.tooth), ['36']);
 
   await page2.evaluate((rec) => {

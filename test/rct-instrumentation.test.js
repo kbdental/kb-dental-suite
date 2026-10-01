@@ -116,7 +116,8 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
   await page.waitForTimeout(150);
 
   const collected = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem('kb_rct_sheet') || '{}').entries[0]);
+    (() => { const k = Object.keys(localStorage).find(k => k.indexOf('kb_rct_sheet_') === 0);
+      return k ? JSON.parse(localStorage.getItem(k) || '{}') : {}; })().entries[0]);
   eq('printed record: rctType included', collected.rctType, 'Re-RCT');
   eq('printed record: instrument type folded into instr', /Rotary NiTi/.test(collected.instr), true);
   eq('printed record: instrument text folded into instr', /Instrument: 25\/\.06 rotary/.test(collected.instr), true);
