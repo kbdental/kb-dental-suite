@@ -1,28 +1,75 @@
-# Apps Script — nothing pending
+# Apps Script — one change waiting: several reads in one request
 
-**Everything this file used to list is live.** Confirmed in the main book on
-26 Sep 2026 by running `reportInstanceFiles`:
+## What it fixes
 
+"Refresh is very slow." Every list the app asks for is its own HTTPS request
+to Apps Script, which charges about a second of start-up each and limits how
+many run at once for one user. The Master page asks for eighteen, so they
+queue. This runs them inside a single invocation.
+
+**The app already works without this.** `apiBatch` falls back to the
+individual calls when the backend has not been redeployed, so nothing is
+broken while this waits — it is just as slow as before until it is done.
+
+## Paste it
+
+**Ctrl+F for `function route(p) {`** and paste this block **immediately
+above** that line:
+
+```javascript
+// Every api() call from the browser is its own HTTPS request, and Apps Script
+// charges roughly a second of start-up for each one as well as limiting how
+// many run at once for a single user. The Master page asks for eighteen lists,
+// so they queued and took far longer to appear than the amount of data
+// warranted. This runs them inside one invocation.
+//
+// It re-enters route() per action rather than special-casing anything, so each
+// action keeps its own auth check and its own behaviour. One action failing is
+// reported against that action and does not spoil the rest.
+var BATCH_MAX = 25;
+function batchRead_(p) {
+  var names = [];
+  try { names = JSON.parse(p.actions || "[]"); } catch (e) { names = []; }
+  if (!names.length) return { success: false, error: "batch: no actions given" };
+  if (names.length > BATCH_MAX) {
+    return { success: false, error: "batch: at most " + BATCH_MAX + " actions, got " + names.length };
+  }
+  var out = {};
+  for (var i = 0; i < names.length; i++) {
+    var name = String(names[i] || "").trim();
+    // No batch inside a batch — it buys nothing and makes the depth unbounded.
+    if (!name || name === "batch") { out[name || "?"] = { success: false, error: "batch: not allowed" }; continue; }
+    // Reads only. A half-applied batch of writes is a worse problem than a
+    // slow page, and nothing this is for needs to write.
+    if (name.indexOf("get") !== 0) { out[name] = { success: false, error: "batch: reads only" }; continue; }
+    try {
+      out[name] = route({ action: name, token: p.token });
+    } catch (err) {
+      out[name] = { success: false, error: String((err && err.message) || err) };
+    }
+  }
+  return { success: true, results: out };
+}
 ```
-This book : "K. B. DENTAL SUITE - PMS"
-Is it the main clinic's book? YES
 
-Clinical records -> KB Dental — Clinical Records
-   id 1g3t7vbpOKcVEkYdTIsge4u2e8LKC12m71AY51Ps6NlU
-Finance -> K. B. Dental - Finance Sheet
+Then **Ctrl+F for `case "staffLogin":`** and add this line immediately above it:
+
+```javascript
+      case "batch":       return batchRead_(p);
 ```
 
-`getClinicalSheetId` returning the Clinical Records file rather than the PMS
-book means `CLINICAL_SHEET_ID` is set — so **Part 2 below has already been
-run**, and the records already live in their own spreadsheet. The UHID fix,
-the Clinical Sheets split and Implant Brands were confirmed live earlier.
+## Deploy
 
-Nothing in this file needs doing. It is kept for what the change was and how
-to undo it, and because the same steps make a new instance's own clinical
-file if one is ever wanted.
+**Ctrl+S**, then **Deploy -> Manage deployments -> pencil -> Version: New
+version -> Deploy.** Saving alone does nothing.
 
-For the one change that IS outstanding — Patch A, which stops a copied book
-writing into the main clinic's files — see `EMPANELLED-SETUP.md`.
+**Do it in both books** — main and the empanelled one — so the two projects
+stay identical.
+
+## How to tell it worked
+
+Open the Master page. It should appear in roughly the time one list used to
+take rather than eighteen. Nothing else about it changes.
 
 ---
 
