@@ -423,6 +423,40 @@ function staffLogout(p) {
   return { success: true };
 }
 
+// Every api() call from the browser is its own HTTPS request, and Apps Script
+// charges roughly a second of start-up for each one as well as limiting how
+// many run at once for a single user. The Master page asks for eighteen lists,
+// so they queued and took far longer to appear than the amount of data
+// warranted. This runs them inside one invocation.
+//
+// It re-enters route() per action rather than special-casing anything, so each
+// action keeps its own auth check and its own behaviour. One action failing is
+// reported against that action and does not spoil the rest.
+var BATCH_MAX = 25;
+function batchRead_(p) {
+  var names = [];
+  try { names = JSON.parse(p.actions || "[]"); } catch (e) { names = []; }
+  if (!names.length) return { success: false, error: "batch: no actions given" };
+  if (names.length > BATCH_MAX) {
+    return { success: false, error: "batch: at most " + BATCH_MAX + " actions, got " + names.length };
+  }
+  var out = {};
+  for (var i = 0; i < names.length; i++) {
+    var name = String(names[i] || "").trim();
+    // No batch inside a batch — it buys nothing and makes the depth unbounded.
+    if (!name || name === "batch") { out[name || "?"] = { success: false, error: "batch: not allowed" }; continue; }
+    // Reads only. A half-applied batch of writes is a worse problem than a
+    // slow page, and nothing this is for needs to write.
+    if (name.indexOf("get") !== 0) { out[name] = { success: false, error: "batch: reads only" }; continue; }
+    try {
+      out[name] = route({ action: name, token: p.token });
+    } catch (err) {
+      out[name] = { success: false, error: String((err && err.message) || err) };
+    }
+  }
+  return { success: true, results: out };
+}
+
 function route(p) {
   try {
     // Patient documents (X-rays, scans, reports) ALWAYS require a valid session,
@@ -441,6 +475,9 @@ function route(p) {
     }
 
     switch (p.action) {
+
+      // ── Several reads in one round trip ────────────────────
+      case "batch":       return batchRead_(p);
 
       // ── Auth ───────────────────────────────────────────────
       case "staffLogin":  return staffLogin(p);

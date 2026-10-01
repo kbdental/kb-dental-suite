@@ -261,6 +261,21 @@ async function api(action, data = {}) {
     };
   }
 }
+// Several reads in ONE round trip. Each api() call is its own HTTPS request to
+// Apps Script, which charges about a second of start-up apiece and limits how
+// many run at once for one user — so asking for eighteen lists in parallel
+// queued them up and was the main reason a refresh felt slow.
+//
+// If the backend has not been redeployed with the batch action yet, this falls
+// back to the individual calls, so the page keeps working exactly as before
+// rather than breaking in the window between this shipping and that deploy.
+async function apiBatch(actions) {
+  const res = await api("batch", { actions: JSON.stringify(actions) });
+  if (res && res.success && res.results) {
+    return actions.map(a => res.results[a] || { success: false, error: "missing from batch" });
+  }
+  return Promise.all(actions.map(a => api(a)));
+}
 // Large payloads (file uploads as base64) would blow past URL length limits
 // as a GET query string like api() uses, so this posts a JSON body instead —
 // the backend's doPost already parses that the same way as GET params.
@@ -11554,6 +11569,19 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
     if (res.success) {
       const matched = matchClinicalFormPrompt(nProcedureDone);
       if (matched) setFormPrompt({ label: matched, patient: nPat });
+      // The row IS saved by this point. What follows is two more round trips
+      // to Apps Script before the table can redraw, and each one takes about
+      // as long as the save did — which reads at the front desk as the entry
+      // not having saved at all. So show it from what was just typed, using
+      // the same field names getDailyRegister returns, and let loadEntries
+      // replace it with the server's own copy a moment later.
+      setEntries(prev => [{
+        date: nDate, uhid: nPat.uhid, patientName: nPat.name, phoneNo: nPhone, age: nAge,
+        procedureDone: nProcedureDone, toothNo: nToothNo, workDone: nWorkDone,
+        operatingDoctor: nDoctor, modeOfPayment: nPayMode,
+        timeWalkIn: nWalkIn, consultationTime: nConsult, tat: tatBetween(nWalkIn, nConsult),
+        initialAssessment: nInitialAssessment, carePlanDocumented: nCarePlanDocumented
+      }, ...(Array.isArray(prev) ? prev : [])]);
       setShowAdd(false); resetAddForm(); loadEntries(); loadApptTimes();
     }
     else alert("Save error: " + (res.error || "Unknown"));
@@ -23525,14 +23553,16 @@ function Master() {
 
   React.useEffect(() => {
     setLoading(true);
-    Promise.all([
-      api("getTreatmentsMaster"), api("getDoctorDetailsList"), api("getEmployeesList"),
-      api("getExpenseCategoriesList"), api("getPaymentModesList"), api("getClinicalNoteTemplates"),
-      api("getChairsList"), api("getMedicinesMaster"),
-      api("getMedicineDosagesList"), api("getMedicineFrequenciesList"), api("getMedicineDurationsList"),
-      api("getMedicineInstructionsList"), api("getMedicineNotesList"), api("getReasonsList"),
-      api("getClinicProfile"), api("getDocumentCategoriesList"), api("getProcedureLibrary"),
-      api("getImplantBrandsList")
+    // Eighteen lists, one request. The order here is what the callback
+    // destructures, so the two must be changed together.
+    apiBatch([
+      "getTreatmentsMaster", "getDoctorDetailsList", "getEmployeesList",
+      "getExpenseCategoriesList", "getPaymentModesList", "getClinicalNoteTemplates",
+      "getChairsList", "getMedicinesMaster",
+      "getMedicineDosagesList", "getMedicineFrequenciesList", "getMedicineDurationsList",
+      "getMedicineInstructionsList", "getMedicineNotesList", "getReasonsList",
+      "getClinicProfile", "getDocumentCategoriesList", "getProcedureLibrary",
+      "getImplantBrandsList"
     ]).then(([t,d,e,c,m,tpl,ch,med,dos,freq,dur,instr,mn,ar,cp,dc,pl,ib]) => {
       setLoading(false);
       if (t.success) setTreatments(t.treatments || []);
@@ -24707,7 +24737,12 @@ function AddReceiptForm({ globalPat, onSaved }) {
     if (res.success) {
       setMsg("✅ Saved!");
       setService(""); setServiceOther(""); setMode1(""); setAmount1(""); setSplitPayment(false); setMode2(""); setAmount2(""); setRemarks(""); setDate(today);
-      setTimeout(() => { setMsg(""); if (onSaved) onSaved(); }, 1200);
+      // Refresh straight away. This used to wait 1.2s before even starting,
+      // and the reload itself is another round trip on top — so a payment
+      // that had already saved took several seconds to appear. The tick stays
+      // up for its 1.2s either way; only the waiting is gone.
+      if (onSaved) onSaved();
+      setTimeout(() => setMsg(""), 1200);
     } else setMsg("❌ " + (res.error || "Save failed"));
   };
 
