@@ -1,75 +1,13 @@
-# Apps Script — one change waiting: several reads in one request
+# Apps Script — nothing pending
 
-## What it fixes
+**Everything this file describes is live.** The batch read was pasted and
+deployed in both books on 1 Oct 2026 — K. B. DENTAL SUITE - PMS and KB Dental
+— PMS Empaneled. Before it, the Master page made eighteen separate requests
+to Apps Script, each paying about a second of start-up; now it makes one.
 
-"Refresh is very slow." Every list the app asks for is its own HTTPS request
-to Apps Script, which charges about a second of start-up each and limits how
-many run at once for one user. The Master page asks for eighteen, so they
-queue. This runs them inside a single invocation.
-
-**The app already works without this.** `apiBatch` falls back to the
-individual calls when the backend has not been redeployed, so nothing is
-broken while this waits — it is just as slow as before until it is done.
-
-## Paste it
-
-**Ctrl+F for `function route(p) {`** and paste this block **immediately
-above** that line:
-
-```javascript
-// Every api() call from the browser is its own HTTPS request, and Apps Script
-// charges roughly a second of start-up for each one as well as limiting how
-// many run at once for a single user. The Master page asks for eighteen lists,
-// so they queued and took far longer to appear than the amount of data
-// warranted. This runs them inside one invocation.
-//
-// It re-enters route() per action rather than special-casing anything, so each
-// action keeps its own auth check and its own behaviour. One action failing is
-// reported against that action and does not spoil the rest.
-var BATCH_MAX = 25;
-function batchRead_(p) {
-  var names = [];
-  try { names = JSON.parse(p.actions || "[]"); } catch (e) { names = []; }
-  if (!names.length) return { success: false, error: "batch: no actions given" };
-  if (names.length > BATCH_MAX) {
-    return { success: false, error: "batch: at most " + BATCH_MAX + " actions, got " + names.length };
-  }
-  var out = {};
-  for (var i = 0; i < names.length; i++) {
-    var name = String(names[i] || "").trim();
-    // No batch inside a batch — it buys nothing and makes the depth unbounded.
-    if (!name || name === "batch") { out[name || "?"] = { success: false, error: "batch: not allowed" }; continue; }
-    // Reads only. A half-applied batch of writes is a worse problem than a
-    // slow page, and nothing this is for needs to write.
-    if (name.indexOf("get") !== 0) { out[name] = { success: false, error: "batch: reads only" }; continue; }
-    try {
-      out[name] = route({ action: name, token: p.token });
-    } catch (err) {
-      out[name] = { success: false, error: String((err && err.message) || err) };
-    }
-  }
-  return { success: true, results: out };
-}
-```
-
-Then **Ctrl+F for `case "staffLogin":`** and add this line immediately above it:
-
-```javascript
-      case "batch":       return batchRead_(p);
-```
-
-## Deploy
-
-**Ctrl+S**, then **Deploy -> Manage deployments -> pencil -> Version: New
-version -> Deploy.** Saving alone does nothing.
-
-**Do it in both books** — main and the empanelled one — so the two projects
-stay identical.
-
-## How to tell it worked
-
-Open the Master page. It should appear in roughly the time one list used to
-take rather than eighteen. Nothing else about it changes.
+Nothing in this file needs doing. It is kept for what the changes were, how
+to undo them, and because the same steps give a future instance its own
+clinical file.
 
 ---
 
