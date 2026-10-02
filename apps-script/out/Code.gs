@@ -617,6 +617,8 @@ function route(p) {
       case "saveEmployeesList":        return saveEmployeesList(p);
       case "getPaymentModesList":      return getPaymentModesList();
       case "savePaymentModesList":     return savePaymentModesList(p);
+      case "getPanelsList":            return getPanelsList();
+      case "savePanelsList":           return savePanelsList(p);
       case "getChairsList":            return getChairsList();
       case "saveChairsList":           return saveChairsList(p);
       case "getClinicalNoteTemplates":  return getClinicalNoteTemplates();
@@ -4132,6 +4134,29 @@ function savePaymentModesList(p) {
 // Chairs list — synced via Google Sheet (not localStorage) so a chair added
 // on one front-desk computer is immediately visible on every other computer,
 // matching the same multi-computer requirement as the rest of the app.
+// The panels the clinic is empanelled with — CGHS, DGHS, BSES, DJB, MCD,
+// Delhi Police and whatever comes next. Kept as a list the clinic edits in
+// Master rather than in code, because a new panel is a commercial
+// arrangement, not a software change: adding one should not need a developer,
+// a deployment, or a wait.
+function getPanelsList() {
+  var sh = getSheet("Panels");
+  var data = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < data.length; i++) { if (data[i][0]) items.push(String(data[i][0]).trim()); }
+  return { success: true, panels: items };
+}
+function savePanelsList(p) {
+  var sh = getSheet("Panels");
+  sh.clearContents();
+  sh.appendRow(["Panel", "Updated At"]);
+  var arr = [];
+  try { arr = JSON.parse(p.panels); } catch (e) { if (Array.isArray(p.panels)) arr = p.panels; }
+  var now = new Date().toISOString();
+  arr.forEach(function (m) { if (String(m || "").trim()) sh.appendRow([String(m).trim(), now]); });
+  return { success: true };
+}
+
 function getChairsList() {
   var sh = getSheet("Chairs");
   var data = sh.getDataRange().getValues();

@@ -302,6 +302,9 @@ const GOVTIDS = ["Aadhaar", "PAN", "Driving Licence", "Passport", "Voter ID"];
 const PAIN_C = ["#22c55e", "#4ade80", "#86efac", "#fde047", "#fbbf24", "#fb923c", "#f97316", "#ef4444", "#dc2626", "#b91c1c", "#7f1d1d"];
 const PAIN_L = ["No Pain", "Very Mild", "Discomforting", "Tolerable", "Distressing", "Very Distressing", "Intense", "Very Intense", "Utterly Horrible", "Excruciating", "Unimaginable"];
 const REG_STEPS = ["Pending", "Personal", "Medical", "Dental", "Pain", "Consent", "Done"];
+// Fallback only. The live list comes from Master (the "Panels" tab), so the
+// clinic adds a new panel itself. These are the ones empanelled as at Oct 2026.
+const DEFAULT_PANELS = ["CGHS", "DGHS", "BSES", "DJB", "MCD", "Delhi Police"];
 const PHASES = ["Phase 1", "Phase 2", "Phase 3", "Special", "Elective", "Phase 4"];
 const PHASE_DESC = {
   "Phase 1": "Urgent / Priority",
@@ -1484,6 +1487,20 @@ function Registration({
   // haven't sat with the iPad yet. Name + DOB + mobile + complaint is enough
   // to open a record; the rest of the form is completed later via the patient
   // link (register.html?uhid=...), which updates the same UHID row.
+  // Normal or panel is the FIRST thing asked, before any detail, because it
+  // decides which book the registration is written to and which form follows.
+  // Asking it later would mean re-routing a record that had already been saved.
+  const [patientType, setPatientType] = useState("");
+  const [panel, setPanel] = useState("");
+  // Edited by the clinic in Master. The built-in list is only a fallback for a
+  // backend that has not been redeployed yet — a new panel is a commercial
+  // arrangement, not a software change, so it must never need a developer.
+  const [panels, setPanels] = useState(DEFAULT_PANELS);
+  useEffect(() => {
+    api("getPanelsList").then(res => {
+      if (res && res.success && (res.panels || []).length) setPanels(res.panels);
+    });
+  }, []);
   const [q, setQ] = useState({ name: "", dob: "", mobile: "", complaint: "" });
   const [qErrors, setQErrors] = useState({});
   const [qBusy, setQBusy] = useState(false);
@@ -1942,9 +1959,79 @@ function Registration({
       style: { marginTop: 6, padding: "10px 24px", fontSize: 13, background: qBusy ? "#9ac" : T, color: "#fff", border: "none", borderRadius: 7, cursor: qBusy ? "wait" : "pointer", fontWeight: 700 }
     }, qBusy ? "Working..." : "Generate UHID →")
   );
+  const bigChoice = (title, sub, onClick, accent) => ceQ("button", {
+    onClick, style: {
+      flex: "1 1 220px", textAlign: "left", cursor: "pointer", background: "#fff",
+      border: "1.5px solid " + accent, borderRadius: 12, padding: "20px 22px",
+      fontFamily: "inherit"
+    }
+  },
+    ceQ("div", { style: { fontSize: 17, fontWeight: 800, color: accent, marginBottom: 6 } }, title),
+    ceQ("div", { style: { fontSize: 12.5, color: "#555", lineHeight: 1.5 } }, sub));
+
+  // SCREEN 1 — which kind of patient. Nothing is typed and nothing is saved
+  // until this is answered, so a record can never be written to the wrong book.
+  if (step === 0 && !patientType) return ceQ("div", null,
+    ceQ(ClinicHeader, null), ceQ(StepBar, { cur: 0 }),
+    ceQ("div", { style: { border: `1px solid ${BORDER}`, borderRadius: 10, padding: "18px 20px", background: "#fff" } },
+      ceQ(Sec, { t: "New Registration" }),
+      ceQ("div", { style: { fontSize: 12.5, color: "#666", marginBottom: 16 } },
+        "Is this patient paying themselves, or are they covered by a panel?"),
+      ceQ("div", { style: { display: "flex", flexWrap: "wrap", gap: 14 } },
+        bigChoice("Normal Patient", "Pays directly. Name, date of birth, mobile and chief complaint are enough to issue a UHID.",
+          () => setPatientType("normal"), T),
+        bigChoice("Panel Patient", "Covered by CGHS, DGHS, BSES and the rest. The panel is chosen next, and the registration goes to the panel book.",
+          () => setPatientType("panel"), "#7C3AED"))));
+
+  // SCREEN 2 — which panel. From Master, so the clinic adds its own.
+  if (step === 0 && patientType === "panel" && !panel) return ceQ("div", null,
+    ceQ(ClinicHeader, null), ceQ(StepBar, { cur: 0 }),
+    ceQ("div", { style: { border: "1px solid #7C3AED", borderRadius: 10, padding: "18px 20px", background: "#fff" } },
+      ceQ(Sec, { t: "Which panel?" }),
+      ceQ("div", { style: { fontSize: 12.5, color: "#666", marginBottom: 16 } },
+        "The panel decides the fields that follow and the claim paperwork. Panels are edited in Master \u2014 Panels."),
+      ceQ("div", { style: { display: "flex", flexWrap: "wrap", gap: 10 } },
+        panels.map(name => ceQ("button", {
+          key: name, onClick: () => setPanel(name),
+          style: { padding: "12px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer",
+            background: "#fff", color: "#7C3AED", border: "1.5px solid #7C3AED", borderRadius: 9, fontFamily: "inherit" }
+        }, name))),
+      !panels.length && ceQ("div", { style: { fontSize: 12.5, color: "#b45309" } },
+        "No panels are set up yet. Add them in Master \u2014 Panels."),
+      ceQ("button", {
+        onClick: () => setPatientType(""),
+        style: { marginTop: 18, padding: "8px 18px", fontSize: 13, background: "transparent", color: "#555", border: `1px solid ${BORDER}`, borderRadius: 7, cursor: "pointer" }
+      }, "\u2190 Back")));
+
+  // SCREEN 3 — the panel registration form, still being built. It deliberately
+  // stops here rather than falling through to the normal form: that form saves
+  // to the main book, so a panel patient would be written to the wrong one and
+  // would have to be found and moved afterwards.
+  if (step === 0 && patientType === "panel" && panel) return ceQ("div", null,
+    ceQ(ClinicHeader, null), ceQ(StepBar, { cur: 0 }),
+    ceQ("div", { style: { border: "1px solid #f59e0b", background: "#fffbeb", borderRadius: 10, padding: "18px 20px" } },
+      ceQ("div", { style: { fontSize: 15, fontWeight: 800, color: "#92400e", marginBottom: 8 } },
+        panel + " \u2014 registration form is not ready yet"),
+      ceQ("div", { style: { fontSize: 12.5, color: "#78350f", lineHeight: 1.6, marginBottom: 14 } },
+        "The panel and the book it writes to are set up, but the fields this panel needs are still being added. ",
+        "Nothing has been saved. Register this patient as Normal for now if they must be seen today, and the record can be moved once this form is in."),
+      ceQ("button", {
+        onClick: () => setPanel(""),
+        style: { padding: "8px 18px", fontSize: 13, background: "#fff", color: "#92400e", border: "1px solid #f59e0b", borderRadius: 7, cursor: "pointer", marginRight: 8 }
+      }, "\u2190 Choose a different panel"),
+      ceQ("button", {
+        onClick: () => { setPatientType("normal"); setPanel(""); },
+        style: { padding: "8px 18px", fontSize: 13, background: "transparent", color: "#555", border: `1px solid ${BORDER}`, borderRadius: 7, cursor: "pointer" }
+      }, "Register as Normal instead")));
+
   if (step === 0) return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(ClinicHeader, null), /*#__PURE__*/React.createElement(StepBar, {
     cur: 0
-  }), quickCard, apiMsg && /*#__PURE__*/React.createElement("div", {
+  }), patientType === "normal" && ceQ("div", {
+    style: { fontSize: 12, color: "#555", marginBottom: 10, display: "flex", gap: 10, alignItems: "center" }
+  }, ceQ("span", null, "Normal patient"), ceQ("button", {
+    onClick: () => { setPatientType(""); setPanel(""); },
+    style: { padding: "3px 10px", fontSize: 11.5, background: "transparent", color: T, border: `1px solid ${BORDER}`, borderRadius: 6, cursor: "pointer" }
+  }, "change")), quickCard, apiMsg && /*#__PURE__*/React.createElement("div", {
     style: {
       background: TL,
       border: `1px solid ${TM}`,
@@ -23262,6 +23349,7 @@ const MASTER_STRUCTURE = [
     { id:"medNotes",        label:"Post op instructions" }
   ]},
   { id:"accounts", label:"Accounts", subtabs:[
+    { id:"panels",       label:"Panels" },
     { id:"modes",        label:"Payment Modes" },
     { id:"expenses",     label:"Expense Categories" },
     { id:"accountHeads", label:"Account Heads", placeholder:true },
@@ -23629,6 +23717,7 @@ function Master() {
   const [apptReasons, setApptReasons] = React.useState([]);
   const [docCategories, setDocCategories] = React.useState([]);
   const [implantBrands, setImplantBrands] = React.useState([]);
+  const [panels, setPanels] = React.useState([]);
   const [procedureLibrary, setProcedureLibrary] = React.useState([]);
   const [procedureFamilies, setProcedureFamilies] = React.useState([]);
   const [clinicProfile, setClinicProfile] = React.useState(window.CLINIC || {});
@@ -23646,13 +23735,16 @@ function Master() {
       "getMedicineDosagesList", "getMedicineFrequenciesList", "getMedicineDurationsList",
       "getMedicineInstructionsList", "getMedicineNotesList", "getReasonsList",
       "getClinicProfile", "getDocumentCategoriesList", "getProcedureLibrary",
-      "getImplantBrandsList"
-    ]).then(([t,d,e,c,m,tpl,ch,med,dos,freq,dur,instr,mn,ar,cp,dc,pl,ib]) => {
+      "getImplantBrandsList", "getPanelsList"
+    ]).then(([t,d,e,c,m,tpl,ch,med,dos,freq,dur,instr,mn,ar,cp,dc,pl,ib,pnl]) => {
       setLoading(false);
       if (t.success) setTreatments(t.treatments || []);
       // An older backend without this list simply leaves it empty, and the
       // form keeps using its built-in brands until the list is filled in.
       if (ib && ib.success) setImplantBrands(ib.brands || []);
+      // A backend without this list leaves it empty, and Registration falls
+      // back to its built-in panels until the list is filled in here.
+      if (pnl && pnl.success) setPanels(pnl.panels || []);
       if (d.success) setDoctorDetails(d.doctors || []);
       if (e.success) setEmployees(e.employees || []);
       if (c.success) setExpenseCats(c.categories || []);
@@ -23678,6 +23770,7 @@ function Master() {
   const saveDoctors = async (arr) => { setDoctorDetails(arr); await api("saveDoctorDetailsList", { doctors: JSON.stringify(arr) }); flash(); };
   const saveEmployees = async (arr) => { setEmployees(arr); await api("saveEmployeesList", { employees: JSON.stringify(arr) }); flash(); };
   const saveExpenseCats = async (arr) => { setExpenseCats(arr); await api("saveExpenseCategoriesList", { categories: JSON.stringify(arr) }); flash(); };
+  const savePanels = async (arr) => { setPanels(arr); await api("savePanelsList", { panels: JSON.stringify(arr) }); flash(); };
   const saveModes = async (arr) => { setPaymentModes(arr); await api("savePaymentModesList", { modes: JSON.stringify(arr) }); flash(); };
   const saveTemplates = async (arr) => { setClinicalTemplates(arr); await api("saveClinicalNoteTemplates", { templates: JSON.stringify(arr) }); flash(); };
   const saveChairs = async (arr) => { setChairsList(arr); await api("saveChairsList", { chairs: JSON.stringify(arr) }); flash(); };
@@ -23722,6 +23815,12 @@ function Master() {
       items:expenseCats, placeholder:"New expense category...",
       onAdd:(v)=>saveExpenseCats([...expenseCats, v]),
       onRemove:(i)=>saveExpenseCats(expenseCats.filter((_,idx)=>idx!==i))
+    }),
+    panels: () => React.createElement(SimpleListEditor, {
+      items: panels,
+      placeholder: "e.g. CGHS, DGHS, BSES, DJB, MCD, Delhi Police",
+      onAdd: (v) => savePanels([...panels, v]),
+      onRemove: (i) => savePanels(panels.filter((_, idx) => idx !== i))
     }),
     modes: () => React.createElement(SimpleListEditor, {
       items:paymentModes, placeholder:"New payment mode...",
