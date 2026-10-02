@@ -18,9 +18,9 @@ ok("so registration starts as a normal patient",
    /useState\(PANEL_UI_READY \? "" : "normal"\)/.test(src));
 ok("screen 1 is still written, waiting for the flag",
    src.indexOf('if (step === 0 && !patientType)') !== -1);
-ok("and so are the panel screens",
-   src.indexOf('patientType === "panel" && !panel') !== -1 &&
-   src.indexOf('patientType === "panel" && panel') !== -1);
+ok("and the panel fields with it",
+   src.indexOf('qField("Panel *", "panel"') !== -1 &&
+   src.indexOf('qField("Card ID *", "cardId"') !== -1);
 
 console.log("==============================================================================");
 console.log("  " + pass + " passed, " + fail + " failed");

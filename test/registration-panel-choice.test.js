@@ -24,29 +24,55 @@ ok('registration asks normal or panel first',
   /step === 0 && !patientType/.test(html));
 ok('with both choices on screen',
   /"Normal Patient"/.test(html) && /"Panel Patient"/.test(html));
-// The screens are guarded in this order, and order is the whole point: the
-// type screen must be reachable before the panel screen, and the panel screen
-// before the form.
+// The panel picker and the holding screen are gone. A panel patient now goes
+// straight from the type choice to the ordinary registration form, with three
+// panel fields on it. These pin that the shortcut did not lose anything: the
+// type choice still comes before the form, and the fields are still required.
 const iType = html.indexOf('step === 0 && !patientType');
-const iPanel = html.indexOf('step === 0 && patientType === "panel" && !panel');
-const iStop = html.indexOf('step === 0 && patientType === "panel" && panel');
 const iForm = html.indexOf('if (step === 0) return /*#__PURE__*/React.createElement');
-ok('the type screen is checked first', iType > 0 && iType < iPanel, [iType, iPanel]);
-ok('then which panel', iPanel > 0 && iPanel < iStop, [iPanel, iStop]);
-ok('and the normal form is last', iStop > 0 && iStop < iForm, [iStop, iForm]);
+ok('the type screen is checked before the form', iType > 0 && iType < iForm, [iType, iForm]);
+ok('there is no separate panel picker screen any more',
+  html.indexOf('step === 0 && patientType === "panel" && !panel') === -1);
+ok('and no holding screen that saves nothing',
+  html.indexOf('registration form is not ready yet') === -1);
 
-// --- a panel patient must never reach the normal form ---------------------
-// This is the one that matters. The normal form writes to the main book.
-const stop = html.slice(iStop, iForm);
-ok('choosing a panel stops rather than continuing',
-  /registration form is not ready yet/.test(stop), stop.slice(0, 120));
-ok('and says plainly that nothing was saved',
-  /Nothing has been saved/.test(stop));
-ok('it offers a way back to the panel list', /Choose a different panel/.test(stop));
-ok('and an honest way to see the patient today', /Register as Normal instead/.test(stop));
-// No save of any kind may happen on that screen.
-eq('no registration is saved from the panel screen',
-  /api\("saveRegistration"|quickRegister\(\)/.test(stop), false);
+// --- the three panel fields -----------------------------------------------
+ok('the panel is chosen on the form itself', /qField\("Panel \*", "panel"/.test(html));
+ok('the card number is taken', /qField\("Card ID \*", "cardId"/.test(html));
+ok('and serving or pensioner, as two tabs',
+  /\["Serving", "Pensioner"\]\.map/.test(html));
+ok('they show only for a panel patient',
+  /patientType === "panel" && ceQ\("div", \{/.test(html));
+
+// A claim cannot be filed without these three, and chasing them after the
+// patient has gone home is how claims get rejected. Required at the counter.
+ok('the panel is required', /if \(!panel\) e\.panel =/.test(html));
+ok('serving or pensioner is required', /if \(!q\.panelCat\) e\.panelCat =/.test(html));
+ok('the card ID is required', /if \(!q\.cardId\.trim\(\)\) e\.cardId =/.test(html));
+ok('and only for a panel patient',
+  /if \(patientType === "panel"\) \{\n      if \(!panel\)/.test(html));
+
+// --- what is sent ----------------------------------------------------------
+ok('a panel registration carries the panel', /panel: panel,/.test(html));
+ok('the card holder category', /panelCategory: q\.panelCat,/.test(html));
+ok('the card ID', /cardId: q\.cardId\.trim\(\)/.test(html));
+ok('and is marked as a panel row', /patientType: "Panel"/.test(html));
+ok('a normal registration sends none of it, so its row is unchanged',
+  /\.\.\.\(patientType === "panel" \? \{/.test(html));
+
+// A panel patient is saved by the SAME quickRegister as everyone else. A second
+// save path would be a second place for the duplicate check, the UHID sequence
+// and the validation to drift apart, which is the bug this whole session has
+// been about. There is one.
+eq('there is one registration save path, not a panel copy of it',
+  (html.match(/const quickRegister = async/g) || []).length, 1);
+// There are two saves: the quick one at the counter and the full iPad form.
+// Both must carry the panel marking — a full form that dropped it would save a
+// panel patient as an ordinary one and put the row in the wrong book.
+eq('there are exactly two saveRegistration calls',
+  (html.match(/api\("saveRegistration", \{/g) || []).length, 2);
+eq('and both carry the panel marking',
+  (html.match(/\.\.\.\(patientType === "panel" \? \{/g) || []).length, 2);
 
 // --- the panel list is the clinic's own, not the developer's --------------
 ok('the panel list is loaded from the backend',
