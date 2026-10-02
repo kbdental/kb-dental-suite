@@ -576,8 +576,6 @@ function route(p) {
       case "saveSignature":    return saveSignature(p);
 
       // ── Doctors ────────────────────────────────────────────
-      case "getDoctorsList":   return getDoctorsList();
-      case "saveDoctorsList":  return saveDoctorsList(p);
 
       // ── Finance ────────────────────────────────────────────
       case "getReceipts":          return getReceipts(p);
@@ -3049,37 +3047,16 @@ function saveSignature(p) {
 // DOCTORS LIST
 // ════════════════════════════════════════════════════════════
 
-function getDoctorsList() {
-  var sh = getSheet("Doctors");
-  var data = sh.getDataRange().getValues();
-  var doctors = [];
-  for (var i = 1; i < data.length; i++) {
-    if (data[i][0]) doctors.push(data[i][0]);
-  }
-  if (doctors.length === 0) doctors = ["Dr. Viveyk Mittel", "Dr. Manika Mittel"];
-  return { success: true, doctors: doctors };
-}
-
-function saveDoctorsList(p) {
-  var sh = getSheet("Doctors");
-  sh.clearContents();
-  sh.appendRow(["Doctor Name","Updated At"]);
-  var arr = [];
-  try { arr = JSON.parse(p.doctors); } catch(e) {
-    if (Array.isArray(p.doctors)) arr = p.doctors;
-  }
-  arr.forEach(function(d) {
-    sh.appendRow([d, new Date().toISOString()]);
-  });
-  return { success: true };
-}
-
-// ════════════════════════════════════════════════════════════
-// SOAP NOTES (AI via Anthropic Claude API)
-// ════════════════════════════════════════════════════════════
-// Store your Anthropic API key in Script Properties:
-//   File → Project Properties → Script Properties
-//   Key: ANTHROPIC_API_KEY  Value: sk-ant-...
+// The "Doctors" tab and its two functions are gone. It was a SECOND doctors
+// list beside the "Doctor Details" tab that Master edits, and getDoctorsList
+// carried its own hardcoded pair of names on top of that — so a clinic with an
+// empty tab got those two whatever Master said, and nobody could tell which
+// list a screen was showing. Doctor Details is the only list now.
+//
+// The functions are removed rather than left unused because getSheet() creates
+// a tab that is missing: leaving them in would have recreated "Doctors" the
+// first time anything called one, and the tab would quietly come back after
+// being deleted.
 
 function generateSOAPNotes(p) {
   var apiKey = PropertiesService.getScriptProperties().getProperty("ANTHROPIC_API_KEY");
