@@ -24,6 +24,14 @@
 // It is safe in either, and safe to re-run: once a list has rows it is skipped.
 // ═══════════════════════════════════════════════════════════════════════════
 
+// The finance workbook. Master lists do not belong there, and it is the book
+// most likely to be open by mistake: the heading and payment-mode work was all
+// done in its Apps Script project, so a file pasted "into the project I had
+// open" lands there. Seeding it would create Doctor Details, Payment Modes and
+// Chairs tabs in the accounts book and leave someone wondering later what they
+// were for.
+var FINANCE_BOOK_ID = "1Zdxq3Xf-e41Xak4VDcufrURLkKDAp8MvRCZadC0htUI";
+
 var CONFIRM_SEED = "";
 
 // Exactly what index.html uses today. Changing these changes what the clinic
@@ -58,12 +66,31 @@ var SEED = {
 };
 
 function book_() { return SpreadsheetApp.getActiveSpreadsheet(); }
+
+// True when this is somewhere the Master lists have no business being.
+function wrongBook_(ss) {
+  if (!ss) {
+    Logger.log("This project is not attached to a spreadsheet, so there is nothing");
+    Logger.log("to seed. Paste this into the Apps Script of the PMS book or the");
+    Logger.log("empanelled book — open the spreadsheet, then Extensions > Apps Script.");
+    return true;
+  }
+  if (ss.getId() === FINANCE_BOOK_ID) {
+    Logger.log('REFUSED: "%s" is the finance workbook.', ss.getName());
+    Logger.log("Doctors, Payment Modes and Chairs are Master lists and belong in the");
+    Logger.log("PMS book and the empanelled book, not in the accounts book.");
+    Logger.log("Nothing was changed.");
+    return true;
+  }
+  return false;
+}
 function dataRows_(sh) { var n = sh ? sh.getLastRow() : 0; return n > 1 ? n - 1 : 0; }
 
 // READ-ONLY.
 function reportMasterSeed() {
   var ss = book_();
-  Logger.log('Book: "%s"', ss.getName());
+  if (wrongBook_(ss)) return;
+  Logger.log('Book: "%s"  (%s)', ss.getName(), ss.getId());
   Logger.log("");
   var todo = [];
   Object.keys(SEED).forEach(function (name) {
@@ -96,6 +123,7 @@ function reportMasterSeed() {
 
 function seedMasterLists() {
   var ss = book_();
+  if (wrongBook_(ss)) return;
   if (String(CONFIRM_SEED).trim().toUpperCase() !== "YES") {
     Logger.log("Nothing was changed — CONFIRM_SEED is not set.");
     Logger.log('Book: "%s"', ss.getName());

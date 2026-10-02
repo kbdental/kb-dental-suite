@@ -33,6 +33,7 @@ class Sheet {
 class Book {
   constructor(tabs) { this.tabs = {}; this.made = []; Object.keys(tabs).forEach(k => this.tabs[k] = new Sheet(k, tabs[k])); }
   getName() { return 'Test Book'; }
+  getId() { return 'TEST_BOOK_ID'; }
   getSheetByName(n) { return this.tabs[n] || null; }
   insertSheet(n) { this.made.push(n); return (this.tabs[n] = new Sheet(n, [])); }
 }
@@ -44,6 +45,35 @@ function boot(book, confirm) {
     '\nreturn { reportMasterSeed, seedMasterLists, SEED };'
   )({ getActiveSpreadsheet: () => book }, { log: (...a) => logged.push(fmt(...a)) });
   return { api, logged };
+}
+
+// --- it must refuse the books it has no business in ----------------------
+// All the heading and payment-mode work was done in the FINANCE book's Apps
+// Script project, so that is the project most likely to still be open when
+// this file gets pasted "into the one I had up". Seeding it would put Doctor
+// Details, Payment Modes and Chairs tabs in the accounts book.
+{
+  const finance = new Book({});
+  finance.getId = () => '1Zdxq3Xf-e41Xak4VDcufrURLkKDAp8MvRCZadC0htUI';
+  finance.getName = () => 'K. B. Dental - Finance Sheet';
+  const { api, logged } = boot(finance, 'YES');
+  api.seedMasterLists();
+  eq('the finance book is refused, even with CONFIRM set', finance.made, []);
+  ok('and it says why', logged.some(l => /is the finance workbook/.test(l)), logged);
+
+  const dry = boot(finance);
+  dry.api.reportMasterSeed();
+  ok('the dry run refuses it too',
+    dry.logged.some(l => /is the finance workbook/.test(l)), dry.logged);
+}
+{
+  // A standalone project has no spreadsheet at all.
+  const { api, logged } = boot(null, 'YES');
+  api.seedMasterLists();
+  ok('an unattached project explains itself',
+    logged.some(l => /not attached to a spreadsheet/.test(l)), logged);
+  ok('and says where it should go',
+    logged.some(l => /Extensions > Apps Script/.test(l)), logged);
 }
 
 // --- the values must be the app's own, not a tidied-up version ------------
