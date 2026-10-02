@@ -29,6 +29,10 @@ function fakeSheet(rows) {
 function makeCtx(rows) {
   const ctx = {
     getSheet: () => fakeSheet(rows),
+    // checkDuplicate now reads every book, not just this one. Here there is
+    // only the one, which is exactly the case these tests are about: the
+    // duplicate rules themselves are unchanged by where the rows came from.
+    regAllRows_: () => [HEADERS, ...rows],
     SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSpreadsheetTimeZone: () => 'Asia/Kolkata' }) },
     Utilities: { formatDate: (d, tz, fmt) => {
       const dd = String(d.getDate()).padStart(2, '0');

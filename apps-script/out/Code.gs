@@ -9,6 +9,90 @@
 
 var SS_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
 
+// ── Where a registration lives ──────────────────────────────────
+// Panel patients are registered and billed in their own book; everything else
+// about them — clinical records, appointments, the UHID sequence — is shared
+// with every other patient, because they are the same patients.
+var PANEL_PMS_SHEET_ID = "1yg9Umwwkxao-RUwxXuycjG7CVXjRAQUmMvMHa_l6sjo";
+
+// Every Registrations sheet the clinic has, for anything that reads: searching,
+// the patient list, birthdays, duplicates and the UHID sequence must all see
+// both books or a panel patient becomes invisible to the rest of the app.
+//
+// The panel book is opened, never created. If it is unreachable the clinic
+// still works on the main book rather than failing outright — a receptionist
+// cannot fix a sharing permission at the counter.
+function regSheets_() {
+  var list = [getSheet("Registrations")];
+  if (SS_ID === PANEL_PMS_SHEET_ID) return list;
+  try {
+    var sh = SpreadsheetApp.openById(PANEL_PMS_SHEET_ID).getSheetByName("Registrations");
+    if (sh) list.push(sh);
+  } catch (e) {
+    Logger.log("Panel book unreachable, carrying on with the main book: " + e.message);
+  }
+  return list;
+}
+
+// Every registration in the clinic, from both books, as one table with one
+// header row — the shape every reader here already expects, so each changes by
+// one line rather than growing a loop of its own.
+//
+// The header row is the union of the two books: the panel book has Panel and
+// Card ID columns the main book does not, and dropping them would make a panel
+// patient look like an ordinary one everywhere they are listed. Columns are
+// matched by name, never by position, because the two books drift.
+function regAllRows_() {
+  var sheets = regSheets_();
+  var base = sheets[0].getDataRange().getValues();
+  if (!base.length) return [];
+  var headers = base[0].slice();
+
+  var extra = [];
+  for (var k = 1; k < sheets.length; k++) {
+    if (sheets[k].getLastRow() === 0) continue;
+    var h = sheets[k].getRange(1, 1, 1, sheets[k].getLastColumn()).getValues()[0];
+    for (var c = 0; c < h.length; c++) {
+      if (h[c] && findRegColumn_(headers, [h[c]]) < 0 && extra.indexOf(h[c]) < 0) extra.push(h[c]);
+    }
+  }
+  headers = headers.concat(extra);
+
+  var out = [headers];
+  function take(data) {
+    if (data.length <= 1) return;
+    var map = headers.map(function (hh) { return findRegColumn_(data[0], [hh]); });
+    for (var r = 1; r < data.length; r++) {
+      out.push(map.map(function (col) { return col >= 0 ? data[r][col] : ""; }));
+    }
+  }
+  take(base);
+  for (var i2 = 1; i2 < sheets.length; i2++) take(sheets[i2].getDataRange().getValues());
+  return out;
+}
+
+// The sheet a NEW registration is written to. Only ever called once the UHID
+// has been looked for in both books, so an existing patient is updated where
+// they already are rather than copied into the other book.
+function regSheetFor_(isPanel) {
+  if (!isPanel || SS_ID === PANEL_PMS_SHEET_ID) return getSheet("Registrations");
+  var ss = SpreadsheetApp.openById(PANEL_PMS_SHEET_ID);
+  var sh = ss.getSheetByName("Registrations");
+  if (!sh) sh = ss.insertSheet("Registrations");
+  return sh;
+}
+
+// A column that does not exist swallows whatever is written to it, silently —
+// findRegColumn_ returns -1 and the value is dropped. The panel fields are the
+// claim, so the columns are added rather than assumed.
+function ensureRegColumns_(sh, names) {
+  if (sh.getLastRow() === 0) return;
+  var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  var missing = names.filter(function (n) { return findRegColumn_(headers, [n]) < 0; });
+  if (!missing.length) return;
+  sh.getRange(1, headers.length + 1, 1, missing.length).setValues([missing]);
+}
+
 function getSheet(name) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(name);
@@ -669,8 +753,7 @@ function getNextUHID() {
   // Read the highest number already issued this month instead of counting
   // rows: a row deleted for any reason would otherwise send the counter
   // backwards and reissue a UHID that already belongs to a patient.
-  var sh = getSheet("Registrations");
-  var data = sh.getDataRange().getValues();
+  var data = regAllRows_();
   var highest = 0;
   if (data.length > 1) {
     var uhidCol = findRegColumn_(data[0], ["UHID", "Registration ID"]);
@@ -714,8 +797,7 @@ function normaliseRegName_(s) {
   return String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 function checkDuplicate(p) {
-  var sh = getSheet("Registrations");
-  var data = sh.getDataRange().getValues();
+  var data = regAllRows_();
   if (data.length <= 1) return { success: true, duplicate: false };
   var headers = data[0];
   var uhidCol = findRegColumn_(headers, ["UHID", "Registration ID"]);
@@ -746,7 +828,32 @@ function checkDuplicate(p) {
 function saveRegistration(p) {
   removePending(p.mobile);
 
-  var sh = getSheet("Registrations");
+  // An existing UHID is updated where it already lives, whichever book that
+  // is. This is what makes the iPad form safe: it is opened from a link, knows
+  // nothing about panels, and would otherwise write a second row for a panel
+  // patient into the main book and split one patient across two books.
+  var sh = null;
+  var existingRow = -1;
+  var want = String(p.uhid || "").trim().toUpperCase();
+  if (want) {
+    var books = regSheets_();
+    for (var b = 0; b < books.length && existingRow < 0; b++) {
+      var bd = books[b].getDataRange().getValues();
+      if (bd.length <= 1) continue;
+      var bc = findRegColumn_(bd[0], ["UHID", "Registration ID"]);
+      if (bc < 0) continue;
+      for (var r = 1; r < bd.length; r++) {
+        if (String(bd[r][bc]).trim().toUpperCase() === want) {
+          sh = books[b]; existingRow = r + 1; break;
+        }
+      }
+    }
+  }
+  // Only a genuinely new patient is routed by what the front desk chose.
+  var isPanel = String(p.patientType || "") === "Panel";
+  if (!sh) sh = regSheetFor_(isPanel);
+  if (isPanel) ensureRegColumns_(sh, ["Patient Type", "Panel", "Panel Category", "Card ID"]);
+
   if (sh.getLastRow() === 0) {
     sh.appendRow([
       "Timestamp","UHID","Full Name","Gender","Date of Birth","Blood Group","Occupation",
@@ -756,7 +863,8 @@ function saveRegistration(p) {
       "Medicines you are taking currently:",
       "Are you allergic to any of the following?","How did you know about this clinic?",
       "What is your chief complaint?","Are you in Pain?",
-      "What is your level of pain on a scale of 0-10?","Relation with Person"
+      "What is your level of pain on a scale of 0-10?","Relation with Person",
+      "Patient Type","Panel","Panel Category","Card ID"
     ]);
   }
 
@@ -785,6 +893,13 @@ function saveRegistration(p) {
     "Are you in Pain?": p.painLevel ? "Yes" : "",
     "What is your level of pain on a scale of 0-10?|Pain Level": p.painLevel,
     "Registration Status": p.regStatus || "",
+    // Blank for a normal patient, and a blank never overwrites on an update —
+    // so the iPad form completing a panel registration cannot wipe the claim
+    // details it was never told about.
+    "Patient Type": p.patientType || "",
+    "Panel": p.panel || "",
+    "Panel Category": p.panelCategory || "",
+    "Card ID": p.cardId || "",
     "Habits [Do you Smoke Beedi/Cigarette?]": habitsStr.indexOf("Smoking") >= 0 ? "Yes" : "",
     "Habits [Do you Chew Pan Masala]": habitsStr.indexOf("Pan Masala") >= 0 ? "Yes" : "",
     "Habits [Do you Consume Tobacco]": habitsStr.indexOf("Tobacco") >= 0 ? "Yes" : "",
@@ -792,13 +907,7 @@ function saveRegistration(p) {
   };
 
   var uhidCol = findRegColumn_(headers, ["UHID", "Registration ID"]);
-  var existingRow = -1;
-  if (uhidCol >= 0 && p.uhid) {
-    var data = sh.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][uhidCol]).trim().toUpperCase() === String(p.uhid).trim().toUpperCase()) { existingRow = i + 1; break; }
-    }
-  }
+  // existingRow was resolved above, together with the book it is in.
 
   var rowValues = existingRow > 0
     ? sh.getRange(existingRow, 1, 1, headers.length).getValues()[0]
@@ -826,18 +935,24 @@ function saveRegistration(p) {
 // patient's own mobile number to match the row, return only the fields the
 // form needs, and can never create a patient or change UHID, name or DOB.
 
+// The one reader whose callers write back, so it must not use the merged
+// table: it returns the row together with the book it actually came from, and
+// the patient's own completion of the iPad form updates the right one.
 function regRow_(uhid) {
-  var sh = getSheet("Registrations");
-  var data = sh.getDataRange().getValues();
-  if (data.length <= 1) return null;
-  var headers = data[0];
-  var uhidCol = findRegColumn_(headers, ["UHID", "Registration ID"]);
-  if (uhidCol < 0) return null;
   var want = String(uhid || "").trim().toUpperCase();
   if (!want) return null;
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][uhidCol]).trim().toUpperCase() === want) {
-      return { sheet: sh, headers: headers, values: data[i], rowNum: i + 1 };
+  var sheets = regSheets_();
+  for (var b = 0; b < sheets.length; b++) {
+    var sh = sheets[b];
+    var data = sh.getDataRange().getValues();
+    if (data.length <= 1) continue;
+    var headers = data[0];
+    var uhidCol = findRegColumn_(headers, ["UHID", "Registration ID"]);
+    if (uhidCol < 0) continue;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][uhidCol]).trim().toUpperCase() === want) {
+        return { sheet: sh, headers: headers, values: data[i], rowNum: i + 1 };
+      }
     }
   }
   return null;
@@ -1049,8 +1164,7 @@ function getOldPatientData(uhid) {
 }
 
 function getPatient(p) {
-  var sh = getSheet("Registrations");
-  var data = sh.getDataRange().getValues();
+  var data = regAllRows_();
   if (data.length <= 1) return { success: false, error: "No registrations found" };
   var headers = data[0];
   var uhid = String(p.uhid || "").trim().toUpperCase();
@@ -1113,8 +1227,7 @@ function getPatient(p) {
 }
 
 function getAllPatients() {
-  var sh = getSheet("Registrations");
-  var data = sh.getDataRange().getValues();
+  var data = regAllRows_();
   if (data.length <= 1) return { success: true, patients: [] };
   var headers = data[0];
   var uhidCol = findRegColumn_(headers, ["UHID", "Registration ID"]);
@@ -1139,8 +1252,7 @@ function getAllPatients() {
 // Patients whose birthday (day+month, any year) falls on today — powers the
 // Dashboard's birthday reminder card.
 function getTodaysBirthdays() {
-  var sh = getSheet("Registrations");
-  var data = sh.getDataRange().getValues();
+  var data = regAllRows_();
   if (data.length <= 1) return { success: true, patients: [] };
   var headers = data[0];
   function fc(name) {
@@ -1175,8 +1287,7 @@ function getTodaysBirthdays() {
 }
 
 function searchPatients(p) {
-  var sh = getSheet("Registrations");
-  var data = sh.getDataRange().getValues();
+  var data = regAllRows_();
   if (data.length <= 1) return { success: true, patients: [] };
   var headers = data[0];
   var q = String(p.query || "").toLowerCase().trim();
@@ -1655,8 +1766,7 @@ function getFollowUps() {
     }
 
     // ── Patient directory (name/mobile fallback) ──
-    var regSh = getSheet("Registrations");
-    var regData = regSh.getDataRange().getValues();
+    var regData = regAllRows_();
     var patientDir = {};
     for (var r = 1; r < regData.length; r++) {
       var uhid = String(regData[r][0] || "").trim();
