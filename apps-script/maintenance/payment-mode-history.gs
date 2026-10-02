@@ -2,9 +2,16 @@
 // PAYMENT MODE HISTORY — count the old names, then convert them
 //
 // The app used two payment-mode lists that did not match. The clinic settled
-// on one: Cash, UPI / GPay, NEFT/RTGS, Cheque, Card, N/A. Two old names go:
+// on one: Cash, UPI, NEFT/RTGS, Cheque, Card, N/A. One old name goes:
 //     "Net Banking"  ->  "NEFT/RTGS"
-//     "UPI"          ->  "UPI / GPay"
+//
+// "UPI" IS NOT RENAMED, and must not be. Running this with a UPI rename in it
+// found 2,801 formulas in the finance book testing for that exact word, one
+// per row, deciding which amount column each payment lands in. Renaming the
+// cells would have left every one of them matching nothing: every UPI
+// collection would read zero and the monthly totals would drop, with nothing
+// on screen to say why. "UPI" is therefore the stored name everywhere — the
+// app's list, this book, and the Daily Register.
 //
 // WHY THIS IS NOT A FIND-AND-REPLACE. In the finance book the Mode column
 // decides which amount column a payment lands in — CASH, QR Code, NEFT/RTGS,
@@ -46,7 +53,7 @@ var CONFIRM_CONVERT = "";
 // Old name -> new name. Matched on the whole trimmed cell, case-insensitively,
 // never as a substring: "UPI" must not touch a cell reading "UPI / GPay" that
 // is already correct, nor "UPI to Dr Mittel" in a remarks column.
-var MODE_RENAMES = { "net banking": "NEFT/RTGS", "upi": "UPI / GPay" };
+var MODE_RENAMES = { "net banking": "NEFT/RTGS" };
 
 // Only columns that actually hold a payment mode. Without this the scan would
 // also rewrite the word "UPI" sitting in a Remarks note, which is prose, not a
@@ -125,15 +132,26 @@ function formulasAtRisk_(ss) {
       for (var c = 0; c < f[r].length; c++) {
         var t = String(f[r][c] || "");
         if (!t) continue;
+        // Only the names actually being renamed. Guarding a word that is NOT
+        // changing would refuse for ever: the finance book has 2,801 formulas
+        // testing for "UPI", which stays exactly as it is, and a guard built
+        // on a hardcoded list rather than on MODE_RENAMES would have blocked
+        // every conversion because of them.
+        //
         // Either quote style. A QUERY writes its literals in single quotes
-        // (QUERY(A:D,"select D where D = 'UPI'")), and that is precisely the
-        // kind of formula that silently re-totals a month — so looking only
-        // for double quotes would have missed the worst case.
+        // (QUERY(A:D,"select D where D = 'Net Banking'")), and that is the kind
+        // of formula that silently re-totals a month, so looking only for
+        // double quotes would miss the worst case.
         //
         // The quotes are part of the match on purpose: it finds a literal
-        // "UPI" but not a formula already referring to "UPI / GPay", which is
-        // correct already and unaffected by the rename.
-        if (/["']\s*net\s*banking\s*["']/i.test(t) || /["']\s*upi\s*["']/i.test(t)) {
+        // "Net Banking" but not one already reading "NEFT/RTGS".
+        var names = Object.keys(MODE_RENAMES);
+        var hit = false;
+        for (var n = 0; n < names.length; n++) {
+          var pat = names[n].replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*");
+          if (new RegExp('["\']\\s*' + pat + '\\s*["\']', "i").test(t)) { hit = true; break; }
+        }
+        if (hit) {
           hits.push(sh.getName() + "!" + sh.getRange(r + 1, c + 1).getA1Notation() + "  " + t.slice(0, 90));
         }
       }

@@ -61,7 +61,13 @@ function boot(book, confirm) {
   // it. Pinned here because getting it wrong changes what is recorded against
   // real money.
   eq('the payment modes are the one agreed list', vals('Payment Modes'),
-    ['Cash', 'UPI / GPay', 'NEFT/RTGS', 'Cheque', 'Card', 'N/A']);
+    ['Cash', 'UPI', 'NEFT/RTGS', 'Cheque', 'Card', 'N/A']);
+  // Not a style choice: 2,801 formulas in the finance book test for the
+  // literal "UPI" to decide which amount column a payment lands in. A longer
+  // label would leave every one of them matching nothing, and every UPI
+  // collection would read zero.
+  eq('and "UPI" is stored as exactly that, nothing longer',
+    vals('Payment Modes').indexOf('UPI / GPay'), -1);
   eq('the chairs are the app\'s own', vals('Chairs'), fromCode('DEFAULT_CHAIRS'));
   // And the chairs must match the backend's fallback too, or the two books
   // would disagree about what a chair is called.

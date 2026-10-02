@@ -38,11 +38,16 @@ var SEED = {
   // The app had TWO payment-mode lists that did not match: the Daily
   // Register's (Cash, UPI / GPay, Card, Net Banking, Cheque, N/A) and the
   // finance receipt's (Cash, UPI, NEFT/RTGS, Cheque, Card). The same money was
-  // being recorded under two names depending on the screen. This is the single
-  // list the clinic settled on, and both screens will read it.
+  // recorded under two names depending on the screen.
+  //
+  // The agreed single list keeps "UPI", not "UPI / GPay", and that is not a
+  // style choice: 2,801 formulas in the finance book test for the literal
+  // "UPI" to decide which amount column a payment lands in. A longer label
+  // would leave every one of them matching nothing, and every UPI collection
+  // would read zero.
   "Payment Modes": {
     header: ["Mode", "Updated At"],
-    rows: [["Cash"], ["UPI / GPay"], ["NEFT/RTGS"], ["Cheque"], ["Card"], ["N/A"]],
+    rows: [["Cash"], ["UPI"], ["NEFT/RTGS"], ["Cheque"], ["Card"], ["N/A"]],
     note: "the one agreed list, replacing the register's and the receipt's"
   },
   "Chairs": {

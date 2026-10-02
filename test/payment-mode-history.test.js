@@ -114,9 +114,11 @@ const financeTab = () => new Sheet('FY 2025-26', [
   const { api, logged } = boot([sh]);
   api.reportPaymentModeUsage();
   eq('the dry run changes nothing', JSON.stringify(sh.rows), before);
-  ok('it counts the UPI rows', logged.some(l => /"upi" -> "UPI \/ GPay"  2 row/.test(l)), logged);
   ok('it counts the Net Banking rows', logged.some(l => /"net banking" -> "NEFT\/RTGS"  1 row/.test(l)), logged);
-  ok('and gives a total', logged.some(l => /Total: 3 cell/.test(l)), logged);
+  ok('and gives a total', logged.some(l => /Total: 1 cell/.test(l)), logged);
+  // "UPI" is the stored name now, so it is not something to convert.
+  eq('UPI is never offered for conversion',
+    logged.some(l => /"upi" ->/.test(l)), false);
 }
 
 // --- no confirmation, no write -------------------------------------------
@@ -135,11 +137,10 @@ const financeTab = () => new Sheet('FY 2025-26', [
   const { api } = boot([sh], 'YES');
   api.convertPaymentModeHistory();
   const modes = sh.rows.slice(1).map(r => r[3]);
-  eq('both old names are converted, whatever their case',
-    modes, ['UPI / GPay', 'NEFT/RTGS', 'Cash', 'UPI / GPay', 'UPI / GPay']);
-  // 2 above: the cell already reading "UPI / GPay" must come through unharmed,
-  // not become "UPI / GPay / GPay".
-  eq('a cell already correct is left exactly as it was', sh.rows[4][3], 'UPI / GPay');
+  // Only Net Banking moves. UPI is the stored name and must be left exactly
+  // as it is — 2,801 formulas in the real book test for that literal word.
+  eq('only Net Banking is converted; UPI is untouched',
+    modes, ['UPI', 'NEFT/RTGS', 'Cash', 'UPI / GPay', 'upi']);
   // 1 above: prose is not a payment mode.
   eq('the word UPI in a remarks note is not touched',
     sh.rows[1][5], 'paid by UPI at the desk');
@@ -163,8 +164,8 @@ const financeTab = () => new Sheet('FY 2025-26', [
 // --- 3: a formula matching the old text stops everything -----------------
 {
   const sh = financeTab();
-  const totals = new Sheet('Total', [['Month', 'UPI Collection'], ['April', 0]],
-    { '2,2': '=SUMIF(\'FY 2025-26\'!D:D,"UPI",\'FY 2025-26\'!E:E)' });
+  const totals = new Sheet('Total', [['Month', 'Net Banking Collection'], ['April', 0]],
+    { '2,2': '=SUMIF(\'FY 2025-26\'!D:D,"Net Banking",\'FY 2025-26\'!E:E)' });
   const before = JSON.stringify(sh.rows);
   const { api, logged } = boot([sh, totals], 'YES');
   api.convertPaymentModeHistory();
@@ -191,10 +192,9 @@ const financeTab = () => new Sheet('FY 2025-26', [
 // dangerous case, because it re-totals silently — uses single. Looking only
 // for double quotes let that one through.
 [
-  ['double-quoted SUMIF', '=SUMIF(D:D,"UPI",E:E)'],
-  ['single-quoted QUERY', '=QUERY(A:D,"select D where D = \'UPI\'")'],
-  ['double-quoted Net Banking', '=COUNTIF(D:D,"Net Banking")'],
-  ['single-quoted Net Banking', "=QUERY(A:D,\"select D where D = 'Net Banking'\")"],
+  ['double-quoted SUMIF', '=SUMIF(D:D,"Net Banking",E:E)'],
+  ['single-quoted QUERY', '=QUERY(A:D,"select D where D = \'Net Banking\'")'],
+  ['a spelling with odd spacing', '=COUNTIF(D:D,"Net  Banking")'],
 ].forEach(([label, formula]) => {
   const sh = financeTab();
   const t = new Sheet('Total', [['Month', 'X'], ['April', 0]], { '2,2': formula });
@@ -203,6 +203,21 @@ const financeTab = () => new Sheet('FY 2025-26', [
   api.convertPaymentModeHistory();
   eq('refused because of a ' + label, JSON.stringify(sh.rows), before);
 });
+
+// A word that is NOT being renamed must not block anything. The finance book
+// has 2,801 formulas testing for "UPI", which stays exactly as it is — a guard
+// built on a hardcoded list rather than on MODE_RENAMES would have refused
+// every conversion for ever because of them.
+{
+  const sh = financeTab();
+  const t = new Sheet('Total', [['Month', 'X'], ['April', 0]],
+    { '2,2': '=IF(Working!$E2="UPI",Working!$F2,"")' });
+  const { api } = boot([sh, t], 'YES');
+  api.convertPaymentModeHistory();
+  eq('a formula on UPI does not block the Net Banking conversion',
+    sh.rows[2][3], 'NEFT/RTGS');
+  eq('and UPI itself is left alone', sh.rows[1][3], 'UPI');
+}
 
 // A formula already using the NEW name is correct and unaffected by the
 // rename, so it must not block the conversion.
@@ -213,7 +228,7 @@ const financeTab = () => new Sheet('FY 2025-26', [
   const { api } = boot([sh, t], 'YES');
   api.convertPaymentModeHistory();
   eq('a formula on the new name does not block it',
-    sh.rows[1][3], 'UPI / GPay');
+    sh.rows[2][3], 'NEFT/RTGS');
 }
 
 // --- renaming the column HEADINGS is a separate question ------------------
