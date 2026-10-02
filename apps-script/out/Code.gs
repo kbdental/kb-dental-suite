@@ -4162,7 +4162,10 @@ function getChairsList() {
   var data = sh.getDataRange().getValues();
   var items = [];
   for (var i = 1; i < data.length; i++) { if (data[i][0]) items.push(data[i][0]); }
-  if (items.length === 0) items = ["Chair 1", "Chair 2", "Chair 3", "Chair 4"];
+  // No built-in fallback. It used to return Chair 1-4 whenever the tab was
+  // empty, which is why the clinic never had to fill the tab in — and why a
+  // chair deleted in Master reappeared. The tab is the only source now, and an
+  // empty one honestly reports no chairs rather than inventing four.
   return { success: true, chairs: items };
 }
 function saveChairsList(p) {

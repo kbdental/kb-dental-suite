@@ -206,7 +206,30 @@ function tatBetween(fromHHMM, toHHMM) {
   const mins = (b - a + 1440) % 1440;
   return String(Math.floor(mins / 60)).padStart(2, "0") + ":" + String(mins % 60).padStart(2, "0");
 }
-const PAYMENT_MODES = ["Cash", "UPI / GPay", "Card", "Net Banking", "Cheque", "N/A"];
+// Master is the only source for the clinic's lists. There is deliberately no
+// built-in copy to fall back on: a list that is usually right is worse than
+// none, because nobody can tell which one a screen is showing, and a mode
+// deleted in Master would go on appearing. Empty means Master is empty.
+//
+// Fetched once per list and shared, rather than once per component — the
+// payment modes are wanted on two unrelated screens, and two requests for the
+// same six words is two seconds of an Apps Script round trip for nothing.
+const KB_LIST_CACHE = {};
+function useMasterList(action, key) {
+  const [items, setItems] = React.useState(KB_LIST_CACHE[action] || []);
+  React.useEffect(() => {
+    if (KB_LIST_CACHE[action]) { setItems(KB_LIST_CACHE[action]); return; }
+    let alive = true;
+    api(action).then(res => {
+      const list = (res && res.success && res[key]) || [];
+      KB_LIST_CACHE[action] = list;
+      if (alive) setItems(list);
+    });
+    return () => { alive = false; };
+  }, [action, key]);
+  return items;
+}
+const usePaymentModes = () => useMasterList("getPaymentModesList", "modes");
 // Patient documents are private in Drive and are fetched as bytes through the
 // authenticated backend, so they are rendered from an in-memory blob URL rather
 // than a public Drive link. Callers must revokeObjectURL when done.
@@ -5669,7 +5692,7 @@ const TIME_SLOTS = [
 const STATUS_COL = { Scheduled:"#0078B4", "Checked In":"#059669", "In Chair":"#D97706", Completed:"#6B7280", Cancelled:"#e24b4a", "No Show":"#9ca3af" };
 const DOCTOR_COL = ["#0078B4", "#7C3AED", "#059669", "#D97706", "#DB2777"];
 const WEEK_DAY_LBL = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-const DEFAULT_CHAIRS = ["Chair 1","Chair 2","Chair 3","Chair 4"];
+
 const CANCEL_REASONS = ["Cancelled by Patient","Cancelled by Doctor","Cancelled by Clinic","No Show"];
 // Which action button to show for the current status, and what the next status becomes
 const APPT_NEXT_ACTION = { Scheduled:{ label:"Check In", next:"Checked In" }, "Checked In":{ label:"Engage", next:"In Chair" }, "In Chair":{ label:"Check Out", next:"Completed" } };
@@ -5811,7 +5834,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
   const [bTo, setBTo] = useState("09:30");
   const [bReason, setBReason] = useState("");
   const [bSaving, setBSaving] = useState(false);
-  const [chairs, setChairs] = useState(DEFAULT_CHAIRS);
+  const [chairs, setChairs] = useState([]);
   const doctors = getDoctors();
 
   // Form state
@@ -5828,7 +5851,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
   const [fTime, setFTime] = useState("10:00");
   const [fReason, setFReason] = useState("");
   const [fDoctor, setFDoctor] = useState(doctors[0] || "");
-  const [fChair, setFChair] = useState(DEFAULT_CHAIRS[0]);
+  const [fChair, setFChair] = useState("");
   const [fNotes, setFNotes] = useState("");
   const [notifyPatientSMS, setNotifyPatientSMS] = useState(false);
   const [notifyPatientWA, setNotifyPatientWA] = useState(true);
@@ -6814,8 +6837,8 @@ function QuickApptModal({ show, defaultDate, onClose, onSaved }) {
   const [fReason, setFReason] = React.useState(APPT_TYPES[0]||"");
   const doctors = getDoctors();
   const [fDoctor, setFDoctor] = React.useState(doctors[0]||"");
-  const [chairs, setChairs] = React.useState(DEFAULT_CHAIRS);
-  const [fChair, setFChair] = React.useState(DEFAULT_CHAIRS[0]);
+  const [chairs, setChairs] = React.useState([]);
+  const [fChair, setFChair] = React.useState("");
   const [fNotes, setFNotes] = React.useState("");
   const [notifyPatientSMS, setNotifyPatientSMS] = React.useState(false);
   const [notifyPatientWA, setNotifyPatientWA] = React.useState(true);
@@ -11558,6 +11581,8 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
   const [nWorkDone, setNWorkDone] = React.useState("");
   const [nDoctor, setNDoctor] = React.useState(getDoctors()[0] || "");
   const [nPayMode, setNPayMode] = React.useState("");
+  // From Master, like the finance receipt's. One list, both screens.
+  const nPayModes = usePaymentModes();
   // Prefilled with the current time so the common case is one glance and no
   // typing, but editable — an entry is often written up after the patient has
   // already been seen.
@@ -11846,7 +11871,7 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
         React.createElement(Lbl,{c:"Mode of Payment"}),
         React.createElement("select",{style:inp,value:nPayMode,onChange:e=>setNPayMode(e.target.value)},
           React.createElement("option",{value:""},"— none —"),
-          PAYMENT_MODES.map(m=>React.createElement("option",{key:m,value:m},m))
+          nPayModes.map(m=>React.createElement("option",{key:m,value:m},m))
         )
       ),
       // Two compliance questions the register used to answer by itself. Left
@@ -24874,7 +24899,7 @@ function openAppointmentWhatsAppChat(a) {
 // ── Add Receipt — mirrors the clinic's live "Patient Fee Receipt Form" (Google Form)
 // field-for-field, and saves into the SAME "Working" sheet tab that form feeds —
 // so the existing finance workflow downstream of that sheet keeps working unchanged.
-const PAYMENT_MODES_FIN = ["Cash", "UPI", "NEFT/RTGS", "Cheque", "Card"];
+
 
 const SERVICE_OPTIONS_FIN = ["Consultation","RCT","Scaling","Extraction","Restoration","Crown & Bridge",
   "Implant Surgery","Implant Prosthetic","Orthodontics","Denture","Pedo","X-Ray / Radiograph","Other"];
@@ -24938,8 +24963,12 @@ function AddReceiptForm({ globalPat, onSaved }) {
     } else setMsg("❌ " + (res.error || "Save failed"));
   };
 
+  // The same Master list the Daily Register reads. These two screens used to
+  // carry different lists — "UPI / GPay" here and "UPI" there — so the same
+  // payment was recorded under two names depending on who took it.
+  const payModes = usePaymentModes();
   const RadioGroup = ({ value, onChange }) => React.createElement("div", { style:{ display:"flex", flexWrap:"wrap", gap:14, marginTop:4 } },
-    PAYMENT_MODES_FIN.map(m => React.createElement("label", { key:m, style:{ display:"flex", alignItems:"center", gap:5, fontSize:12.5, cursor:"pointer" } },
+    payModes.map(m => React.createElement("label", { key:m, style:{ display:"flex", alignItems:"center", gap:5, fontSize:12.5, cursor:"pointer" } },
       React.createElement("input", { type:"radio", checked:value===m, onChange:()=>onChange(m), style:{ accentColor:T } }),
       m
     ))

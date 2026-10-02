@@ -80,29 +80,33 @@ function boot(book, confirm) {
 {
   const { api } = boot(new Book({}));
   const vals = (tab) => api.SEED[tab].rows.map(r => r[0]);
-  const fromCode = (name) => {
-    const m = new RegExp('const ' + name + ' = \\[([^\\]]+)\\]').exec(html);
-    return (m[1].match(/"([^"]*)"/g) || []).map(s => s.slice(1, -1));
-  };
-  eq('the doctors are the app\'s own', vals('Doctor Details'), fromCode('DEFAULT_DOCTORS'));
+  // These were read out of index.html's constants while those constants still
+  // existed. They are gone now — that was the point of seeding Master — so the
+  // values are pinned here instead. They are a record of what the app used to
+  // do, and changing one would silently change what a clinic running this
+  // script gets.
+  eq('the doctors are the ones the app used to carry', vals('Doctor Details'),
+    ['Dr. Viveyk Mittel', 'Dr. Manika Mittel']);
   // Payment modes are the exception: the app had two lists that disagreed —
   // the register's and the receipt's — so there was no single "app's own" to
-  // copy. This is the list the clinic decided on, and both screens will read
-  // it. Pinned here because getting it wrong changes what is recorded against
-  // real money.
+  // copy. This is the list the clinic decided on, and both screens read it.
+  // Pinned because getting it wrong changes what is recorded against real
+  // money, and because "UPI" must stay short: 2,801 formulas in the finance
+  // book test for that exact word.
   eq('the payment modes are the one agreed list', vals('Payment Modes'),
     ['Cash', 'UPI', 'NEFT/RTGS', 'Cheque', 'Card', 'N/A']);
-  // Not a style choice: 2,801 formulas in the finance book test for the
-  // literal "UPI" to decide which amount column a payment lands in. A longer
-  // label would leave every one of them matching nothing, and every UPI
-  // collection would read zero.
   eq('and "UPI" is stored as exactly that, nothing longer',
     vals('Payment Modes').indexOf('UPI / GPay'), -1);
-  eq('the chairs are the app\'s own', vals('Chairs'), fromCode('DEFAULT_CHAIRS'));
-  // And the chairs must match the backend's fallback too, or the two books
-  // would disagree about what a chair is called.
-  const gsChairs = (/items = \[([^\]]+)\]/.exec(CODE)[1].match(/"([^"]*)"/g) || []).map(s => s.slice(1, -1));
-  eq('and agree with the backend\'s chair fallback', vals('Chairs'), gsChairs);
+  eq('the chairs are the four the app used to invent', vals('Chairs'),
+    ['Chair 1', 'Chair 2', 'Chair 3', 'Chair 4']);
+  // The backend invented the same four whenever the tab was empty, which is
+  // why nobody noticed the tab WAS empty. Both copies are gone; the sheet is
+  // it. DEFAULT_DOCTORS is deliberately NOT asserted here: the app has two
+  // doctor lists in the backend — "Doctors" for its dropdowns and "Doctor
+  // Details" for Master — and which one wins is the clinic's decision, not
+  // something to settle in a test.
+  eq('no copy of the chairs remains, in either place',
+    /DEFAULT_CHAIRS/.test(html) || /items = \["Chair 1"/.test(CODE), false);
 
   // The headers have to be the ones the app's own savers write, or the next
   // save from Master would reshape the tab under the seeded rows.
