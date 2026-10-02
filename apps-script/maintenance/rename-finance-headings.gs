@@ -31,6 +31,11 @@
 //
 // Only row 1 of each tab is touched — the header row. No data cell, no
 // formula and no amount is altered.
+//
+// DONE in K. B. Dental - Finance Sheet on 2 Oct 2026: twelve headings across
+// FY 2024-25, FY 2025-26 and their two Total tabs. FY 2026-27 and Total
+// 2026-27 had already been renamed by hand and were left alone. The book now
+// reads UPI / GPay and CARD throughout. Re-running changes nothing.
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Blank in a project opened from the spreadsheet; the id in a standalone one.
