@@ -27,6 +27,20 @@
 // both, and in the Finance book they are spread over the FY tabs.
 // ═══════════════════════════════════════════════════════════════════════════
 
+// WHICH BOOK THIS WORKS ON.
+// A project can be BOUND to a spreadsheet (opened from it via Extensions ->
+// Apps Script) or STANDALONE (made at script.google.com). The finance
+// workbook's project is standalone, so getActiveSpreadsheet() returns nothing
+// there and a script assuming otherwise fails on its first line.
+//
+// Leave this blank in a bound project and it works on the book it belongs to.
+// In a standalone project, put the id of the book to work on here — the two
+// that matter are written out below, so neither has to be looked up.
+//
+//   Finance workbook : 1Zdxq3Xf-e41Xak4VDcufrURLkKDAp8MvRCZadC0htUI
+//   PMS book         : 1DtoZ3MNFq2Enr-ClAjENWFzk8SF2dYN9e1nGf7tAJC4
+var TARGET_SHEET_ID = "";
+
 var CONFIRM_CONVERT = "";
 
 // Old name -> new name. Matched on the whole trimmed cell, case-insensitively,
@@ -40,7 +54,17 @@ var MODE_RENAMES = { "net banking": "NEFT/RTGS", "upi": "UPI / GPay" };
 var MODE_HEADERS = ["mode", "payment mode", "mode of payment", "mode of expense",
                     "payment mode (payment mode is more than one)"];
 
-function book_() { return SpreadsheetApp.getActiveSpreadsheet(); }
+function book_() {
+  if (String(TARGET_SHEET_ID).trim()) return SpreadsheetApp.openById(String(TARGET_SHEET_ID).trim());
+  var active = SpreadsheetApp.getActiveSpreadsheet();
+  if (active) return active;
+  // Failing clearly beats failing at a null reference twenty lines further on.
+  throw new Error(
+    "This project is not attached to a spreadsheet, so there is nothing to work on.\n\n" +
+    "Set TARGET_SHEET_ID at the top of this file to the book you mean:\n" +
+    "  Finance workbook : 1Zdxq3Xf-e41Xak4VDcufrURLkKDAp8MvRCZadC0htUI\n" +
+    "  PMS book         : 1DtoZ3MNFq2Enr-ClAjENWFzk8SF2dYN9e1nGf7tAJC4");
+}
 
 function modeColumns_(sh) {
   if (sh.getLastRow() < 1 || sh.getLastColumn() < 1) return [];
@@ -144,6 +168,7 @@ function scan_(ss) {
 function reportPaymentModeUsage() {
   var ss = book_();
   Logger.log('Book: "%s"', ss.getName());
+  Logger.log("Id  : %s", ss.getId());
   Logger.log("");
 
   var found = scan_(ss);
@@ -202,7 +227,7 @@ function convertPaymentModeHistory() {
   var ss = book_();
   if (String(CONFIRM_CONVERT).trim().toUpperCase() !== "YES") {
     Logger.log("Nothing was changed — CONFIRM_CONVERT is not set.");
-    Logger.log('Book: "%s"', ss.getName());
+    Logger.log('Book: "%s"  (%s)', ss.getName(), ss.getId());
     Logger.log('Run reportPaymentModeUsage first, then set CONFIRM_CONVERT = "YES".');
     return;
   }

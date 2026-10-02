@@ -47,17 +47,29 @@ class Sheet {
 }
 const Book = (sheets) => ({
   getName: () => 'Test Book',
+  getId: () => 'TEST_BOOK_ID',
   getSheets: () => sheets,
 });
 
-function boot(sheets, confirm) {
+function boot(sheets, confirm, opts) {
+  opts = opts || {};
   const logged = [];
   const fmt = (f, ...a) => { let i = 0; return String(f).replace(/%s/g, () => (i < a.length ? String(a[i++]) : '%s')); };
+  const opened = [];
+  const SpreadsheetApp = {
+    // A STANDALONE project — the finance workbook's is one — has no active
+    // spreadsheet at all, and returns null here rather than throwing.
+    getActiveSpreadsheet: () => (opts.standalone ? null : Book(sheets)),
+    openById: (id) => { opened.push(id); return Book(sheets); },
+  };
+  let src = GS.replace('var CONFIRM_CONVERT = "";', 'var CONFIRM_CONVERT = "' + (confirm || '') + '";');
+  if (opts.targetId !== undefined) {
+    src = src.replace('var TARGET_SHEET_ID = "";', 'var TARGET_SHEET_ID = "' + opts.targetId + '";');
+  }
   const api = new Function('SpreadsheetApp', 'Logger',
-    GS.replace('var CONFIRM_CONVERT = "";', 'var CONFIRM_CONVERT = "' + (confirm || '') + '";') +
-    '\nreturn { reportPaymentModeUsage, convertPaymentModeHistory };'
-  )({ getActiveSpreadsheet: () => Book(sheets) }, { log: (...a) => logged.push(fmt(...a)) });
-  return { api, logged };
+    src + '\nreturn { reportPaymentModeUsage, convertPaymentModeHistory };'
+  )(SpreadsheetApp, { log: (...a) => logged.push(fmt(...a)) });
+  return { api, logged, opened };
 }
 
 const financeTab = () => new Sheet('FY 2025-26', [
@@ -68,6 +80,32 @@ const financeTab = () => new Sheet('FY 2025-26', [
   [4, '9-Apr-2025', 'AH1109', 'UPI / GPay', 2000, ''],
   [5, '9-Apr-2025', 'AH1110', 'upi', 1000, ''],
 ]);
+
+// --- it has to work in a STANDALONE project, not just a bound one ---------
+// The finance workbook's Apps Script project is standalone, so
+// getActiveSpreadsheet() returns nothing there. A script assuming otherwise
+// fails on its first line, and the failure says nothing useful.
+{
+  const sh = financeTab();
+  const { api, opened } = boot([sh], '', { standalone: true, targetId: 'FIN123' });
+  api.reportPaymentModeUsage();
+  eq('a standalone project opens the book it was told to', opened, ['FIN123']);
+}
+{
+  const sh = financeTab();
+  const { api, opened } = boot([sh], '', { standalone: false, targetId: '' });
+  api.reportPaymentModeUsage();
+  eq('a bound project still uses the book it belongs to', opened, []);
+}
+{
+  // Told nothing, attached to nothing: say so plainly instead of dying on a
+  // null twenty lines later.
+  const { api } = boot([financeTab()], '', { standalone: true, targetId: '' });
+  let msg = '';
+  try { api.reportPaymentModeUsage(); } catch (e) { msg = e.message; }
+  ok('an unattached project explains itself', /not attached to a spreadsheet/.test(msg), msg);
+  ok('and names the ids to choose from', /1Zdxq3Xf/.test(msg) && /1DtoZ3MN/.test(msg), msg);
+}
 
 // --- the dry run counts, and changes nothing ------------------------------
 {
