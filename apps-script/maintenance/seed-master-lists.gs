@@ -35,10 +35,15 @@ var SEED = {
            ["Dr. Manika Mittel", "", "", "Doctor"]],
     note: "from DEFAULT_DOCTORS"
   },
+  // The app had TWO payment-mode lists that did not match: the Daily
+  // Register's (Cash, UPI / GPay, Card, Net Banking, Cheque, N/A) and the
+  // finance receipt's (Cash, UPI, NEFT/RTGS, Cheque, Card). The same money was
+  // being recorded under two names depending on the screen. This is the single
+  // list the clinic settled on, and both screens will read it.
   "Payment Modes": {
     header: ["Mode", "Updated At"],
-    rows: [["Cash"], ["UPI / GPay"], ["Card"], ["Net Banking"], ["Cheque"], ["N/A"]],
-    note: "from PAYMENT_MODES (the Daily Register's list)"
+    rows: [["Cash"], ["UPI / GPay"], ["NEFT/RTGS"], ["Cheque"], ["Card"], ["N/A"]],
+    note: "the one agreed list, replacing the register's and the receipt's"
   },
   "Chairs": {
     header: ["Chair", "Updated At"],

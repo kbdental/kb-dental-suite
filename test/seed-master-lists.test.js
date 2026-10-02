@@ -55,7 +55,13 @@ function boot(book, confirm) {
     return (m[1].match(/"([^"]*)"/g) || []).map(s => s.slice(1, -1));
   };
   eq('the doctors are the app\'s own', vals('Doctor Details'), fromCode('DEFAULT_DOCTORS'));
-  eq('the payment modes are the app\'s own', vals('Payment Modes'), fromCode('PAYMENT_MODES'));
+  // Payment modes are the exception: the app had two lists that disagreed —
+  // the register's and the receipt's — so there was no single "app's own" to
+  // copy. This is the list the clinic decided on, and both screens will read
+  // it. Pinned here because getting it wrong changes what is recorded against
+  // real money.
+  eq('the payment modes are the one agreed list', vals('Payment Modes'),
+    ['Cash', 'UPI / GPay', 'NEFT/RTGS', 'Cheque', 'Card', 'N/A']);
   eq('the chairs are the app\'s own', vals('Chairs'), fromCode('DEFAULT_CHAIRS'));
   // And the chairs must match the backend's fallback too, or the two books
   // would disagree about what a chair is called.
