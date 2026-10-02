@@ -56,6 +56,35 @@ ok('a late answer does not land on an unmounted screen',
 ok('an empty answer yields an empty list, not a substitute',
   /const list = \(res && res\.success && res\[key\]\) \|\| \[\];/.test(html));
 
+// --- doctors: one list, and it is Master's --------------------------------
+// There used to be four answers to "who are the doctors": two names in this
+// file, a per-browser localStorage copy, a "Doctors" tab the settings screen
+// wrote to, and the "Doctor Details" tab Master edits. Which one a screen
+// showed depended on the screen — and the two in the code won whenever the
+// rest were empty, which they all were.
+eq('no built-in doctors remain', /DEFAULT_DOCTORS/.test(html), false);
+eq('the per-browser copy is gone', /saveDoctorsLS/.test(html), false);
+eq('and the second backend list is no longer read',
+  /api\("getDoctorsList"\)|api\("saveDoctorsList"/.test(html), false);
+ok('doctors come from the tab Master edits',
+  /useMasterList\("getDoctorDetailsList", "doctors"\)/.test(html));
+ok('every screen offering a doctor reads that one list',
+  (html.match(/useDoctors\(\)/g) || []).length >= 5,
+  (html.match(/useDoctors\(\)/g) || []).length);
+
+// The settings screen writes the SAME list, and its rows carry phone, email
+// and role — a name-only edit there must not throw those away.
+ok('the settings screen saves to Master\'s list',
+  /api\("saveDoctorDetailsList"/.test(html));
+ok('and carries existing rows over whole',
+  /byName\[n\] \|\| \{ name: n, phone: "", email: "", role: "Doctor" \}/.test(html));
+// A failed save must not leave the screen claiming the doctor was added.
+ok('a failed save is reported, not swallowed',
+  /if \(!res \|\| !res\.success\) \{\s*setMsg\("Could not save the doctors list/.test(html));
+// Other screens read the cache, so a save has to update it or they go stale.
+ok('a save updates the shared list the other screens read',
+  /KB_LIST_CACHE\["getDoctorDetailsList"\] = merged;/.test(html));
+
 // --- chairs start empty and wait for the sheet ----------------------------
 eq('no screen starts with invented chairs',
   /useState\(DEFAULT_CHAIRS/.test(html), false);

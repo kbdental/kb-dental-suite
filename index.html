@@ -147,17 +147,18 @@ function scopedKey(fullKey) {
   return String(fullKey).replace(/^kbdc_/, "kbdc_" + id + "_");
 }
 function lsKey(name) { return scopedKey("kbdc_" + name); }
-const DEFAULT_DOCTORS = ["Dr. Viveyk Mittel", "Dr. Manika Mittel"];
-function getDoctors() {
-  try {
-    const s = localStorage.getItem(lsKey("doctors"));
-    if (s) { const arr = JSON.parse(s); if (Array.isArray(arr) && arr.length) return arr; }
-  } catch(e) {}
-  return [...DEFAULT_DOCTORS];
-}
-function saveDoctorsLS(arr) {
-  try { localStorage.setItem(lsKey("doctors"), JSON.stringify(arr)); } catch(e) {}
-}
+// ONE doctors list, and it lives in Master — the "Doctor Details" tab.
+//
+// There used to be three answers to "who are the doctors": two names written
+// into this file, a per-browser localStorage copy, and a "Doctors" tab in the
+// sheet that the settings screen wrote to. Master edited a fourth, "Doctor
+// Details". Which one a screen showed depended on the screen, and the two
+// names in the code won whenever the rest were empty — which they all were.
+//
+// KB_DOCTORS is filled by useDoctors below and read synchronously here, for
+// the few places that need a name outside a component.
+var KB_DOCTORS = [];
+function getDoctors() { return KB_DOCTORS.slice(); }
 // Wall-clock "HH:MM" from the machine making the entry. Times are taken here
 // rather than server-side because Apps Script stamps in the script project's
 // timezone, which is not necessarily the clinic's — the front desk's own clock
@@ -230,6 +231,15 @@ function useMasterList(action, key) {
   return items;
 }
 const usePaymentModes = () => useMasterList("getPaymentModesList", "modes");
+// Master holds doctors as rows with phone, email and role; everywhere in the
+// app that offers a doctor wants the names.
+function useDoctors() {
+  const rows = useMasterList("getDoctorDetailsList", "doctors");
+  const names = React.useMemo(
+    () => (rows || []).map(d => (d && d.name) || d).filter(Boolean), [rows]);
+  React.useEffect(() => { KB_DOCTORS = names; }, [names]);
+  return names;
+}
 // Patient documents are private in Drive and are fetched as bytes through the
 // authenticated backend, so they are rendered from an in-memory blob URL rather
 // than a public Drive link. Callers must revokeObjectURL when done.
@@ -5835,7 +5845,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
   const [bReason, setBReason] = useState("");
   const [bSaving, setBSaving] = useState(false);
   const [chairs, setChairs] = useState([]);
-  const doctors = getDoctors();
+  const doctors = useDoctors();
 
   // Form state
   const [patientMode, setPatientMode] = useState("established"); // "new" | "established"
@@ -6835,7 +6845,7 @@ function QuickApptModal({ show, defaultDate, onClose, onSaved }) {
   const [fTime, setFTime] = React.useState("10:00");
   const [reasons, setReasons] = React.useState(APPT_TYPES);
   const [fReason, setFReason] = React.useState(APPT_TYPES[0]||"");
-  const doctors = getDoctors();
+  const doctors = useDoctors();
   const [fDoctor, setFDoctor] = React.useState(doctors[0]||"");
   const [chairs, setChairs] = React.useState([]);
   const [fChair, setFChair] = React.useState("");
@@ -7057,7 +7067,7 @@ function Daysheet({ globalPat, setGlobalPat }) {
   // The register is written up from the same desk that works the Daysheet, so
   // it opens here rather than sending staff off to Records mid-visit.
   const [tab, setTab] = useState("daysheet");
-  const doctors = getDoctors();
+  const doctors = useDoctors();
 
   const [statusErr, setStatusErr] = useState("");
 
@@ -10322,7 +10332,12 @@ function buildProgressNotesHTML(pat, entries) {
 
 // ── Settings: Manage Doctors ──────────────────────────────
 function DoctorsSettings({ onClose }) {
-  const [doctors, setDoctors] = useState(getDoctors());
+  // Mirrored into local state so this screen shows its own edit at once;
+  // reading the shared list straight off would leave the name you just added
+  // invisible until the screen was closed and reopened.
+  const masterDoctors = useDoctors();
+  const [doctors, setDoctors] = useState([]);
+  useEffect(() => { setDoctors(masterDoctors); }, [masterDoctors]);
   const [newDoc, setNewDoc] = useState("");
   const [sigs, setSigs] = useState({});
   const [sigDoctor, setSigDoctor] = useState("");
@@ -10339,29 +10354,40 @@ function DoctorsSettings({ onClose }) {
       setSyncing(false);
       if (res.success && res.signatures) setSigs(res.signatures);
     }).catch(() => setSyncing(false));
-    api("getDoctorsList").then(res => {
-      if (res.success && res.doctors && res.doctors.length) {
-        saveDoctorsLS(res.doctors);
-        setDoctors(res.doctors);
-      }
-    });
   }, []);
+
+  // Saves to the SAME list Master edits, so a doctor added here appears there
+  // and in every dropdown. The rows carry phone, email and role; a name-only
+  // edit here must not throw those away, so existing rows are carried over
+  // whole and only the names change.
+  const saveDoctors = async (names) => {
+    const rows = await api("getDoctorDetailsList");
+    const existing = (rows && rows.success && rows.doctors) || [];
+    const byName = {};
+    existing.forEach(d => { if (d && d.name) byName[d.name] = d; });
+    const merged = names.map(n => byName[n] || { name: n, phone: "", email: "", role: "Doctor" });
+    const res = await api("saveDoctorDetailsList", { doctors: JSON.stringify(merged) });
+    if (!res || !res.success) {
+      setMsg("Could not save the doctors list: " + ((res && res.error) || "no response"));
+      return false;
+    }
+    // Every other screen reads the shared cache, so it is updated here rather
+    // than cleared — clearing it would leave them empty until each remounted.
+    KB_LIST_CACHE["getDoctorDetailsList"] = merged;
+    KB_DOCTORS = names;
+    setDoctors(names);
+    return true;
+  };
 
   const addDoctor = () => {
     const v = newDoc.trim();
     if (!v || doctors.includes(v)) return;
-    const arr = [...doctors, v];
-    saveDoctorsLS(arr);
-    setDoctors(arr);
-    api("saveDoctorsList", { doctors: arr });
+    saveDoctors([...doctors, v]);
     setNewDoc("");
   };
   const removeDoctor = (d) => {
     if (doctors.length <= 1) return;
-    const arr = doctors.filter(x => x !== d);
-    saveDoctorsLS(arr);
-    setDoctors(arr);
-    api("saveDoctorsList", { doctors: arr });
+    saveDoctors(doctors.filter(x => x !== d));
   };
 
   const sigXY = (e, c) => {
@@ -10481,7 +10507,7 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
   const [preview, setPreview] = useState(false);
   const [previewHTML, setPreviewHTML] = useState("");
   const [showSettings, setShowSettings] = useState(false);
-  const [doctors, setDoctors] = useState(getDoctors());
+  const doctors = useDoctors();
   const today = new Date().toISOString().split("T")[0];
 
 
@@ -10772,7 +10798,7 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
   );
 
   return React.createElement("div", null,
-    showSettings && React.createElement(DoctorsSettings, { onClose:()=>{ setShowSettings(false); setDoctors(getDoctors()); } }),
+    showSettings && React.createElement(DoctorsSettings, { onClose:()=>setShowSettings(false) }),
     React.createElement(ClinicHeader, null),
     React.createElement(PatientBanner, {
       pat, uhid:uhidInput, setUhid:setUhidInput,
@@ -11579,7 +11605,14 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
   const [nToothNo, setNToothNo] = React.useState("");
   const [nProcedureDone, setNProcedureDone] = React.useState("");
   const [nWorkDone, setNWorkDone] = React.useState("");
-  const [nDoctor, setNDoctor] = React.useState(getDoctors()[0] || "");
+  const nDoctors = useDoctors();
+  const [nDoctor, setNDoctor] = React.useState("");
+  // Master answers after the first render, so an initialiser would have left
+  // this blank for ever. Default to the first doctor once the list is here,
+  // and never overwrite a choice already made.
+  React.useEffect(() => {
+    if (!nDoctor && nDoctors.length) setNDoctor(nDoctors[0]);
+  }, [nDoctors]);
   const [nPayMode, setNPayMode] = React.useState("");
   // From Master, like the finance receipt's. One list, both screens.
   const nPayModes = usePaymentModes();
@@ -11824,7 +11857,7 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
         React.createElement("div",null,React.createElement(Lbl,{c:"Doctor *"}),
           React.createElement("select",{style:{...inp,borderColor:nErrors.doctor?"#e24b4a":""},value:nDoctor,onChange:e=>setNDoctor(e.target.value)},
             React.createElement("option",{value:""},"Select doctor..."),
-            getDoctors().map(d=>React.createElement("option",{key:d,value:d},d))
+            nDoctors.map(d=>React.createElement("option",{key:d,value:d},d))
           ))
       ),
       React.createElement("div",{style:{marginBottom:12}},
