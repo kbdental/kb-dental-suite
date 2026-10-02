@@ -40,10 +40,16 @@ var HEADING_TARGET_SHEET_ID = "";
 var CONFIRM_HEADINGS = "";
 
 // Longest first, so "SWIPED" is handled before "SWIPE" would half-match it.
+//
+// "CARD" in capitals, not "Card", because FY 2026-27 and Total 2026-27 were
+// already renamed by hand and that is the spelling they use — alongside
+// "CASH", which has always been capitalised there. Imposing "Card" would have
+// left the book with a third spelling and the current year disagreeing with
+// the ones behind it, which is the opposite of the point.
 var HEADING_WORDS = [
   { from: "QR Code", to: "UPI / GPay" },
-  { from: "SWIPED",  to: "Card" },
-  { from: "SWIPE",   to: "Card" }
+  { from: "SWIPED",  to: "CARD" },
+  { from: "SWIPE",   to: "CARD" }
 ];
 
 function headingBook_() {

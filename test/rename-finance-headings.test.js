@@ -67,10 +67,23 @@ const totals = () => new Sheet('Total', [
   const r = api.renamedHeading_;
   eq('QR Code', r('QR Code'), 'UPI / GPay');
   eq('QR Code Collection', r('QR Code Collection'), 'UPI / GPay Collection');
-  eq('SWIPE Amount', r('SWIPE Amount'), 'Card Amount');
-  eq('SWIPE Received', r('SWIPE Received'), 'Card Received');
-  // SWIPED must be handled before SWIPE, or it half-matches into "CardD".
-  eq('SWIPED Amount Total', r('SWIPED Amount Total'), 'Card Amount Total');
+  // CARD in capitals: FY 2026-27 was already renamed by hand that way, and
+  // the renamed years have to agree with the current one, not introduce a
+  // third spelling.
+  eq('SWIPE Amount', r('SWIPE Amount'), 'CARD Amount');
+  eq('SWIPE Received', r('SWIPE Received'), 'CARD Received');
+  // SWIPED must be handled before SWIPE, or it half-matches into "CARDD".
+  eq('SWIPED Amount Total', r('SWIPED Amount Total'), 'CARD Amount Total');
+  // Exactly what the current year already reads, so the book ends up uniform.
+  eq('matches the current year, heading for heading',
+    ['QR Code', 'SWIPE Amount', 'SWIPE Received'].map(r),
+    ['UPI / GPay', 'CARD Amount', 'CARD Received']);
+  eq('and its Total tab too',
+    ['QR Code Collection', 'SWIPED Amount Total', 'SWIPE Received Total'].map(r),
+    ['UPI / GPay Collection', 'CARD Amount Total', 'CARD Received Total']);
+  // A tab already renamed must be left completely alone on a re-run.
+  eq('an already-renamed heading is not touched again', r('UPI / GPay'), null);
+  eq('nor is CARD Amount', r('CARD Amount'), null);
   eq('a heading with neither word is left alone', r('NEFT/RTGS'), null);
   eq('and so is an empty cell', r(''), null);
 }
@@ -103,9 +116,9 @@ const totals = () => new Sheet('Total', [
   const { api } = boot([a, b], 'YES');
   api.renameFinanceHeadings();
   eq('the FY headings are renamed', a.rows[0],
-    ['Sl. No.', 'Mode', 'CASH', 'UPI / GPay', 'NEFT/RTGS', 'Cheque', 'Card Amount', 'Card Received']);
+    ['Sl. No.', 'Mode', 'CASH', 'UPI / GPay', 'NEFT/RTGS', 'Cheque', 'CARD Amount', 'CARD Received']);
   eq('the Total headings too', b.rows[0],
-    ['Month', 'CASH Collection', 'UPI / GPay Collection', 'Card Amount Total', 'Card Received Total']);
+    ['Month', 'CASH Collection', 'UPI / GPay Collection', 'CARD Amount Total', 'CARD Received Total']);
   // The whole point: only row 1.
   eq('no data row is touched', a.rows[1], [1, 'UPI', '', 18000, '', '', '', '']);
   eq('and the Mode cell still says UPI, as 2801 formulas require', a.rows[1][1], 'UPI');
