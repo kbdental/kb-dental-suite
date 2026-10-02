@@ -1520,7 +1520,11 @@ function Registration({
   // Normal or panel is the FIRST thing asked, before any detail, because it
   // decides which book the registration is written to and which form follows.
   // Asking it later would mean re-routing a record that had already been saved.
-  const [patientType, setPatientType] = useState("");
+  // The panel screens are built but the panel book and fee schedule behind them
+  // are not, so asking the question would dead-end the front desk. Flip this to
+  // true the day panel registration can actually save, and screen 1 returns.
+  const PANEL_UI_READY = false;
+  const [patientType, setPatientType] = useState(PANEL_UI_READY ? "" : "normal");
   const [panel, setPanel] = useState("");
   // Master is the ONLY source for this list. There is deliberately no built-in
   // set of panels to fall back on: a list that is usually right is worse than
