@@ -4134,7 +4134,7 @@ function savePaymentModesList(p) {
 // Chairs list — synced via Google Sheet (not localStorage) so a chair added
 // on one front-desk computer is immediately visible on every other computer,
 // matching the same multi-computer requirement as the rest of the app.
-// The panels the clinic is empanelled with — CGHS, DGHS, BSES, DJB, MCD,
+// The panels the clinic is empanelled with — CGHS, DGEHS, BSES, DJB, MCD,
 // Delhi Police and whatever comes next. Kept as a list the clinic edits in
 // Master rather than in code, because a new panel is a commercial
 // arrangement, not a software change: adding one should not need a developer,

@@ -302,9 +302,6 @@ const GOVTIDS = ["Aadhaar", "PAN", "Driving Licence", "Passport", "Voter ID"];
 const PAIN_C = ["#22c55e", "#4ade80", "#86efac", "#fde047", "#fbbf24", "#fb923c", "#f97316", "#ef4444", "#dc2626", "#b91c1c", "#7f1d1d"];
 const PAIN_L = ["No Pain", "Very Mild", "Discomforting", "Tolerable", "Distressing", "Very Distressing", "Intense", "Very Intense", "Utterly Horrible", "Excruciating", "Unimaginable"];
 const REG_STEPS = ["Pending", "Personal", "Medical", "Dental", "Pain", "Consent", "Done"];
-// Fallback only. The live list comes from Master (the "Panels" tab), so the
-// clinic adds a new panel itself. These are the ones empanelled as at Oct 2026.
-const DEFAULT_PANELS = ["CGHS", "DGHS", "BSES", "DJB", "MCD", "Delhi Police"];
 const PHASES = ["Phase 1", "Phase 2", "Phase 3", "Special", "Elective", "Phase 4"];
 const PHASE_DESC = {
   "Phase 1": "Urgent / Priority",
@@ -1492,13 +1489,17 @@ function Registration({
   // Asking it later would mean re-routing a record that had already been saved.
   const [patientType, setPatientType] = useState("");
   const [panel, setPanel] = useState("");
-  // Edited by the clinic in Master. The built-in list is only a fallback for a
-  // backend that has not been redeployed yet — a new panel is a commercial
-  // arrangement, not a software change, so it must never need a developer.
-  const [panels, setPanels] = useState(DEFAULT_PANELS);
+  // Master is the ONLY source for this list. There is deliberately no built-in
+  // set of panels to fall back on: a list that is usually right is worse than
+  // none, because nobody can tell which one the screen is showing, and a panel
+  // removed in Master would go on appearing here. Empty means empty, and the
+  // screen says where to fix it.
+  const [panels, setPanels] = useState([]);
+  const [panelsLoaded, setPanelsLoaded] = useState(false);
   useEffect(() => {
     api("getPanelsList").then(res => {
-      if (res && res.success && (res.panels || []).length) setPanels(res.panels);
+      if (res && res.success) setPanels(res.panels || []);
+      setPanelsLoaded(true);
     });
   }, []);
   const [q, setQ] = useState({ name: "", dob: "", mobile: "", complaint: "" });
@@ -1980,7 +1981,7 @@ function Registration({
       ceQ("div", { style: { display: "flex", flexWrap: "wrap", gap: 14 } },
         bigChoice("Normal Patient", "Pays directly. Name, date of birth, mobile and chief complaint are enough to issue a UHID.",
           () => setPatientType("normal"), T),
-        bigChoice("Panel Patient", "Covered by CGHS, DGHS, BSES and the rest. The panel is chosen next, and the registration goes to the panel book.",
+        bigChoice("Panel Patient", "Covered by CGHS, DGEHS, BSES and the rest. The panel is chosen next, and the registration goes to the panel book.",
           () => setPatientType("panel"), "#7C3AED"))));
 
   // SCREEN 2 — which panel. From Master, so the clinic adds its own.
@@ -1996,8 +1997,16 @@ function Registration({
           style: { padding: "12px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer",
             background: "#fff", color: "#7C3AED", border: "1.5px solid #7C3AED", borderRadius: 9, fontFamily: "inherit" }
         }, name))),
-      !panels.length && ceQ("div", { style: { fontSize: 12.5, color: "#b45309" } },
-        "No panels are set up yet. Add them in Master \u2014 Panels."),
+      // Still loading and genuinely empty look the same on screen but mean
+      // very different things, so they are never shown as the same message.
+      !panelsLoaded && !panels.length && ceQ("div", { style: { fontSize: 12.5, color: "#666" } },
+        "Loading the panel list\u2026"),
+      panelsLoaded && !panels.length && ceQ("div", {
+        style: { fontSize: 12.5, color: "#92400e", background: "#fffbeb", border: "1px solid #f59e0b",
+          borderRadius: 8, padding: "10px 14px", lineHeight: 1.6 }
+      }, "No panels have been set up yet. Add them in ",
+         ceQ("strong", null, "Master \u2192 Accounts \u2192 Panels"),
+         " \u2014 that list is the only place panels are kept, so what you add there is exactly what appears here."),
       ceQ("button", {
         onClick: () => setPatientType(""),
         style: { marginTop: 18, padding: "8px 18px", fontSize: 13, background: "transparent", color: "#555", border: `1px solid ${BORDER}`, borderRadius: 7, cursor: "pointer" }
@@ -23818,7 +23827,7 @@ function Master() {
     }),
     panels: () => React.createElement(SimpleListEditor, {
       items: panels,
-      placeholder: "e.g. CGHS, DGHS, BSES, DJB, MCD, Delhi Police",
+      placeholder: "e.g. CGHS, DGEHS, BSES, DJB, MCD, Delhi Police",
       onAdd: (v) => savePanels([...panels, v]),
       onRemove: (i) => savePanels(panels.filter((_, idx) => idx !== i))
     }),

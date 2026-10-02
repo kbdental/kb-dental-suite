@@ -51,13 +51,21 @@ eq('no registration is saved from the panel screen',
 // --- the panel list is the clinic's own, not the developer's --------------
 ok('the panel list is loaded from the backend',
   /api\("getPanelsList"\)/.test(html));
-ok('there is a built-in fallback for an older backend',
-  /const DEFAULT_PANELS = /.test(html));
-const fallback = /const DEFAULT_PANELS = \[([^\]]+)\]/.exec(html)[1];
-['CGHS', 'DGHS', 'BSES', 'DJB', 'MCD', 'Delhi Police'].forEach(p =>
-  ok('the fallback includes ' + p, fallback.indexOf('"' + p + '"') >= 0, fallback));
-ok('the fallback is only used when the backend gives nothing',
-  /if \(res && res\.success && \(res\.panels \|\| \[\]\)\.length\) setPanels\(res\.panels\)/.test(html));
+// Master is the only source. A built-in list that is usually right is worse
+// than none: nobody can tell which list the screen is showing, and a panel
+// removed in Master would go on appearing.
+eq('there is no built-in panel list to drift from Master',
+  /DEFAULT_PANELS/.test(html), false);
+eq('the picker starts empty and waits for Master',
+  /const \[panels, setPanels\] = useState\(\[\]\)/.test(html), true);
+eq('whatever Master returns is what is shown, empty included',
+  /if \(res && res\.success\) setPanels\(res\.panels \|\| \[\]\)/.test(html), true);
+// "Still loading" and "genuinely none" look identical on screen but mean very
+// different things; showing the same message for both sends someone hunting
+// through Master for a list that is on its way.
+ok('loading and empty are told apart', /panelsLoaded/.test(html));
+ok('and an empty list says where to fix it',
+  /Master \\u2192 Accounts \\u2192 Panels/.test(html));
 
 // --- and the clinic can edit it, without a developer ----------------------
 ok('Master has a Panels tab', /\{ id:"panels",\s*label:"Panels" \}/.test(html));
