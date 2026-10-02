@@ -275,7 +275,7 @@ function handleAuthFailure(res) {
   return res;
 }
 
-async function api(action, data = {}) {
+async function apiDirect(action, data = {}) {
   try {
     const p = new URLSearchParams({
       action
@@ -294,6 +294,67 @@ async function api(action, data = {}) {
     };
   }
 }
+// Every read the app makes goes through here, and each one used to be its own
+// HTTPS request. Apps Script charges roughly a second of start-up per request
+// and limits how many run at once for a single user, so a screen that asked
+// for a dozen lists spent most of its time waiting in a queue rather than
+// moving data. Batching only the Master page fixed the one screen nobody
+// refreshes all day and left the rest exactly as slow as before.
+//
+// So the coalescing lives in api() itself: reads asked for in the same tick
+// are collected and sent as one request. No call site changes, which matters
+// when there are a hundred and fifty of them and any one of them could have
+// been missed by hand.
+//
+// Only parameterless get* actions qualify. A write must stay its own request
+// so a half-applied batch can never happen, and an action carrying parameters
+// cannot go in — the backend's batch passes nothing but the action and token.
+const KB_BATCH_MAX = 25;
+let _batchQueue = [];
+let _batchTimer = null;
+
+function flushBatch() {
+  _batchTimer = null;
+  const queue = _batchQueue;
+  _batchQueue = [];
+  if (!queue.length) return;
+
+  for (let i = 0; i < queue.length; i += KB_BATCH_MAX) {
+    const chunk = queue.slice(i, i + KB_BATCH_MAX);
+    const names = chunk.map(q => q.action);
+    apiDirect("batch", { actions: JSON.stringify(names) }).then(res => {
+      if (res && res.success && res.results) {
+        chunk.forEach(q => q.resolve(res.results[q.action] || { success: false, error: "missing from batch" }));
+        return;
+      }
+      // The backend has not been redeployed with the batch action, or it
+      // failed as a whole. Every queued read still has to be answered, so
+      // they go out individually — slow, but no worse than before, and the
+      // caller never learns the difference.
+      chunk.forEach(q => apiDirect(q.action).then(q.resolve));
+    });
+  }
+}
+
+function api(action, data = {}) {
+  const batchable =
+    action !== "batch" &&
+    action.indexOf("get") === 0 &&
+    Object.keys(data).length === 0;
+  if (!batchable) return apiDirect(action, data);
+
+  // Two screens asking for the same list in the same tick is one request, and
+  // both get the same answer.
+  const already = _batchQueue.find(q => q.action === action);
+  if (already) return already.promise;
+
+  let resolve;
+  const promise = new Promise(r => { resolve = r; });
+  _batchQueue.push({ action, resolve, promise });
+  if (_batchTimer === null) _batchTimer = setTimeout(flushBatch, 0);
+  return promise;
+}
+
 // Several reads in ONE round trip. Each api() call is its own HTTPS request to
 // Apps Script, which charges about a second of start-up apiece and limits how
 // many run at once for one user — so asking for eighteen lists in parallel
