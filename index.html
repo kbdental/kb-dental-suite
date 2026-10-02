@@ -147,17 +147,18 @@ function scopedKey(fullKey) {
   return String(fullKey).replace(/^kbdc_/, "kbdc_" + id + "_");
 }
 function lsKey(name) { return scopedKey("kbdc_" + name); }
-const DEFAULT_DOCTORS = ["Dr. Viveyk Mittel", "Dr. Manika Mittel"];
-function getDoctors() {
-  try {
-    const s = localStorage.getItem(lsKey("doctors"));
-    if (s) { const arr = JSON.parse(s); if (Array.isArray(arr) && arr.length) return arr; }
-  } catch(e) {}
-  return [...DEFAULT_DOCTORS];
-}
-function saveDoctorsLS(arr) {
-  try { localStorage.setItem(lsKey("doctors"), JSON.stringify(arr)); } catch(e) {}
-}
+// ONE doctors list, and it lives in Master — the "Doctor Details" tab.
+//
+// There used to be three answers to "who are the doctors": two names written
+// into this file, a per-browser localStorage copy, and a "Doctors" tab in the
+// sheet that the settings screen wrote to. Master edited a fourth, "Doctor
+// Details". Which one a screen showed depended on the screen, and the two
+// names in the code won whenever the rest were empty — which they all were.
+//
+// KB_DOCTORS is filled by useDoctors below and read synchronously here, for
+// the few places that need a name outside a component.
+var KB_DOCTORS = [];
+function getDoctors() { return KB_DOCTORS.slice(); }
 // Wall-clock "HH:MM" from the machine making the entry. Times are taken here
 // rather than server-side because Apps Script stamps in the script project's
 // timezone, which is not necessarily the clinic's — the front desk's own clock
@@ -206,7 +207,39 @@ function tatBetween(fromHHMM, toHHMM) {
   const mins = (b - a + 1440) % 1440;
   return String(Math.floor(mins / 60)).padStart(2, "0") + ":" + String(mins % 60).padStart(2, "0");
 }
-const PAYMENT_MODES = ["Cash", "UPI / GPay", "Card", "Net Banking", "Cheque", "N/A"];
+// Master is the only source for the clinic's lists. There is deliberately no
+// built-in copy to fall back on: a list that is usually right is worse than
+// none, because nobody can tell which one a screen is showing, and a mode
+// deleted in Master would go on appearing. Empty means Master is empty.
+//
+// Fetched once per list and shared, rather than once per component — the
+// payment modes are wanted on two unrelated screens, and two requests for the
+// same six words is two seconds of an Apps Script round trip for nothing.
+const KB_LIST_CACHE = {};
+function useMasterList(action, key) {
+  const [items, setItems] = React.useState(KB_LIST_CACHE[action] || []);
+  React.useEffect(() => {
+    if (KB_LIST_CACHE[action]) { setItems(KB_LIST_CACHE[action]); return; }
+    let alive = true;
+    api(action).then(res => {
+      const list = (res && res.success && res[key]) || [];
+      KB_LIST_CACHE[action] = list;
+      if (alive) setItems(list);
+    });
+    return () => { alive = false; };
+  }, [action, key]);
+  return items;
+}
+const usePaymentModes = () => useMasterList("getPaymentModesList", "modes");
+// Master holds doctors as rows with phone, email and role; everywhere in the
+// app that offers a doctor wants the names.
+function useDoctors() {
+  const rows = useMasterList("getDoctorDetailsList", "doctors");
+  const names = React.useMemo(
+    () => (rows || []).map(d => (d && d.name) || d).filter(Boolean), [rows]);
+  React.useEffect(() => { KB_DOCTORS = names; }, [names]);
+  return names;
+}
 // Patient documents are private in Drive and are fetched as bytes through the
 // authenticated backend, so they are rendered from an in-memory blob URL rather
 // than a public Drive link. Callers must revokeObjectURL when done.
@@ -1484,6 +1517,28 @@ function Registration({
   // haven't sat with the iPad yet. Name + DOB + mobile + complaint is enough
   // to open a record; the rest of the form is completed later via the patient
   // link (register.html?uhid=...), which updates the same UHID row.
+  // Normal or panel is the FIRST thing asked, before any detail, because it
+  // decides which book the registration is written to and which form follows.
+  // Asking it later would mean re-routing a record that had already been saved.
+  // The panel screens are built but the panel book and fee schedule behind them
+  // are not, so asking the question would dead-end the front desk. Flip this to
+  // true the day panel registration can actually save, and screen 1 returns.
+  const PANEL_UI_READY = false;
+  const [patientType, setPatientType] = useState(PANEL_UI_READY ? "" : "normal");
+  const [panel, setPanel] = useState("");
+  // Master is the ONLY source for this list. There is deliberately no built-in
+  // set of panels to fall back on: a list that is usually right is worse than
+  // none, because nobody can tell which one the screen is showing, and a panel
+  // removed in Master would go on appearing here. Empty means empty, and the
+  // screen says where to fix it.
+  const [panels, setPanels] = useState([]);
+  const [panelsLoaded, setPanelsLoaded] = useState(false);
+  useEffect(() => {
+    api("getPanelsList").then(res => {
+      if (res && res.success) setPanels(res.panels || []);
+      setPanelsLoaded(true);
+    });
+  }, []);
   const [q, setQ] = useState({ name: "", dob: "", mobile: "", complaint: "" });
   const [qErrors, setQErrors] = useState({});
   const [qBusy, setQBusy] = useState(false);
@@ -1942,9 +1997,87 @@ function Registration({
       style: { marginTop: 6, padding: "10px 24px", fontSize: 13, background: qBusy ? "#9ac" : T, color: "#fff", border: "none", borderRadius: 7, cursor: qBusy ? "wait" : "pointer", fontWeight: 700 }
     }, qBusy ? "Working..." : "Generate UHID →")
   );
+  const bigChoice = (title, sub, onClick, accent) => ceQ("button", {
+    onClick, style: {
+      flex: "1 1 220px", textAlign: "left", cursor: "pointer", background: "#fff",
+      border: "1.5px solid " + accent, borderRadius: 12, padding: "20px 22px",
+      fontFamily: "inherit"
+    }
+  },
+    ceQ("div", { style: { fontSize: 17, fontWeight: 800, color: accent, marginBottom: 6 } }, title),
+    ceQ("div", { style: { fontSize: 12.5, color: "#555", lineHeight: 1.5 } }, sub));
+
+  // SCREEN 1 — which kind of patient. Nothing is typed and nothing is saved
+  // until this is answered, so a record can never be written to the wrong book.
+  if (step === 0 && !patientType) return ceQ("div", null,
+    ceQ(ClinicHeader, null), ceQ(StepBar, { cur: 0 }),
+    ceQ("div", { style: { border: `1px solid ${BORDER}`, borderRadius: 10, padding: "18px 20px", background: "#fff" } },
+      ceQ(Sec, { t: "New Registration" }),
+      ceQ("div", { style: { fontSize: 12.5, color: "#666", marginBottom: 16 } },
+        "Is this patient paying themselves, or are they covered by a panel?"),
+      ceQ("div", { style: { display: "flex", flexWrap: "wrap", gap: 14 } },
+        bigChoice("Normal Patient", "Pays directly. Name, date of birth, mobile and chief complaint are enough to issue a UHID.",
+          () => setPatientType("normal"), T),
+        bigChoice("Panel Patient", "Covered by CGHS, DGEHS, BSES and the rest. The panel is chosen next, and the registration goes to the panel book.",
+          () => setPatientType("panel"), "#7C3AED"))));
+
+  // SCREEN 2 — which panel. From Master, so the clinic adds its own.
+  if (step === 0 && patientType === "panel" && !panel) return ceQ("div", null,
+    ceQ(ClinicHeader, null), ceQ(StepBar, { cur: 0 }),
+    ceQ("div", { style: { border: "1px solid #7C3AED", borderRadius: 10, padding: "18px 20px", background: "#fff" } },
+      ceQ(Sec, { t: "Which panel?" }),
+      ceQ("div", { style: { fontSize: 12.5, color: "#666", marginBottom: 16 } },
+        "The panel decides the fields that follow and the claim paperwork. Panels are edited in Master \u2014 Panels."),
+      ceQ("div", { style: { display: "flex", flexWrap: "wrap", gap: 10 } },
+        panels.map(name => ceQ("button", {
+          key: name, onClick: () => setPanel(name),
+          style: { padding: "12px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer",
+            background: "#fff", color: "#7C3AED", border: "1.5px solid #7C3AED", borderRadius: 9, fontFamily: "inherit" }
+        }, name))),
+      // Still loading and genuinely empty look the same on screen but mean
+      // very different things, so they are never shown as the same message.
+      !panelsLoaded && !panels.length && ceQ("div", { style: { fontSize: 12.5, color: "#666" } },
+        "Loading the panel list\u2026"),
+      panelsLoaded && !panels.length && ceQ("div", {
+        style: { fontSize: 12.5, color: "#92400e", background: "#fffbeb", border: "1px solid #f59e0b",
+          borderRadius: 8, padding: "10px 14px", lineHeight: 1.6 }
+      }, "No panels have been set up yet. Add them in ",
+         ceQ("strong", null, "Master \u2192 Accounts \u2192 Panels"),
+         " \u2014 that list is the only place panels are kept, so what you add there is exactly what appears here."),
+      ceQ("button", {
+        onClick: () => setPatientType(""),
+        style: { marginTop: 18, padding: "8px 18px", fontSize: 13, background: "transparent", color: "#555", border: `1px solid ${BORDER}`, borderRadius: 7, cursor: "pointer" }
+      }, "\u2190 Back")));
+
+  // SCREEN 3 — the panel registration form, still being built. It deliberately
+  // stops here rather than falling through to the normal form: that form saves
+  // to the main book, so a panel patient would be written to the wrong one and
+  // would have to be found and moved afterwards.
+  if (step === 0 && patientType === "panel" && panel) return ceQ("div", null,
+    ceQ(ClinicHeader, null), ceQ(StepBar, { cur: 0 }),
+    ceQ("div", { style: { border: "1px solid #f59e0b", background: "#fffbeb", borderRadius: 10, padding: "18px 20px" } },
+      ceQ("div", { style: { fontSize: 15, fontWeight: 800, color: "#92400e", marginBottom: 8 } },
+        panel + " \u2014 registration form is not ready yet"),
+      ceQ("div", { style: { fontSize: 12.5, color: "#78350f", lineHeight: 1.6, marginBottom: 14 } },
+        "The panel and the book it writes to are set up, but the fields this panel needs are still being added. ",
+        "Nothing has been saved. Register this patient as Normal for now if they must be seen today, and the record can be moved once this form is in."),
+      ceQ("button", {
+        onClick: () => setPanel(""),
+        style: { padding: "8px 18px", fontSize: 13, background: "#fff", color: "#92400e", border: "1px solid #f59e0b", borderRadius: 7, cursor: "pointer", marginRight: 8 }
+      }, "\u2190 Choose a different panel"),
+      ceQ("button", {
+        onClick: () => { setPatientType("normal"); setPanel(""); },
+        style: { padding: "8px 18px", fontSize: 13, background: "transparent", color: "#555", border: `1px solid ${BORDER}`, borderRadius: 7, cursor: "pointer" }
+      }, "Register as Normal instead")));
+
   if (step === 0) return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(ClinicHeader, null), /*#__PURE__*/React.createElement(StepBar, {
     cur: 0
-  }), quickCard, apiMsg && /*#__PURE__*/React.createElement("div", {
+  }), patientType === "normal" && ceQ("div", {
+    style: { fontSize: 12, color: "#555", marginBottom: 10, display: "flex", gap: 10, alignItems: "center" }
+  }, ceQ("span", null, "Normal patient"), ceQ("button", {
+    onClick: () => { setPatientType(""); setPanel(""); },
+    style: { padding: "3px 10px", fontSize: 11.5, background: "transparent", color: T, border: `1px solid ${BORDER}`, borderRadius: 6, cursor: "pointer" }
+  }, "change")), quickCard, apiMsg && /*#__PURE__*/React.createElement("div", {
     style: {
       background: TL,
       border: `1px solid ${TM}`,
@@ -5573,7 +5706,7 @@ const TIME_SLOTS = [
 const STATUS_COL = { Scheduled:"#0078B4", "Checked In":"#059669", "In Chair":"#D97706", Completed:"#6B7280", Cancelled:"#e24b4a", "No Show":"#9ca3af" };
 const DOCTOR_COL = ["#0078B4", "#7C3AED", "#059669", "#D97706", "#DB2777"];
 const WEEK_DAY_LBL = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-const DEFAULT_CHAIRS = ["Chair 1","Chair 2","Chair 3","Chair 4"];
+
 const CANCEL_REASONS = ["Cancelled by Patient","Cancelled by Doctor","Cancelled by Clinic","No Show"];
 // Which action button to show for the current status, and what the next status becomes
 const APPT_NEXT_ACTION = { Scheduled:{ label:"Check In", next:"Checked In" }, "Checked In":{ label:"Engage", next:"In Chair" }, "In Chair":{ label:"Check Out", next:"Completed" } };
@@ -5715,8 +5848,8 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
   const [bTo, setBTo] = useState("09:30");
   const [bReason, setBReason] = useState("");
   const [bSaving, setBSaving] = useState(false);
-  const [chairs, setChairs] = useState(DEFAULT_CHAIRS);
-  const doctors = getDoctors();
+  const [chairs, setChairs] = useState([]);
+  const doctors = useDoctors();
 
   // Form state
   const [patientMode, setPatientMode] = useState("established"); // "new" | "established"
@@ -5732,7 +5865,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
   const [fTime, setFTime] = useState("10:00");
   const [fReason, setFReason] = useState("");
   const [fDoctor, setFDoctor] = useState(doctors[0] || "");
-  const [fChair, setFChair] = useState(DEFAULT_CHAIRS[0]);
+  const [fChair, setFChair] = useState("");
   const [fNotes, setFNotes] = useState("");
   const [notifyPatientSMS, setNotifyPatientSMS] = useState(false);
   const [notifyPatientWA, setNotifyPatientWA] = useState(true);
@@ -6716,10 +6849,10 @@ function QuickApptModal({ show, defaultDate, onClose, onSaved }) {
   const [fTime, setFTime] = React.useState("10:00");
   const [reasons, setReasons] = React.useState(APPT_TYPES);
   const [fReason, setFReason] = React.useState(APPT_TYPES[0]||"");
-  const doctors = getDoctors();
+  const doctors = useDoctors();
   const [fDoctor, setFDoctor] = React.useState(doctors[0]||"");
-  const [chairs, setChairs] = React.useState(DEFAULT_CHAIRS);
-  const [fChair, setFChair] = React.useState(DEFAULT_CHAIRS[0]);
+  const [chairs, setChairs] = React.useState([]);
+  const [fChair, setFChair] = React.useState("");
   const [fNotes, setFNotes] = React.useState("");
   const [notifyPatientSMS, setNotifyPatientSMS] = React.useState(false);
   const [notifyPatientWA, setNotifyPatientWA] = React.useState(true);
@@ -6938,7 +7071,7 @@ function Daysheet({ globalPat, setGlobalPat }) {
   // The register is written up from the same desk that works the Daysheet, so
   // it opens here rather than sending staff off to Records mid-visit.
   const [tab, setTab] = useState("daysheet");
-  const doctors = getDoctors();
+  const doctors = useDoctors();
 
   const [statusErr, setStatusErr] = useState("");
 
@@ -10203,7 +10336,12 @@ function buildProgressNotesHTML(pat, entries) {
 
 // ── Settings: Manage Doctors ──────────────────────────────
 function DoctorsSettings({ onClose }) {
-  const [doctors, setDoctors] = useState(getDoctors());
+  // Mirrored into local state so this screen shows its own edit at once;
+  // reading the shared list straight off would leave the name you just added
+  // invisible until the screen was closed and reopened.
+  const masterDoctors = useDoctors();
+  const [doctors, setDoctors] = useState([]);
+  useEffect(() => { setDoctors(masterDoctors); }, [masterDoctors]);
   const [newDoc, setNewDoc] = useState("");
   const [sigs, setSigs] = useState({});
   const [sigDoctor, setSigDoctor] = useState("");
@@ -10220,29 +10358,40 @@ function DoctorsSettings({ onClose }) {
       setSyncing(false);
       if (res.success && res.signatures) setSigs(res.signatures);
     }).catch(() => setSyncing(false));
-    api("getDoctorsList").then(res => {
-      if (res.success && res.doctors && res.doctors.length) {
-        saveDoctorsLS(res.doctors);
-        setDoctors(res.doctors);
-      }
-    });
   }, []);
+
+  // Saves to the SAME list Master edits, so a doctor added here appears there
+  // and in every dropdown. The rows carry phone, email and role; a name-only
+  // edit here must not throw those away, so existing rows are carried over
+  // whole and only the names change.
+  const saveDoctors = async (names) => {
+    const rows = await api("getDoctorDetailsList");
+    const existing = (rows && rows.success && rows.doctors) || [];
+    const byName = {};
+    existing.forEach(d => { if (d && d.name) byName[d.name] = d; });
+    const merged = names.map(n => byName[n] || { name: n, phone: "", email: "", role: "Doctor" });
+    const res = await api("saveDoctorDetailsList", { doctors: JSON.stringify(merged) });
+    if (!res || !res.success) {
+      setMsg("Could not save the doctors list: " + ((res && res.error) || "no response"));
+      return false;
+    }
+    // Every other screen reads the shared cache, so it is updated here rather
+    // than cleared — clearing it would leave them empty until each remounted.
+    KB_LIST_CACHE["getDoctorDetailsList"] = merged;
+    KB_DOCTORS = names;
+    setDoctors(names);
+    return true;
+  };
 
   const addDoctor = () => {
     const v = newDoc.trim();
     if (!v || doctors.includes(v)) return;
-    const arr = [...doctors, v];
-    saveDoctorsLS(arr);
-    setDoctors(arr);
-    api("saveDoctorsList", { doctors: arr });
+    saveDoctors([...doctors, v]);
     setNewDoc("");
   };
   const removeDoctor = (d) => {
     if (doctors.length <= 1) return;
-    const arr = doctors.filter(x => x !== d);
-    saveDoctorsLS(arr);
-    setDoctors(arr);
-    api("saveDoctorsList", { doctors: arr });
+    saveDoctors(doctors.filter(x => x !== d));
   };
 
   const sigXY = (e, c) => {
@@ -10362,7 +10511,7 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
   const [preview, setPreview] = useState(false);
   const [previewHTML, setPreviewHTML] = useState("");
   const [showSettings, setShowSettings] = useState(false);
-  const [doctors, setDoctors] = useState(getDoctors());
+  const doctors = useDoctors();
   const today = new Date().toISOString().split("T")[0];
 
 
@@ -10653,7 +10802,7 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
   );
 
   return React.createElement("div", null,
-    showSettings && React.createElement(DoctorsSettings, { onClose:()=>{ setShowSettings(false); setDoctors(getDoctors()); } }),
+    showSettings && React.createElement(DoctorsSettings, { onClose:()=>setShowSettings(false) }),
     React.createElement(ClinicHeader, null),
     React.createElement(PatientBanner, {
       pat, uhid:uhidInput, setUhid:setUhidInput,
@@ -11460,8 +11609,17 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
   const [nToothNo, setNToothNo] = React.useState("");
   const [nProcedureDone, setNProcedureDone] = React.useState("");
   const [nWorkDone, setNWorkDone] = React.useState("");
-  const [nDoctor, setNDoctor] = React.useState(getDoctors()[0] || "");
+  const nDoctors = useDoctors();
+  const [nDoctor, setNDoctor] = React.useState("");
+  // Master answers after the first render, so an initialiser would have left
+  // this blank for ever. Default to the first doctor once the list is here,
+  // and never overwrite a choice already made.
+  React.useEffect(() => {
+    if (!nDoctor && nDoctors.length) setNDoctor(nDoctors[0]);
+  }, [nDoctors]);
   const [nPayMode, setNPayMode] = React.useState("");
+  // From Master, like the finance receipt's. One list, both screens.
+  const nPayModes = usePaymentModes();
   // Prefilled with the current time so the common case is one glance and no
   // typing, but editable — an entry is often written up after the patient has
   // already been seen.
@@ -11703,7 +11861,7 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
         React.createElement("div",null,React.createElement(Lbl,{c:"Doctor *"}),
           React.createElement("select",{style:{...inp,borderColor:nErrors.doctor?"#e24b4a":""},value:nDoctor,onChange:e=>setNDoctor(e.target.value)},
             React.createElement("option",{value:""},"Select doctor..."),
-            getDoctors().map(d=>React.createElement("option",{key:d,value:d},d))
+            nDoctors.map(d=>React.createElement("option",{key:d,value:d},d))
           ))
       ),
       React.createElement("div",{style:{marginBottom:12}},
@@ -11750,7 +11908,7 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
         React.createElement(Lbl,{c:"Mode of Payment"}),
         React.createElement("select",{style:inp,value:nPayMode,onChange:e=>setNPayMode(e.target.value)},
           React.createElement("option",{value:""},"— none —"),
-          PAYMENT_MODES.map(m=>React.createElement("option",{key:m,value:m},m))
+          nPayModes.map(m=>React.createElement("option",{key:m,value:m},m))
         )
       ),
       // Two compliance questions the register used to answer by itself. Left
@@ -23262,6 +23420,7 @@ const MASTER_STRUCTURE = [
     { id:"medNotes",        label:"Post op instructions" }
   ]},
   { id:"accounts", label:"Accounts", subtabs:[
+    { id:"panels",       label:"Panels" },
     { id:"modes",        label:"Payment Modes" },
     { id:"expenses",     label:"Expense Categories" },
     { id:"accountHeads", label:"Account Heads", placeholder:true },
@@ -23629,6 +23788,7 @@ function Master() {
   const [apptReasons, setApptReasons] = React.useState([]);
   const [docCategories, setDocCategories] = React.useState([]);
   const [implantBrands, setImplantBrands] = React.useState([]);
+  const [panels, setPanels] = React.useState([]);
   const [procedureLibrary, setProcedureLibrary] = React.useState([]);
   const [procedureFamilies, setProcedureFamilies] = React.useState([]);
   const [clinicProfile, setClinicProfile] = React.useState(window.CLINIC || {});
@@ -23646,13 +23806,16 @@ function Master() {
       "getMedicineDosagesList", "getMedicineFrequenciesList", "getMedicineDurationsList",
       "getMedicineInstructionsList", "getMedicineNotesList", "getReasonsList",
       "getClinicProfile", "getDocumentCategoriesList", "getProcedureLibrary",
-      "getImplantBrandsList"
-    ]).then(([t,d,e,c,m,tpl,ch,med,dos,freq,dur,instr,mn,ar,cp,dc,pl,ib]) => {
+      "getImplantBrandsList", "getPanelsList"
+    ]).then(([t,d,e,c,m,tpl,ch,med,dos,freq,dur,instr,mn,ar,cp,dc,pl,ib,pnl]) => {
       setLoading(false);
       if (t.success) setTreatments(t.treatments || []);
       // An older backend without this list simply leaves it empty, and the
       // form keeps using its built-in brands until the list is filled in.
       if (ib && ib.success) setImplantBrands(ib.brands || []);
+      // A backend without this list leaves it empty, and Registration falls
+      // back to its built-in panels until the list is filled in here.
+      if (pnl && pnl.success) setPanels(pnl.panels || []);
       if (d.success) setDoctorDetails(d.doctors || []);
       if (e.success) setEmployees(e.employees || []);
       if (c.success) setExpenseCats(c.categories || []);
@@ -23678,6 +23841,7 @@ function Master() {
   const saveDoctors = async (arr) => { setDoctorDetails(arr); await api("saveDoctorDetailsList", { doctors: JSON.stringify(arr) }); flash(); };
   const saveEmployees = async (arr) => { setEmployees(arr); await api("saveEmployeesList", { employees: JSON.stringify(arr) }); flash(); };
   const saveExpenseCats = async (arr) => { setExpenseCats(arr); await api("saveExpenseCategoriesList", { categories: JSON.stringify(arr) }); flash(); };
+  const savePanels = async (arr) => { setPanels(arr); await api("savePanelsList", { panels: JSON.stringify(arr) }); flash(); };
   const saveModes = async (arr) => { setPaymentModes(arr); await api("savePaymentModesList", { modes: JSON.stringify(arr) }); flash(); };
   const saveTemplates = async (arr) => { setClinicalTemplates(arr); await api("saveClinicalNoteTemplates", { templates: JSON.stringify(arr) }); flash(); };
   const saveChairs = async (arr) => { setChairsList(arr); await api("saveChairsList", { chairs: JSON.stringify(arr) }); flash(); };
@@ -23722,6 +23886,12 @@ function Master() {
       items:expenseCats, placeholder:"New expense category...",
       onAdd:(v)=>saveExpenseCats([...expenseCats, v]),
       onRemove:(i)=>saveExpenseCats(expenseCats.filter((_,idx)=>idx!==i))
+    }),
+    panels: () => React.createElement(SimpleListEditor, {
+      items: panels,
+      placeholder: "e.g. CGHS, DGEHS, BSES, DJB, MCD, Delhi Police",
+      onAdd: (v) => savePanels([...panels, v]),
+      onRemove: (i) => savePanels(panels.filter((_, idx) => idx !== i))
     }),
     modes: () => React.createElement(SimpleListEditor, {
       items:paymentModes, placeholder:"New payment mode...",
@@ -24766,7 +24936,7 @@ function openAppointmentWhatsAppChat(a) {
 // ── Add Receipt — mirrors the clinic's live "Patient Fee Receipt Form" (Google Form)
 // field-for-field, and saves into the SAME "Working" sheet tab that form feeds —
 // so the existing finance workflow downstream of that sheet keeps working unchanged.
-const PAYMENT_MODES_FIN = ["Cash", "UPI", "NEFT/RTGS", "Cheque", "Card"];
+
 
 const SERVICE_OPTIONS_FIN = ["Consultation","RCT","Scaling","Extraction","Restoration","Crown & Bridge",
   "Implant Surgery","Implant Prosthetic","Orthodontics","Denture","Pedo","X-Ray / Radiograph","Other"];
@@ -24830,8 +25000,12 @@ function AddReceiptForm({ globalPat, onSaved }) {
     } else setMsg("❌ " + (res.error || "Save failed"));
   };
 
+  // The same Master list the Daily Register reads. These two screens used to
+  // carry different lists — "UPI / GPay" here and "UPI" there — so the same
+  // payment was recorded under two names depending on who took it.
+  const payModes = usePaymentModes();
   const RadioGroup = ({ value, onChange }) => React.createElement("div", { style:{ display:"flex", flexWrap:"wrap", gap:14, marginTop:4 } },
-    PAYMENT_MODES_FIN.map(m => React.createElement("label", { key:m, style:{ display:"flex", alignItems:"center", gap:5, fontSize:12.5, cursor:"pointer" } },
+    payModes.map(m => React.createElement("label", { key:m, style:{ display:"flex", alignItems:"center", gap:5, fontSize:12.5, cursor:"pointer" } },
       React.createElement("input", { type:"radio", checked:value===m, onChange:()=>onChange(m), style:{ accentColor:T } }),
       m
     ))

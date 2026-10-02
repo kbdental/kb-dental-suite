@@ -97,7 +97,11 @@ const names = (master.slice(0, master.indexOf(']')).match(/"([^"]+)"/g) || []).l
 const destructured = (/\.then\(\(\[([^\]]+)\]/.exec(master) || [, ''])[1]
   .split(',').map(s => s.trim()).filter(Boolean).length;
 eq('every list asked for has somewhere to land', names, destructured);
-ok('and there are the eighteen that were timed out', names === 18, names);
+// Not a fixed number: the list grows as Master grows. What matters is that
+// they go in ONE request, which the equality above already pins, and that the
+// page is still asking for a realistic set rather than having quietly lost
+// most of them.
+ok('the Master page still fetches its full set of lists', names >= 18, names);
 eq('the Master page no longer fires them one by one',
   /Promise\.all\(\[\s*api\("getTreatmentsMaster"/.test(html), false);
 

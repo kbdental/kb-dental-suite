@@ -22,7 +22,10 @@ const ok = (name, cond, detail) => checks.push({ name, ok: !!cond, got: detail, 
 // The real functions, sliced from the file rather than reimplemented — a copy
 // here could pass while the app shipped something else.
 const from = html.indexOf('function scopedKey(');
-const to = html.indexOf('const DEFAULT_DOCTORS');
+// Anchored on the comment that opens the doctors list, not on a constant:
+// DEFAULT_DOCTORS was removed when Master became the only source, and an
+// anchor that vanishes silently slices to the end of the file.
+const to = html.indexOf('// ONE doctors list');
 ok('scopedKey and lsKey are in index.html', from > 0 && to > from, [from, to]);
 const src = html.slice(from, to);
 

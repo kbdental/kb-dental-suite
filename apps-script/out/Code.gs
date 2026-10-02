@@ -576,8 +576,6 @@ function route(p) {
       case "saveSignature":    return saveSignature(p);
 
       // ── Doctors ────────────────────────────────────────────
-      case "getDoctorsList":   return getDoctorsList();
-      case "saveDoctorsList":  return saveDoctorsList(p);
 
       // ── Finance ────────────────────────────────────────────
       case "getReceipts":          return getReceipts(p);
@@ -617,6 +615,8 @@ function route(p) {
       case "saveEmployeesList":        return saveEmployeesList(p);
       case "getPaymentModesList":      return getPaymentModesList();
       case "savePaymentModesList":     return savePaymentModesList(p);
+      case "getPanelsList":            return getPanelsList();
+      case "savePanelsList":           return savePanelsList(p);
       case "getChairsList":            return getChairsList();
       case "saveChairsList":           return saveChairsList(p);
       case "getClinicalNoteTemplates":  return getClinicalNoteTemplates();
@@ -3047,37 +3047,16 @@ function saveSignature(p) {
 // DOCTORS LIST
 // ════════════════════════════════════════════════════════════
 
-function getDoctorsList() {
-  var sh = getSheet("Doctors");
-  var data = sh.getDataRange().getValues();
-  var doctors = [];
-  for (var i = 1; i < data.length; i++) {
-    if (data[i][0]) doctors.push(data[i][0]);
-  }
-  if (doctors.length === 0) doctors = ["Dr. Viveyk Mittel", "Dr. Manika Mittel"];
-  return { success: true, doctors: doctors };
-}
-
-function saveDoctorsList(p) {
-  var sh = getSheet("Doctors");
-  sh.clearContents();
-  sh.appendRow(["Doctor Name","Updated At"]);
-  var arr = [];
-  try { arr = JSON.parse(p.doctors); } catch(e) {
-    if (Array.isArray(p.doctors)) arr = p.doctors;
-  }
-  arr.forEach(function(d) {
-    sh.appendRow([d, new Date().toISOString()]);
-  });
-  return { success: true };
-}
-
-// ════════════════════════════════════════════════════════════
-// SOAP NOTES (AI via Anthropic Claude API)
-// ════════════════════════════════════════════════════════════
-// Store your Anthropic API key in Script Properties:
-//   File → Project Properties → Script Properties
-//   Key: ANTHROPIC_API_KEY  Value: sk-ant-...
+// The "Doctors" tab and its two functions are gone. It was a SECOND doctors
+// list beside the "Doctor Details" tab that Master edits, and getDoctorsList
+// carried its own hardcoded pair of names on top of that — so a clinic with an
+// empty tab got those two whatever Master said, and nobody could tell which
+// list a screen was showing. Doctor Details is the only list now.
+//
+// The functions are removed rather than left unused because getSheet() creates
+// a tab that is missing: leaving them in would have recreated "Doctors" the
+// first time anything called one, and the tab would quietly come back after
+// being deleted.
 
 function generateSOAPNotes(p) {
   var apiKey = PropertiesService.getScriptProperties().getProperty("ANTHROPIC_API_KEY");
@@ -4132,12 +4111,38 @@ function savePaymentModesList(p) {
 // Chairs list — synced via Google Sheet (not localStorage) so a chair added
 // on one front-desk computer is immediately visible on every other computer,
 // matching the same multi-computer requirement as the rest of the app.
+// The panels the clinic is empanelled with — CGHS, DGEHS, BSES, DJB, MCD,
+// Delhi Police and whatever comes next. Kept as a list the clinic edits in
+// Master rather than in code, because a new panel is a commercial
+// arrangement, not a software change: adding one should not need a developer,
+// a deployment, or a wait.
+function getPanelsList() {
+  var sh = getSheet("Panels");
+  var data = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < data.length; i++) { if (data[i][0]) items.push(String(data[i][0]).trim()); }
+  return { success: true, panels: items };
+}
+function savePanelsList(p) {
+  var sh = getSheet("Panels");
+  sh.clearContents();
+  sh.appendRow(["Panel", "Updated At"]);
+  var arr = [];
+  try { arr = JSON.parse(p.panels); } catch (e) { if (Array.isArray(p.panels)) arr = p.panels; }
+  var now = new Date().toISOString();
+  arr.forEach(function (m) { if (String(m || "").trim()) sh.appendRow([String(m).trim(), now]); });
+  return { success: true };
+}
+
 function getChairsList() {
   var sh = getSheet("Chairs");
   var data = sh.getDataRange().getValues();
   var items = [];
   for (var i = 1; i < data.length; i++) { if (data[i][0]) items.push(data[i][0]); }
-  if (items.length === 0) items = ["Chair 1", "Chair 2", "Chair 3", "Chair 4"];
+  // No built-in fallback. It used to return Chair 1-4 whenever the tab was
+  // empty, which is why the clinic never had to fill the tab in — and why a
+  // chair deleted in Master reappeared. The tab is the only source now, and an
+  // empty one honestly reports no chairs rather than inventing four.
   return { success: true, chairs: items };
 }
 function saveChairsList(p) {
