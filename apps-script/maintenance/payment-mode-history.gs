@@ -56,6 +56,39 @@ function modeColumns_(sh) {
   return cols;
 }
 
+// Column headings the clinic wants to rename so the sheet's vocabulary matches
+// the one payment-mode list: QR Code is where UPI money lands, SWIPE is where
+// card money lands. Nothing in the app reads these — it only ever writes to
+// "Patient Fee Receipt" and reads "Receipt No." and "Expenses", and the
+// headers it looks for there are date, uhid, mode, fee, amount and the rest.
+// Everything else in this book is the spreadsheet's own formulas, which is
+// exactly what has to be checked before renaming anything.
+var HEADER_RENAMES = { "QR Code": "UPI / GPay", "SWIPE": "Card" };
+
+// Any formula mentioning a word that is about to change, anywhere in the book.
+function headerFormulasAtRisk_(ss) {
+  var hits = [];
+  ss.getSheets().forEach(function (sh) {
+    var last = sh.getLastRow(), lastC = sh.getLastColumn();
+    if (!last || !lastC) return;
+    var f;
+    try { f = sh.getRange(1, 1, last, lastC).getFormulas(); } catch (e) { return; }
+    for (var r = 0; r < f.length; r++) {
+      for (var c = 0; c < f[r].length; c++) {
+        var t = String(f[r][c] || "");
+        if (!t) continue;
+        Object.keys(HEADER_RENAMES).forEach(function (h) {
+          if (new RegExp('["\']\\s*' + h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + '[^"\']*["\']', "i").test(t)) {
+            hits.push(h + "  " + sh.getName() + "!" + sh.getRange(r + 1, c + 1).getA1Notation() +
+              "  " + t.slice(0, 80));
+          }
+        });
+      }
+    }
+  });
+  return hits;
+}
+
 // Any formula mentioning an old name, anywhere in the book.
 function formulasAtRisk_(ss) {
   var hits = [];
@@ -127,6 +160,20 @@ function reportPaymentModeUsage() {
     });
     Logger.log("");
     Logger.log("Total: %s cell(s) across %s column(s).", total, found.length);
+  }
+
+  // The column headings, which the clinic wants to rename by hand.
+  var hdr = headerFormulasAtRisk_(ss);
+  Logger.log("");
+  Logger.log("RENAMING THE COLUMN HEADINGS (QR Code -> UPI / GPay, SWIPE -> Card):");
+  if (!hdr.length) {
+    Logger.log("   No formula in this book refers to those headings by name, so");
+    Logger.log("   renaming them changes nothing but the words on screen.");
+  } else {
+    Logger.log("   *** %s formula(s) refer to them by name — renaming would break", hdr.length);
+    Logger.log("   these. Send this log to Claude before renaming: ***");
+    hdr.slice(0, 20).forEach(function (h) { Logger.log("      %s", h); });
+    if (hdr.length > 20) Logger.log("      ... and %s more", hdr.length - 20);
   }
 
   var risky = formulasAtRisk_(ss);

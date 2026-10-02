@@ -178,6 +178,30 @@ const financeTab = () => new Sheet('FY 2025-26', [
     sh.rows[1][3], 'UPI / GPay');
 }
 
+// --- renaming the column HEADINGS is a separate question ------------------
+// The clinic wants QR Code -> UPI / GPay and SWIPE -> Card so the sheet's
+// vocabulary matches the one mode list. Nothing in the app reads those
+// headings; the risk is entirely the spreadsheet's own formulas, so the
+// report has to say whether any refers to them.
+{
+  const sh = financeTab();
+  const t = new Sheet('Total', [['Month', 'QR Code Collection'], ['April', 0]],
+    { '2,2': "=QUERY('FY 2025-26'!A:Z,\"select sum(J) where G='QR Code'\")" });
+  const { api, logged } = boot([sh, t]);
+  api.reportPaymentModeUsage();
+  ok('a formula naming a heading is reported',
+    logged.some(l => /formula\(s\) refer to them by name/.test(l)), logged);
+  ok('and the heading is named', logged.some(l => /QR Code/.test(l)), logged);
+}
+{
+  const sh = financeTab();
+  const t = new Sheet('Total', [['Month', 'QR'], ['April', 0]], { '2,2': '=SUM(J2:J)' });
+  const { api, logged } = boot([sh, t]);
+  api.reportPaymentModeUsage();
+  ok('a formula using column letters is not a problem',
+    logged.some(l => /renaming them changes nothing but the words on screen/.test(l)), logged);
+}
+
 // --- a clean book says so -------------------------------------------------
 {
   const clean = new Sheet('FY 2026-27', [['Date', 'Mode'], ['1-Apr', 'Cash']]);
