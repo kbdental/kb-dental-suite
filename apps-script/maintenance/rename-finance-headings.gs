@@ -115,6 +115,42 @@ function headingFormulasAtRisk_(ss) {
   return hits;
 }
 
+// READ-ONLY. Every tab, and exactly what its row 1 holds.
+//
+// Added because a dry run listed FY 2024-25 and FY 2025-26 but not FY 2026-27,
+// though that tab has the same columns. Converting on that basis would have
+// renamed the older years and left the CURRENT one alone, which is worse than
+// not starting. A heading that does not match is usually spelled differently,
+// sits on another row, or is a formula — and guessing which is how a careful
+// change becomes a careless one.
+function listAllHeadings() {
+  var ss = headingBook_();
+  Logger.log('Book: "%s"', ss.getName());
+  Logger.log("Tabs: %s", ss.getSheets().length);
+  Logger.log("");
+  ss.getSheets().forEach(function (sh) {
+    var rows = sh.getLastRow(), cols = sh.getLastColumn();
+    Logger.log("──── %s   (%s rows x %s cols)", sh.getName(), rows, cols);
+    if (!rows || !cols) { Logger.log("     empty"); return; }
+    // Row 1 and row 2 both: a tab with a title bar keeps its headings lower.
+    for (var r = 1; r <= Math.min(2, rows); r++) {
+      var vals = sh.getRange(r, 1, 1, cols).getValues()[0];
+      var fx = sh.getRange(r, 1, 1, cols).getFormulas()[0];
+      var parts = [];
+      for (var c = 0; c < vals.length; c++) {
+        var v = String(vals[c] == null ? "" : vals[c]);
+        if (!v.trim() && !fx[c]) continue;
+        // The quotes make a trailing space or a non-breaking space visible,
+        // which is the usual reason a heading does not match.
+        parts.push((c + 1) + ':"' + v + '"' + (fx[c] ? "{=}" : ""));
+      }
+      Logger.log("   row %s: %s", r, parts.length ? parts.join("  ") : "(blank)");
+    }
+  });
+  Logger.log("");
+  Logger.log("Nothing has been changed.");
+}
+
 // READ-ONLY.
 function reportHeadingRenames() {
   var ss = headingBook_();
