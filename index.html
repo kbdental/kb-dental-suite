@@ -23538,11 +23538,149 @@ const MASTER_STRUCTURE = [
     { id:"modes",        label:"Payment Modes" },
     { id:"expenses",     label:"Expense Categories" },
     { id:"accountHeads", label:"Account Heads", placeholder:true },
-    { id:"treatments",   label:"Treatment & Fee Schedule" }
+    { id:"treatments",   label:"Normal Fee Schedule" },
+    { id:"panelFees",    label:"Panel Fee Schedule" }
   ]},
   { id:"security", label:"Security", subtabs:null },
   { id:"sales", label:"Sales Tracker", subtabs:null }
 ];
+
+// The panel's rate card, kept whole and separate from the clinic's own fee
+// schedule. A panel bills by ITS code — CGHS calls an RCT on a single-rooted
+// tooth DP030 — and a wrong code is a rejected claim, so nothing here is
+// matched against the clinic's treatment names.
+//
+// Rates are pasted rather than typed. A CGHS card runs past a hundred lines,
+// and a hundred lines typed by hand at a counter is a wrong rate waiting to
+// reach a claim.
+function PanelFeeEditor({ panels }) {
+  const [panel, setPanel] = React.useState("");
+  const [rows, setRows] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
+  const [paste, setPaste] = React.useState("");
+  const [showPaste, setShowPaste] = React.useState(false);
+  const [msg, setMsg] = React.useState("");
+
+  React.useEffect(() => {
+    if (!panel) { setRows([]); return; }
+    setLoading(true);
+    api("getPanelRates", { panel }).then(res => {
+      setLoading(false);
+      setRows((res && res.success && res.rates) || []);
+    });
+  }, [panel]);
+
+  const save = async (arr) => {
+    setRows(arr);
+    const res = await api("savePanelRates", { panel, rates: JSON.stringify(arr) });
+    setMsg(res && res.success ? "\u2705 Saved \u2014 " + arr.length + " rates for " + panel
+                              : "Save failed: " + ((res && res.error) || "unknown"));
+    setTimeout(() => setMsg(""), 2500);
+  };
+
+  // CGHS publishes three rate columns — Non-NABH, NABH, Super Speciality — and
+  // the clinic bills at NABH, the middle one. A pasted line that carries all
+  // three is read that way rather than taking whichever number comes first,
+  // which would quietly underclaim on every single row.
+  const parsePaste = (text) => {
+    // Long procedure names wrap in the PDF, so a row can arrive as two or
+    // three lines with the code on the first and the rates on the last. Lines
+    // are gathered into one buffer per code before anything is read: parsing
+    // line by line silently dropped every wrapped row, and a rate missing from
+    // the card is worse than one that is obviously wrong.
+    const CODE = /\b([A-Z]{2}\d{3,4})\b/;
+    const buffers = [];
+    String(text || "").split(/\r?\n/).forEach(line => {
+      if (!line.trim()) return;
+      if (CODE.test(line) || !buffers.length) buffers.push(line);
+      else buffers[buffers.length - 1] += " " + line;
+    });
+
+    const out = [];
+    buffers.forEach(buf => {
+      const code = (buf.match(CODE) || [])[1];
+      if (!code) return;
+      const after = buf.slice(buf.indexOf(code) + code.length);
+      const nums = (after.match(/\d[\d,]*/g) || []).map(n => Number(n.replace(/,/g, "")));
+      if (!nums.length) return;
+      // CGHS publishes three columns — Non-NABH, NABH, Super Speciality — and
+      // the clinic bills at NABH, the middle one. Taking whichever number came
+      // first would underclaim on every row and nobody would notice for months.
+      const rate = nums.length >= 3 ? nums[1] : nums[nums.length - 1];
+      const cls = (after.match(/Dental Procedure|Dental Investigation|Dental Biopsy|Consultation/i) || [""])[0];
+      const procedure = after
+        .replace(/\d[\d,]*/g, " ")
+        .replace(/\b(Dental Procedure|Dental Investigation|Dental Biopsy|Consultation)\b/gi, " ")
+        .replace(/\s+/g, " ").trim();
+      out.push({ code, procedure, rate, classification: cls });
+    });
+    return out;
+  };;
+
+  const parsed = parsePaste(paste);
+  const inp = { width:"100%", padding:"7px 9px", border:"1px solid #d7dde3", borderRadius:6, fontSize:13, fontFamily:"inherit" };
+  const th = { textAlign:"left", padding:"7px 9px", fontSize:12, fontWeight:800, color:"#2e2e2e", borderBottom:"1.5px solid #d7dde3" };
+  const td = { padding:"6px 9px", fontSize:13, borderBottom:"1px solid #eef1f4" };
+
+  return React.createElement("div", null,
+    React.createElement("div", { style:{ fontSize:13, color:"#383838", marginBottom:14, lineHeight:1.6 } },
+      "The panel's own rate card. Billing a panel patient picks from this list by the panel's code \u2014 it is deliberately not matched against the Normal Fee Schedule, because a panel's wording and codes are its own and a wrong code is a rejected claim."),
+
+    React.createElement("div", { style:{ display:"flex", gap:10, alignItems:"center", marginBottom:16, flexWrap:"wrap" } },
+      React.createElement("select", {
+        style:{ ...inp, width:240 }, value:panel, onChange:e => setPanel(e.target.value)
+      }, React.createElement("option", { value:"" }, "Select a panel"),
+         (panels || []).map(n => React.createElement("option", { key:n, value:n }, n))),
+      panel && React.createElement("button", {
+        onClick:() => setShowPaste(v => !v),
+        style:{ padding:"8px 16px", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit",
+          background:"#7C3AED", color:"#fff", border:"none", borderRadius:7 }
+      }, showPaste ? "Close" : "\u2193 Paste rate card"),
+      msg && React.createElement("span", { style:{ fontSize:13, color:"#065f46", fontWeight:700 } }, msg)),
+
+    !panels || !panels.length ? React.createElement("div", {
+      style:{ fontSize:13, color:"#92400e", background:"#fffbeb", border:"1px solid #f59e0b",
+        borderRadius:8, padding:"10px 14px" }
+    }, "No panels yet. Add them in ", React.createElement("strong", null, "Master \u2192 Accounts \u2192 Panels"), " first.") : null,
+
+    showPaste && panel && React.createElement("div", {
+      style:{ border:"1px solid #7C3AED", background:"#faf5ff", borderRadius:9, padding:"14px 16px", marginBottom:16 }
+    },
+      React.createElement("div", { style:{ fontSize:13, color:"#383838", marginBottom:8, lineHeight:1.6 } },
+        "Paste the rows straight from the rate card \u2014 one per line. Any line without a code is skipped, so headings and page numbers can be left in. Where a line carries all three published rates, the ",
+        React.createElement("strong", null, "NABH"), " one is taken."),
+      React.createElement("textarea", {
+        style:{ ...inp, minHeight:120, fontFamily:"monospace", fontSize:12.5 },
+        value:paste, onChange:e => setPaste(e.target.value),
+        placeholder:"741\tDI001\tIntraoral Periapical (IOPA) Radiograph\t170\t200\t200\tDental Investigation"
+      }),
+      React.createElement("div", { style:{ marginTop:10, display:"flex", gap:10, alignItems:"center" } },
+        React.createElement("button", {
+          disabled:!parsed.length,
+          onClick:() => { save(parsed); setPaste(""); setShowPaste(false); },
+          style:{ padding:"8px 18px", fontSize:13, fontWeight:700, fontFamily:"inherit",
+            cursor:parsed.length ? "pointer" : "not-allowed", border:"none", borderRadius:7,
+            background:parsed.length ? "#059669" : "#9ca3af", color:"#fff" }
+        }, "Replace " + panel + "'s rates with these " + parsed.length),
+        React.createElement("span", { style:{ fontSize:12.5, color:"#444444" } },
+          parsed.length ? "First: " + parsed[0].code + " \u2014 \u20b9" + parsed[0].rate : "Nothing read yet")))
+    ,
+
+    loading ? React.createElement("div", { style:{ fontSize:13, color:"#444444" } }, "Loading\u2026") :
+    panel && !rows.length ? React.createElement("div", { style:{ fontSize:13, color:"#444444" } },
+      "No rates stored for " + panel + " yet.") :
+    rows.length ? React.createElement("table", { style:{ width:"100%", borderCollapse:"collapse", background:"#fff" } },
+      React.createElement("thead", null, React.createElement("tr", null,
+        React.createElement("th", { style:{ ...th, width:90 } }, "Code"),
+        React.createElement("th", { style:th }, "Procedure"),
+        React.createElement("th", { style:{ ...th, width:110, textAlign:"right" } }, "Rate"),
+        React.createElement("th", { style:{ ...th, width:150 } }, "Classification"))),
+      React.createElement("tbody", null, rows.map((r, i) => React.createElement("tr", { key:r.code + i },
+        React.createElement("td", { style:{ ...td, fontWeight:700 } }, r.code),
+        React.createElement("td", { style:td }, r.procedure),
+        React.createElement("td", { style:{ ...td, textAlign:"right", fontWeight:700 } }, "\u20b9" + r.rate),
+        React.createElement("td", { style:{ ...td, color:"#444444" } }, r.classification))))) : null);
+}
 
 function MasterPasswordChanger() {
   const [pwSet, setPwSet] = React.useState(false);
@@ -23986,6 +24124,7 @@ function Master() {
       onRemove:(i)=>saveTreatments(treatments.filter((_,idx)=>idx!==i)),
       onEdit:(i,item)=>saveTreatments(treatments.map((it,idx)=>idx===i?item:it))
     }),
+    panelFees: () => React.createElement(PanelFeeEditor, { panels:panels }),
     doctors: () => React.createElement(PersonListEditor, {
       items:doctorDetails,
       onAdd:(item)=>saveDoctors([...doctorDetails, item]),
