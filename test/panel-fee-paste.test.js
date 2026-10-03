@@ -23,14 +23,16 @@ const parsePaste = new Function(src.slice(a, b).replace("  const parsePaste = (t
 
 // Real rows, as they come off the card: Sr No, Code, Procedure, Non-NABH,
 // NABH, Super Speciality, Classification.
+// Real rows, as they come off the clinic's rate card: Code, Procedure,
+// Classification, Rate.
 const card = [
-  "741\tDI001\tIntraoral Periapical (IOPA) Radiograph X-ray/RVG(Single Film)\t170\t200\t200\tDental Investigation",
-  "747\tDP002\tScaling\t850\t1000\t1000\tDental Procedure",
-  "755\tDP010\tExtraction - Normal Tooth\t340\t400\t400\tDental Procedure",
-  "775\tDP030\tRCT-Single Rooted tooth\t1700\t2000\t2000\tDental Procedure",
-  "776\tDP031\tRCT Multiple root and/ canal tooth\t2550\t3000\t3000\tDental Procedure",
-  "814\tDP069\tComplete Denture - Per Arch\t8500\t10000\t10000\tDental Procedure",
-  "1\tCN001\tConsultation OPD\t350\t350\t350\tConsultation",
+  "DI001\tIntraoral Periapical (IOPA) Radiograph X-ray/RVG(Single Film)\tDental Investigation\t200",
+  "DP002\tScaling\tDental Procedure\t1000",
+  "DP010\tExtraction - Normal Tooth\tDental Procedure\t400",
+  "DP030\tRCT-Single Rooted tooth\tDental Procedure\t2000",
+  "DP031\tRCT Multiple root and/ canal tooth\tDental Procedure\t3000",
+  "DP069\tComplete Denture - Per Arch\tDental Procedure\t10000",
+  "CN001\tConsultation OPD\tConsultation\t350",
 ].join("\n");
 
 const got = parsePaste(card);
@@ -39,9 +41,14 @@ eq("the code is the panel's own", got.map(r => r.code),
    ["DI001", "DP002", "DP010", "DP030", "DP031", "DP069", "CN001"]);
 
 // The one that protects the money.
-eq("the NABH rate is taken, not the Non-NABH one", got.map(r => r.rate),
+eq("the rate is read from every row", got.map(r => r.rate),
    [200, 1000, 400, 2000, 3000, 10000, 350]);
-ok("so a scaling claims 1000, not 850", got[1].rate === 1000, String(got[1].rate));
+
+// Numbers inside a procedure name must never be mistaken for the rate.
+eq("\"Up to 3 Teeth\" bills 4000, not 3",
+   parsePaste("DP062\tRemovable Partial Denture - Cast Metal Up to 3 Teeth\tDental Procedure\t4000")[0].rate, 4000);
+eq("\"upto 4 cms\" bills 5000, not 4",
+   parsePaste("DP096\tCyst of Maxilla/mandible upto 4 cms under LA\tDental Procedure\t5000")[0].rate, 5000);
 
 eq("the panel's own wording is kept", got[3].procedure, "RCT-Single Rooted tooth");
 eq("and the classification with it", got[0].classification, "Dental Investigation");
@@ -51,9 +58,9 @@ eq("consultations classify as consultations", got[6].classification, "Consultati
 // rows. Those must be skipped rather than imported as rates.
 const messy = [
   "CGHS rates for Tier I (X City)",
-  "Sr. No\tCGHS Code\tCGHS TREATMENT PROCEDURE/INVESTIGATION LIST\tNon-NABH\tNABH\tSuper Speciality",
+  "Code\tProcedure\tClassification\tRate",
   "",
-  "747\tDP002\tScaling\t850\t1000\t1000\tDental Procedure",
+  "DP002\tScaling\tDental Procedure\t1000",
   "38",
   "5-16/CGHS(HQ)/HEC/2024(PartI)",
 ].join("\n");
@@ -63,17 +70,13 @@ eq("and the one real row survives", m[0].code, "DP002");
 
 // A rate written with a thousands separator must not become 2.
 eq("a comma in a rate is not a decimal point",
-   parsePaste("836\tDP091\tOsteoplasty\t25,500\t30,000\t30,000\tDental Procedure")[0].rate, 30000);
-
-// A card that publishes one rate rather than three.
-eq("a single-rate card takes that rate",
-   parsePaste("12\tXX001\tSome procedure\t1450\tDental Procedure")[0].rate, 1450);
+   parsePaste("DP091\tOsteoplasty\tDental Procedure\t30,000")[0].rate, 30000);
 
 // Multi-line procedure names wrap in the PDF; the fragment without a code is
 // not a rate and must not be imported as one.
 const wrapped = [
-  "758\tDP013\tMultiple Extraction and Treatment Procedures for Special Children,",
-  "Patients with Systemic Diseases Which Requires Admission\t5100\t6000\t6000\tDental Procedure",
+  "DP013\tMultiple Extraction and Treatment Procedures for Special Children,",
+  "Patients with Systemic Diseases Which Requires Admission\tDental Procedure\t6000",
 ].join("\n");
 const w = parsePaste(wrapped);
 eq("a wrapped row is kept, not silently dropped", w.length, 1);

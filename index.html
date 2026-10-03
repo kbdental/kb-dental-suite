@@ -23603,10 +23603,17 @@ function PanelFeeEditor({ panels }) {
       const after = buf.slice(buf.indexOf(code) + code.length);
       const nums = (after.match(/\d[\d,]*/g) || []).map(n => Number(n.replace(/,/g, "")));
       if (!nums.length) return;
-      // CGHS publishes three columns — Non-NABH, NABH, Super Speciality — and
-      // the clinic bills at NABH, the middle one. Taking whichever number came
-      // first would underclaim on every row and nobody would notice for months.
-      const rate = nums.length >= 3 ? nums[1] : nums[nums.length - 1];
+      // The LAST number on the line is the rate. There is deliberately no rule
+      // for picking one of several rate columns: the published card has
+      // Non-NABH/NABH/Super Speciality where the clinic wants the middle, and
+      // the clinic's own sheet has Metro/Tier Y/Tier Z where it wants the
+      // first. A rule that guessed by position would be right for one and
+      // quietly wrong for the other, and nobody would notice an underclaim for
+      // months. So a card is pasted with ONE rate column, already chosen.
+      //
+      // Numbers inside the procedure name ("Up to 3 Teeth", "upto 4 cms") are
+      // therefore harmless: the rate is the one at the end.
+      const rate = nums[nums.length - 1];
       const cls = (after.match(/Dental Procedure|Dental Investigation|Dental Biopsy|Consultation/i) || [""])[0];
       const procedure = after
         .replace(/\d[\d,]*/g, " ")
@@ -23647,12 +23654,18 @@ function PanelFeeEditor({ panels }) {
       style:{ border:"1px solid #7C3AED", background:"#faf5ff", borderRadius:9, padding:"14px 16px", marginBottom:16 }
     },
       React.createElement("div", { style:{ fontSize:13, color:"#383838", marginBottom:8, lineHeight:1.6 } },
-        "Paste the rows straight from the rate card \u2014 one per line. Any line without a code is skipped, so headings and page numbers can be left in. Where a line carries all three published rates, the ",
-        React.createElement("strong", null, "NABH"), " one is taken."),
+        "Paste the rows straight from the rate card \u2014 one per line, as ",
+        React.createElement("strong", null, "Code, Procedure, Classification, Rate"),
+        ". Any line without a code is skipped, so headings and page numbers can be left in, and a procedure name that wraps onto a second line is joined back up."),
+      React.createElement("div", { style:{ fontSize:12.5, color:"#92400e", background:"#fffbeb",
+        border:"1px solid #f59e0b", borderRadius:7, padding:"9px 12px", marginBottom:10, lineHeight:1.6 } },
+        "Paste a card with ",
+        React.createElement("strong", null, "one rate column only"),
+        " \u2014 the rate taken is the last number on the line. The published card lists Non-NABH, NABH and Super Speciality, and the clinic's own sheet lists Metro, Tier Y and Tier Z; choosing between those is a decision this screen will not make for you, because guessing wrong underclaims every row quietly."),
       React.createElement("textarea", {
         style:{ ...inp, minHeight:120, fontFamily:"monospace", fontSize:12.5 },
         value:paste, onChange:e => setPaste(e.target.value),
-        placeholder:"741\tDI001\tIntraoral Periapical (IOPA) Radiograph\t170\t200\t200\tDental Investigation"
+        placeholder:"DI001\tIntraoral Periapical (IOPA) Radiograph\tDental Investigation\t200"
       }),
       React.createElement("div", { style:{ marginTop:10, display:"flex", gap:10, alignItems:"center" } },
         React.createElement("button", {
