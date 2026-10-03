@@ -1581,10 +1581,12 @@ function Registration({
   // Normal or panel is the FIRST thing asked, before any detail, because it
   // decides which book the registration is written to and which form follows.
   // Asking it later would mean re-routing a record that had already been saved.
-  // The panel screens are built but the panel book and fee schedule behind them
-  // are not, so asking the question would dead-end the front desk. Flip this to
-  // true the day panel registration can actually save, and screen 1 returns.
-  const PANEL_UI_READY = false;
+  // On. The routing is deployed in both books, so a panel registration now
+  // actually lands in the panel book — which is the only thing this flag was
+  // ever waiting for. It stays here rather than being deleted: if the panel
+  // book is ever unreachable, turning this off is one word and the front desk
+  // is back to normal registration instead of being stuck.
+  const PANEL_UI_READY = true;
   const [patientType, setPatientType] = useState(PANEL_UI_READY ? "" : "normal");
   const [panel, setPanel] = useState("");
   // Master is the ONLY source for this list. There is deliberately no built-in
