@@ -283,9 +283,28 @@ async function apiDirect(action, data = {}) {
     Object.entries(data).forEach(([k, v]) => p.append(k, typeof v === "object" ? JSON.stringify(v) : String(v ?? "")));
     const tok = getSessionToken();
     if (tok) p.append("token", tok);
-    const r = await fetch(SCRIPT_URL + "?" + p.toString());
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    return handleAuthFailure(await r.json());
+    // Apps Script refuses a request outright now and then — while a deployment
+    // is being updated, or when enough executions overlap for one user. It
+    // comes back as a 404 or a 5xx with nothing having run, and the clinic saw
+    // it as "Please retry": a receptionist doing the computer's job mid-visit.
+    //
+    // Reads retry themselves. Writes deliberately do not: a save that reached
+    // the sheet before the connection broke would be applied twice, and a
+    // duplicate payment is far worse than an error message.
+    const retryable = action === "batch" || action.indexOf("get") === 0;
+    const attempts = retryable ? 3 : 1;
+    let lastErr;
+    for (let i = 0; i < attempts; i++) {
+      if (i) await new Promise(r => setTimeout(r, 400 * Math.pow(3, i - 1)));
+      try {
+        const r = await fetch(SCRIPT_URL + "?" + p.toString());
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return handleAuthFailure(await r.json());
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr;
   } catch (e) {
     console.error("API:", e);
     return {
