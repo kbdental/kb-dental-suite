@@ -84,10 +84,11 @@ function boot(opts) {
     books[PANEL].add('Registrations', [HEAD.concat(['Patient Type', 'Panel', 'Panel Category', 'Card ID'])]);
   }
   const logged = [];
+  const opens = [];
   const env = {
-    books, logged,
+    books, logged, opens,
     SpreadsheetApp: {
-      openById: id => { if (!books[id]) throw new Error('no such file ' + id); return books[id]; },
+      openById: id => { opens.push(id); if (!books[id]) throw new Error('no such file ' + id); return books[id]; },
       getActiveSpreadsheet: () => ({ getSpreadsheetTimeZone: () => 'Asia/Kolkata' }),
     },
     Logger: { log: (...a) => logged.push(a.join(' ')) },
@@ -99,10 +100,10 @@ function boot(opts) {
     formatDOB: v => String(v || ''),
     calcAge: () => '',
   };
-  const names = Object.keys(env).filter(k => k !== 'books' && k !== 'logged');
+  const names = Object.keys(env).filter(k => k !== 'books' && k !== 'logged' && k !== 'opens');
   env.api = new Function(...names,
     routing + '\n' + findCol + '\n' + uhid + '\n' + save + '\n' + search +
-    '\nreturn { saveRegistration, getNextUHID, searchPatients, regAllRows_, regSheets_, regRow_: typeof regRow_ === "function" ? regRow_ : null };'
+    '\nreturn { saveRegistration, getNextUHID, searchPatients, regAllRows_, regSheets_, regCacheClear_, regRow_: typeof regRow_ === "function" ? regRow_ : null };'
   )(...names.map(n => env[n]));
   return env;
 }
@@ -179,6 +180,33 @@ const rowsOf = (e, book) => e.books[book].getSheetByName('Registrations').rows;
 {
   const e = boot({ ssId: PANEL });
   eq('the panel book reads only itself', e.api.regSheets_().length, 1);
+}
+
+// ── the cost of reading both books ─────────────────────────────────────────
+// Opening the panel book is a round trip and reading both sheets is two more.
+// The batched read runs several actions inside ONE request, so without a cache
+// a single refresh paid that over and over — which is exactly what made the app
+// slower after the routing went in.
+{
+  const e = boot();
+  e.api.saveRegistration({ uhid: 'AL1001', name: 'A', mobile: '9000000001' });
+  const before = e.opens.length;
+  e.api.getNextUHID();
+  e.api.searchPatients({ query: 'A' });
+  e.api.regAllRows_();
+  e.api.regAllRows_();
+  eq('four reads in one request open the panel book once', e.opens.length - before, 1);
+}
+
+// A cache that outlived a write would answer the next read with a row that is
+// no longer there, or miss one that is.
+{
+  const e = boot();
+  e.api.searchPatients({ query: 'anyone' });            // fills the cache
+  e.api.saveRegistration({ uhid: 'AL1002', name: 'Late Arrival', mobile: '9000000002' });
+  const res = e.api.searchPatients({ query: 'Late Arrival' });
+  ok('a patient saved mid-request is found by the next read',
+     res.success && res.patients.length === 1, JSON.stringify(res).slice(0, 160));
 }
 
 let pass = 0, fail = 0;

@@ -22,15 +22,34 @@ var PANEL_PMS_SHEET_ID = "1yg9Umwwkxao-RUwxXuycjG7CVXjRAQUmMvMHa_l6sjo";
 // The panel book is opened, never created. If it is unreachable the clinic
 // still works on the main book rather than failing outright — a receptionist
 // cannot fix a sharing permission at the counter.
+// Opening the panel book costs a round trip, and reading both Registrations
+// sheets in full costs another two. Ten call sites do that, and the batched
+// read runs several of them inside ONE request — so a single refresh was
+// opening the panel book again and again and re-reading every registration
+// each time. That is why the app got slower after the routing went in, not
+// faster.
+//
+// Both are memoised for the length of one request. Apps Script gives every
+// request its own execution, so these start empty for each caller and cannot
+// serve one receptionist's data to another — the cache cannot outlive the
+// request that filled it.
+var _regSheetsCache = null;
+var _regAllRowsCache = null;
+// A write makes the cached table wrong, so it is dropped rather than left to
+// answer the next read in the same request with the row it is missing.
+function regCacheClear_() { _regSheetsCache = null; _regAllRowsCache = null; }
+
 function regSheets_() {
+  if (_regSheetsCache) return _regSheetsCache;
   var list = [getSheet("Registrations")];
-  if (SS_ID === PANEL_PMS_SHEET_ID) return list;
+  if (SS_ID === PANEL_PMS_SHEET_ID) { _regSheetsCache = list; return list; }
   try {
     var sh = SpreadsheetApp.openById(PANEL_PMS_SHEET_ID).getSheetByName("Registrations");
     if (sh) list.push(sh);
   } catch (e) {
     Logger.log("Panel book unreachable, carrying on with the main book: " + e.message);
   }
+  _regSheetsCache = list;
   return list;
 }
 
@@ -43,6 +62,7 @@ function regSheets_() {
 // patient look like an ordinary one everywhere they are listed. Columns are
 // matched by name, never by position, because the two books drift.
 function regAllRows_() {
+  if (_regAllRowsCache) return _regAllRowsCache;
   var sheets = regSheets_();
   var base = sheets[0].getDataRange().getValues();
   if (!base.length) return [];
@@ -68,6 +88,7 @@ function regAllRows_() {
   }
   take(base);
   for (var i2 = 1; i2 < sheets.length; i2++) take(sheets[i2].getDataRange().getValues());
+  _regAllRowsCache = out;
   return out;
 }
 
@@ -926,6 +947,7 @@ function saveRegistration(p) {
 
   if (existingRow > 0) sh.getRange(existingRow, 1, 1, headers.length).setValues([rowValues]);
   else sh.appendRow(rowValues);
+  regCacheClear_();
 
   return { success: true, uhid: p.uhid };
 }
