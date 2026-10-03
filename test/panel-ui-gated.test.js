@@ -13,14 +13,14 @@ function ok(name, cond) {
 }
 
 ok("the gate exists", /PANEL_UI_READY\s*=\s*(true|false)/.test(src));
-ok("and it is off", /PANEL_UI_READY\s*=\s*false/.test(src));
-ok("so registration starts as a normal patient",
+ok("and it is on", /PANEL_UI_READY\s*=\s*true/.test(src));
+ok("registration still starts from the flag, not a hardcoded type",
    /useState\(PANEL_UI_READY \? "" : "normal"\)/.test(src));
-ok("screen 1 is still written, waiting for the flag",
+ok("the type screen is reachable",
    src.indexOf('if (step === 0 && !patientType)') !== -1);
-ok("and so are the panel screens",
-   src.indexOf('patientType === "panel" && !panel') !== -1 &&
-   src.indexOf('patientType === "panel" && panel') !== -1);
+ok("and the panel fields with it",
+   src.indexOf('qField("Panel *", "panel"') !== -1 &&
+   src.indexOf('qField("Card ID *", "cardId"') !== -1);
 
 console.log("==============================================================================");
 console.log("  " + pass + " passed, " + fail + " failed");
