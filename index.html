@@ -23560,6 +23560,9 @@ function PanelFeeEditor({ panels }) {
   const [paste, setPaste] = React.useState("");
   const [showPaste, setShowPaste] = React.useState(false);
   const [msg, setMsg] = React.useState("");
+  const [search, setSearch] = React.useState("");
+  const [editIndex, setEditIndex] = React.useState(null);
+  const [draft, setDraft] = React.useState({ code:"", procedure:"", rate:"", classification:"" });
 
   React.useEffect(() => {
     if (!panel) { setRows([]); return; }
@@ -23679,20 +23682,118 @@ function PanelFeeEditor({ panels }) {
           parsed.length ? "First: " + parsed[0].code + " \u2014 \u20b9" + parsed[0].rate : "Nothing read yet")))
     ,
 
+    // Rows are edited in place, added and removed here as well as pasted. A
+    // rate card is not a one-off import: CGHS revises a handful of rates at a
+    // time, and re-pasting a whole card to change one figure invites a mistake
+    // in the other 116.
+    panel && !loading && React.createElement("div", { style:{ display:"flex", gap:10, alignItems:"center", marginBottom:12, flexWrap:"wrap" } },
+      React.createElement("input", {
+        style:{ ...inp, width:280 }, value:search, placeholder:"Search code or procedure\u2026",
+        onChange:e => setSearch(e.target.value) }),
+      React.createElement("span", { style:{ fontSize:12.5, color:"#444444" } },
+        rows.length + (rows.length === 1 ? " rate" : " rates") + (search ? " \u2014 showing matches" : "")),
+      editIndex === -1 ? null : React.createElement("button", {
+        onClick:() => { setEditIndex(-1); setDraft({ code:"", procedure:"", rate:"", classification:"" }); },
+        style:{ padding:"7px 16px", fontSize:13, fontWeight:700, fontFamily:"inherit", cursor:"pointer",
+          background:"#0f6fc5", color:"#fff", border:"none", borderRadius:7 } }, "+ Add a rate")),
+
     loading ? React.createElement("div", { style:{ fontSize:13, color:"#444444" } }, "Loading\u2026") :
-    panel && !rows.length ? React.createElement("div", { style:{ fontSize:13, color:"#444444" } },
+    panel && !rows.length && editIndex !== -1 ? React.createElement("div", { style:{ fontSize:13, color:"#444444" } },
       "No rates stored for " + panel + " yet.") :
-    rows.length ? React.createElement("table", { style:{ width:"100%", borderCollapse:"collapse", background:"#fff" } },
+    panel ? React.createElement("table", { style:{ width:"100%", borderCollapse:"collapse", background:"#fff" } },
       React.createElement("thead", null, React.createElement("tr", null,
-        React.createElement("th", { style:{ ...th, width:90 } }, "Code"),
+        React.createElement("th", { style:{ ...th, width:100 } }, "Code"),
         React.createElement("th", { style:th }, "Procedure"),
         React.createElement("th", { style:{ ...th, width:110, textAlign:"right" } }, "Rate"),
-        React.createElement("th", { style:{ ...th, width:150 } }, "Classification"))),
-      React.createElement("tbody", null, rows.map((r, i) => React.createElement("tr", { key:r.code + i },
-        React.createElement("td", { style:{ ...td, fontWeight:700 } }, r.code),
-        React.createElement("td", { style:td }, r.procedure),
-        React.createElement("td", { style:{ ...td, textAlign:"right", fontWeight:700 } }, "\u20b9" + r.rate),
-        React.createElement("td", { style:{ ...td, color:"#444444" } }, r.classification))))) : null);
+        React.createElement("th", { style:{ ...th, width:160 } }, "Classification"),
+        React.createElement("th", { style:{ ...th, width:130 } }, ""))),
+      React.createElement("tbody", null,
+        // The new-rate row sits at the top, where it is visible without
+        // scrolling past a hundred existing ones.
+        editIndex === -1 ? React.createElement("tr", { style:{ background:"#f5f9ff" } },
+          React.createElement("td", { style:td }, React.createElement("input", {
+            style:inp, value:draft.code, placeholder:"DP030", autoFocus:true,
+            onChange:e => setDraft({ ...draft, code:e.target.value }) })),
+          React.createElement("td", { style:td }, React.createElement("input", {
+            style:inp, value:draft.procedure, placeholder:"Procedure as the panel words it",
+            onChange:e => setDraft({ ...draft, procedure:e.target.value }) })),
+          React.createElement("td", { style:td }, React.createElement("input", {
+            style:{ ...inp, textAlign:"right" }, value:draft.rate, placeholder:"2000", inputMode:"numeric",
+            onChange:e => setDraft({ ...draft, rate:e.target.value.replace(/[^0-9]/g, "") }) })),
+          React.createElement("td", { style:td }, React.createElement("input", {
+            style:inp, value:draft.classification, placeholder:"Dental Procedure",
+            onChange:e => setDraft({ ...draft, classification:e.target.value }) })),
+          React.createElement("td", { style:td },
+            React.createElement("button", {
+              disabled:!draft.code.trim() || !draft.rate,
+              onClick:() => {
+                // A duplicate code would make the bill ambiguous: two rates,
+                // same claim line. The existing one is replaced instead.
+                const code = draft.code.trim().toUpperCase();
+                const row = { ...draft, code, rate:Number(draft.rate) };
+                const at = rows.findIndex(r => String(r.code).toUpperCase() === code);
+                save(at >= 0 ? rows.map((r, i) => i === at ? row : r) : [...rows, row]);
+                setEditIndex(null);
+              },
+              style:{ padding:"6px 12px", fontSize:12.5, fontWeight:700, fontFamily:"inherit", marginRight:6,
+                cursor:draft.code.trim() && draft.rate ? "pointer" : "not-allowed", border:"none", borderRadius:6,
+                background:draft.code.trim() && draft.rate ? "#059669" : "#9ca3af", color:"#fff" } }, "Save"),
+            React.createElement("button", {
+              onClick:() => setEditIndex(null),
+              style:{ padding:"6px 10px", fontSize:12.5, fontFamily:"inherit", cursor:"pointer",
+                background:"transparent", color:"#2e2e2e", border:"1px solid #d7dde3", borderRadius:6 } }, "Cancel"))) : null,
+
+        rows.map((r, i) => {
+          const q = search.trim().toLowerCase();
+          if (q && String(r.code).toLowerCase().indexOf(q) < 0 &&
+                   String(r.procedure).toLowerCase().indexOf(q) < 0) return null;
+          if (editIndex === i) {
+            return React.createElement("tr", { key:"e" + i, style:{ background:"#f5f9ff" } },
+              React.createElement("td", { style:td }, React.createElement("input", {
+                style:inp, value:draft.code, onChange:e => setDraft({ ...draft, code:e.target.value }) })),
+              React.createElement("td", { style:td }, React.createElement("input", {
+                style:inp, value:draft.procedure, onChange:e => setDraft({ ...draft, procedure:e.target.value }) })),
+              React.createElement("td", { style:td }, React.createElement("input", {
+                style:{ ...inp, textAlign:"right" }, value:draft.rate, inputMode:"numeric",
+                onChange:e => setDraft({ ...draft, rate:e.target.value.replace(/[^0-9]/g, "") }) })),
+              React.createElement("td", { style:td }, React.createElement("input", {
+                style:inp, value:draft.classification,
+                onChange:e => setDraft({ ...draft, classification:e.target.value }) })),
+              React.createElement("td", { style:td },
+                React.createElement("button", {
+                  disabled:!draft.code.trim() || !draft.rate,
+                  onClick:() => {
+                    save(rows.map((x, idx) => idx === i
+                      ? { ...draft, code:draft.code.trim().toUpperCase(), rate:Number(draft.rate) } : x));
+                    setEditIndex(null);
+                  },
+                  style:{ padding:"6px 12px", fontSize:12.5, fontWeight:700, fontFamily:"inherit", marginRight:6,
+                    cursor:draft.code.trim() && draft.rate ? "pointer" : "not-allowed", border:"none", borderRadius:6,
+                    background:draft.code.trim() && draft.rate ? "#059669" : "#9ca3af", color:"#fff" } }, "Save"),
+                React.createElement("button", {
+                  onClick:() => setEditIndex(null),
+                  style:{ padding:"6px 10px", fontSize:12.5, fontFamily:"inherit", cursor:"pointer",
+                    background:"transparent", color:"#2e2e2e", border:"1px solid #d7dde3", borderRadius:6 } }, "Cancel")));
+          }
+          return React.createElement("tr", { key:r.code + i },
+            React.createElement("td", { style:{ ...td, fontWeight:700 } }, r.code),
+            React.createElement("td", { style:td }, r.procedure),
+            React.createElement("td", { style:{ ...td, textAlign:"right", fontWeight:700 } }, "\u20b9" + r.rate),
+            React.createElement("td", { style:{ ...td, color:"#444444" } }, r.classification),
+            React.createElement("td", { style:td },
+              React.createElement("button", {
+                onClick:() => { setEditIndex(i); setDraft({ code:r.code, procedure:r.procedure,
+                  rate:String(r.rate), classification:r.classification || "" }); },
+                style:{ padding:"5px 12px", fontSize:12.5, fontFamily:"inherit", cursor:"pointer", marginRight:6,
+                  background:"#fff", color:"#0f6fc5", border:"1px solid #0f6fc5", borderRadius:6 } }, "Edit"),
+              React.createElement("button", {
+                // A deleted rate cannot be claimed, so it asks first and names
+                // the code it is about to remove.
+                onClick:() => { if (window.confirm("Remove " + r.code + " \u2014 " + r.procedure + " from " + panel + "'s rates?"))
+                  save(rows.filter((_, idx) => idx !== i)); },
+                style:{ padding:"5px 10px", fontSize:12.5, fontFamily:"inherit", cursor:"pointer",
+                  background:"#fff", color:"#b91c1c", border:"1px solid #e5b4b4", borderRadius:6 } }, "Remove")));
+        }))) : null);
 }
 
 function MasterPasswordChanger() {
