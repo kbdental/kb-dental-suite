@@ -1,0 +1,205 @@
+// Seeds the CGHS rate card into Master -> Panel Rates, from the clinic's own
+// CGHS_Bill_Code sheet. 117 codes, CN001 to DP111, at the Metro rate — the
+// column that applies in Delhi.
+//
+// This exists so nobody has to paste a hundred and seventeen rates by hand.
+// The figures below were taken from that spreadsheet mechanically and checked
+// back against it code by code and rupee by rupee; typing them at a counter is
+// how a wrong rate reaches a claim.
+//
+// WHERE: the MAIN PMS book's Apps Script project, as a new script file.
+// Master lists live in the main book and are shared, so this is not run in the
+// empanelled book.
+//
+// HOW:  Run reportCghsRates first — it only reports. Then set CONFIRM to "YES"
+//       and run seedCghsRates.
+//
+// It replaces CGHS's rates and leaves every other panel's alone. Running it
+// twice is harmless: the second run simply writes the same figures again.
+
+var CONFIRM = "";
+var CGHS_PANEL = "CGHS";
+
+var CGHS_RATES = [
+  ["CN001", "Consultation OPD", "Consultation", 350],
+  ["DI001", "Intraoral Periapical (IOPA) Radiograph X-ray/RVG(Single Film)", "Dental Investigation", 200],
+  ["DI002", "Intraoral Occlusal/Bite Wing X-Ray", "Dental Investigation", 300],
+  ["DI003", "Digital OPG with X ray film/ CD", "Dental Investigation", 500],
+  ["DI004", "Biopsy of Oral tissue- Soft", "Dental Biopsy", 1200],
+  ["DI005", "Biopsy of Oral tissue - Hard (bone, tooth)", "Dental Biopsy", 2000],
+  ["DP001", "Abscess - Drainage-Dental", "Dental Procedure", 1500],
+  ["DP002", "Scaling", "Dental Procedure", 1000],
+  ["DP003", "Curettage and Root Planning - Per Tooth", "Dental Procedure", 350],
+  ["DP004", "Curettage and Root Planning - Per Arch", "Dental Procedure", 2000],
+  ["DP005", "Gingivoplasty - Per Quadrant", "Dental Procedure", 1000],
+  ["DP006", "Gingivectomy - Per Quadrant", "Dental Procedure", 1200],
+  ["DP007", "Flap Surgery- Per Tooth", "Dental Procedure", 450],
+  ["DP008", "Flap Surgery- Per Quadrant", "Dental Procedure", 2000],
+  ["DP009", "Flap Surgery and Bone Graft per quadrant", "Dental Procedure", 3000],
+  ["DP010", "Extraction - Normal Tooth", "Dental Procedure", 400],
+  ["DP011", "Complicated Extraction per tooth under LA", "Dental Procedure", 800],
+  ["DP012", "Extraction Impacted - Soft tissue/ 3rd Molar/wisdom tooth extraction", "Dental Procedure", 2000],
+  ["DP013", "Multiple Extraction and Treatment Procedures for Special Children, Patients with Systemic Diseases, Patient with Special Needs Which Requires Admission and Treatment Under GA", "Dental Procedure", 6000],
+  ["DP014", "Extraction - Orthodontic Extraction", "Dental Procedure", 750],
+  ["DP015", "Operculectomy- Pericoronal flap excision", "Dental Procedure", 2000],
+  ["DP016", "Extraction Impacted - Bony", "Dental Procedure", 5000],
+  ["DP017", "Alveoloplasty - Per Tooth", "Dental Procedure", 300],
+  ["DP018", "Alveoloplasty - Per Quadrant", "Dental Procedure", 1200],
+  ["DP019", "Frenectomy", "Dental Procedure", 2500],
+  ["DP020", "Excision of hyperplastic tissue - per arch", "Dental Procedure", 1200],
+  ["DP021", "Surgical Augmentation/Alveolectomy per Arch", "Dental Procedure", 3500],
+  ["DP022", "Bone replacement graft for ridge preservation - per site", "Dental Procedure", 2000],
+  ["DP023", "Minor oral surgery, cyst, granuloma, residual infection, mucocele, epulis under LA", "Dental Procedure", 2000],
+  ["DP024", "Application of Desensitizing Medicament", "Dental Procedure", 500],
+  ["DP025", "Fluoride Application for Children", "Dental Procedure", 1000],
+  ["DP026", "Temporary restoration", "Dental Procedure", 150],
+  ["DP027", "Glass ionomer Cement Restoration", "Dental Procedure", 600],
+  ["DP028", "Composite - Occlusal Pit/Class I", "Dental Procedure", 500],
+  ["DP029", "Composite -Class I with buccal extension/Class II Class III/Class IV/Class VI/Diastema Closure/MOD", "Dental Procedure", 1000],
+  ["DP030", "RCT-Single Rooted tooth", "Dental Procedure", 2000],
+  ["DP031", "RCT Multiple root and/ canal tooth", "Dental Procedure", 3000],
+  ["DP032", "Re-RCT - Anterior", "Dental Procedure", 2500],
+  ["DP033", "Re-RCT - Posterior", "Dental Procedure", 3000],
+  ["DP034", "Medication -intracanal medicament (only lesion cases)", "Dental Procedure", 500],
+  ["DP035", "Apicectomy-Single tooth", "Dental Procedure", 2000],
+  ["DP036", "Apicectomy-Multiple tooth", "Dental Procedure", 3000],
+  ["DP037", "Apexification with any bio-compatible material", "Dental Procedure", 2000],
+  ["DP038", "Root end resection and Retro grade filling", "Dental Procedure", 3000],
+  ["DP039", "Surgical - Apicectomy/ Periapical surgery without bone grafting", "Dental Procedure", 700],
+  ["DP040", "Tissue Conditioning, Maxillary/Mandibular", "Dental Procedure", 300],
+  ["DP041", "Core build-up/ Post and Core - Custom made /Inlay/onlay", "Dental Procedure", 1500],
+  ["DP042", "Crown lengthening - Per Tooth", "Dental Procedure", 500],
+  ["DP043", "Crown - PMMA Crown", "Dental Procedure", 1000],
+  ["DP044", "Crown - All Metal-Nickel Free", "Dental Procedure", 2000],
+  ["DP045", "Crown - Metal with Ceramic Facing", "Dental Procedure", 3000],
+  ["DP046", "Crown - Recementation", "Dental Procedure", 600],
+  ["DP047", "Crown - Removal", "Dental Procedure", 500],
+  ["DP048", "Odontoplasty /Enameloplasty", "Dental Procedure", 500],
+  ["DP049", "Pulpectomy (Anterior Tooth)", "Dental Procedure", 2000],
+  ["DP050", "Pulpectomy (Posterior Tooth)", "Dental Procedure", 3000],
+  ["DP051", "Pulpotomy", "Dental Procedure", 1000],
+  ["DP052", "Veneer - Ceramic paediatric", "Dental Procedure", 3000],
+  ["DP053", "Interceptive Orthodontic Treatment of the Primary Dentition/Transition Dentition", "Dental Procedure", 7000],
+  ["DP054", "Limited Orthodontic Treatment of the Primary Dentition", "Dental Procedure", 5000],
+  ["DP055", "Occlusion Analysis/Adjustment/Occlusal Equilibration", "Dental Procedure", 500],
+  ["DP056", "Tooth Splinting -General", "Dental Procedure", 1500],
+  ["DP057", "Splinting - Periodontally weak teeth", "Dental Procedure", 1800],
+  ["DP058", "Night Guard", "Dental Procedure", 2000],
+  ["DP059", "Bridge/ Fixed Partial denture (per missing/ extracted tooth) metal crown", "Dental Procedure", 2000],
+  ["DP060", "Bridge/ Fixed Partial denture (per missing/ extracted tooth) metal crown with Ceramic facing", "Dental Procedure", 3000],
+  ["DP061", "Removable Partial Denture - Flexible Per Arch", "Dental Procedure", 7500],
+  ["DP062", "Removable Partial Denture - Cast Metal Up to 3 Teeth", "Dental Procedure", 4000],
+  ["DP063", "Removable Partial Denture - Cast Metal (additional Per tooth)", "Dental Procedure", 300],
+  ["DP064", "Removable Partial Denture - Acrylic Up to 3 teeth", "Dental Procedure", 2000],
+  ["DP065", "Removable Partial Denture - Tooth Addition (per tooth)", "Dental Procedure", 300],
+  ["DP066", "Add Clasp to existing Partial Denture", "Dental Procedure", 500],
+  ["DP067", "Add Tooth to existing Partial Denture", "Dental Procedure", 400],
+  ["DP068", "Tooth Supported Overdenture Per Arch", "Dental Procedure", 7500],
+  ["DP069", "Complete Denture - Per Arch", "Dental Procedure", 10000],
+  ["DP070", "Removable orthodontic appliance / Post Orthodontic R O A -per arch", "Dental Procedure", 2500],
+  ["DP071", "Fixed orthodontic per arch", "Dental Procedure", 15000],
+  ["DP072", "Space Maintainers - Fixed", "Dental Procedure", 4000],
+  ["DP073", "Minor Treatment to Control Habits-Removable Appliance Therapy", "Dental Procedure", 2500],
+  ["DP074", "Minor Treatment to Control Habits-Fixed Appliance Therapy", "Dental Procedure", 4000],
+  ["DP075", "Functional orthodontic appliance", "Dental Procedure", 6000],
+  ["DP076", "Feeding appliance for Cleft Palate", "Dental Procedure", 5000],
+  ["DP077", "Expansion plate", "Dental Procedure", 6500],
+  ["DP078", "Maxillofacial Prosthesis -Sal/auricular/orbital/Nasal/Palatal/facial lost/ Speech Aid", "Dental Procedure", 7000],
+  ["DP079", "Obturator Prosthesis - Surgical/Definitive/Modification", "Dental Procedure", 5000],
+  ["DP080", "Removal of - Lateral Exostosis/Torus Mandibularis/Torus Palatines/Surgical reduction of Osseous Tuberosity", "Dental Procedure", 3000],
+  ["DP081", "Sialolithotomy/Sialodocotomy/ Closure of Salivary Fistula", "Dental Procedure", 2000],
+  ["DP082", "Excision of Salivary gland", "Dental Procedure", 15000],
+  ["DP083", "Release of fibrous bands & grafting in (OSMF) treatment under GA", "Dental Procedure", 20000],
+  ["DP084", "Facial Space Abscess", "Dental Procedure", 5000],
+  ["DP085", "Partial Ostectomy / sequestrectomy for removal of non-vital bone", "Dental Procedure", 2000],
+  ["DP086", "Alveolus - Closed Reduction stabilization of Teeth", "Dental Procedure", 4000],
+  ["DP087", "Alveolus - Open Reduction stabilization of Teeth", "Dental Procedure", 6000],
+  ["DP088", "Arch bar fixation", "Dental Procedure", 5000],
+  ["DP089", "Oroantral Fistula closure", "Dental Procedure", 5000],
+  ["DP090", "Osseous, Oste periosteal, or Cartilage graft of the Mandible or Maxilla - autogenous or non-autogenous bone graft", "Dental Procedure", 3000],
+  ["DP091", "Osteoplasty - for Orthognathic deformities/ Mandibular Rami/ Body of Mandible", "Dental Procedure", 30000],
+  ["DP092", "Maxilla - Closed Reduction", "Dental Procedure", 6000],
+  ["DP093", "Maxilla - Open Reduction", "Dental Procedure", 10000],
+  ["DP094", "Mandible - Closed Reduction", "Dental Procedure", 6000],
+  ["DP095", "Mandible - Open Reduction", "Dental Procedure", 10000],
+  ["DP096", "Cyst of Maxilla/mandible by enucleation/excision/marsupialization upto 4 cms under LA", "Dental Procedure", 5000],
+  ["DP097", "Cyst of Maxilla/mandible by enucleation/excision/marsupialization more than 4 cms under LA", "Dental Procedure", 6000],
+  ["DP098", "Cyst of Maxilla/mandible by enucleation/excision/marsupialization more than 4 cms under GA and admission", "Dental Procedure", 25000],
+  ["DP099", "Temporomandibular(TM) joint ankylosis- under GA/Open /Closed Reduction", "Dental Procedure", 20000],
+  ["DP100", "Segmental / Hemi Mandibulectomy with graft", "Dental Procedure", 25000],
+  ["DP101", "Segmental /Hemi Mandibulectomy without graft", "Dental Procedure", 20000],
+  ["DP102", "Sub-Total mandibulectomy with graft", "Dental Procedure", 35000],
+  ["DP103", "Sub-Total mandibulectomy without graft", "Dental Procedure", 30000],
+  ["DP104", "Maxillectomy/Mandibulectomy- Total with graft", "Dental Procedure", 35000],
+  ["DP105", "Maxillectomy/Mandibulectomy- Total without graft", "Dental Procedure", 30000],
+  ["DP106", "Maxillectomy- partial with graft", "Dental Procedure", 25000],
+  ["DP107", "Maxillectomy- partial without graft", "Dental Procedure", 20000],
+  ["DP108", "Malar and/or Zygomatic arch - Closed Reduction", "Dental Procedure", 6000],
+  ["DP109", "Malar and/or Zygomatic arch - Open Reduction", "Dental Procedure", 10000],
+  ["DP110", "Distraction osteogenesis of mandible or maxilla under GA", "Dental Procedure", 30000],
+  ["DP111", "Facial bones - Complicated Reduction with fixation", "Dental Procedure", 45000]
+];
+
+function reportCghsRates() {
+  Logger.log("The card holds %s codes.", CGHS_RATES.length);
+  Logger.log("First: %s  %s  Rs %s", CGHS_RATES[0][0], CGHS_RATES[0][1], CGHS_RATES[0][3]);
+  Logger.log("Last:  %s  %s  Rs %s",
+             CGHS_RATES[CGHS_RATES.length - 1][0], CGHS_RATES[CGHS_RATES.length - 1][1],
+             CGHS_RATES[CGHS_RATES.length - 1][3]);
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("Panel Rates");
+  if (!sh) { Logger.log(""); Logger.log("The Panel Rates tab does not exist yet. Seeding creates it."); return; }
+  var data = sh.getDataRange().getValues();
+  var mine = 0, others = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][1]) continue;
+    if (String(data[i][0]).trim().toUpperCase() === CGHS_PANEL.toUpperCase()) mine++; else others++;
+  }
+  Logger.log("");
+  Logger.log("Panel Rates already holds %s CGHS rows and %s rows for other panels.", mine, others);
+  Logger.log("Seeding replaces the CGHS rows. The other panels are not touched.");
+  Logger.log("");
+  Logger.log('Set CONFIRM = "YES" and run seedCghsRates.');
+}
+
+function seedCghsRates() {
+  if (CONFIRM !== "YES") {
+    Logger.log('Nothing done. Set CONFIRM = "YES" at the top of this file first.');
+    return;
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("Panel Rates") || ss.insertSheet("Panel Rates");
+  var headers = ["Panel", "Code", "Procedure", "Rate", "Classification", "Updated At"];
+
+  // Every other panel's rows are read out first and written back untouched. A
+  // seed that cleared the whole tab would take DGEHS and the rest with it.
+  var data = sh.getDataRange().getValues();
+  var kept = [];
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] && String(data[i][0]).trim().toUpperCase() !== CGHS_PANEL.toUpperCase()) {
+      kept.push(data[i].slice(0, headers.length));
+    }
+  }
+  var others = kept.length;
+
+  var now = new Date().toISOString();
+  CGHS_RATES.forEach(function (r) {
+    kept.push([CGHS_PANEL, r[0], r[1], r[3], r[2], now]);
+  });
+
+  // One write. A hundred and seventeen appendRow calls is a hundred and
+  // seventeen round trips and would run for minutes.
+  sh.clearContents();
+  var out = [headers].concat(kept.map(function (row) {
+    var x = row.slice(0, headers.length);
+    while (x.length < headers.length) x.push("");
+    return x;
+  }));
+  sh.getRange(1, 1, out.length, headers.length).setValues(out);
+
+  Logger.log("Done. %s CGHS rates written; %s rows for other panels left as they were.",
+             CGHS_RATES.length, others);
+  Logger.log("Check Master -> Accounts -> Panel Fee Schedule -> CGHS.");
+  Logger.log('Set CONFIRM back to "" so this cannot run again by accident.');
+}

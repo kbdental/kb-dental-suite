@@ -720,6 +720,8 @@ function route(p) {
       case "saveEmployeesList":        return saveEmployeesList(p);
       case "getPaymentModesList":      return getPaymentModesList();
       case "savePaymentModesList":     return savePaymentModesList(p);
+      case "getPanelRates":           return getPanelRates(p);
+      case "savePanelRates":          return savePanelRates(p);
       case "getPanelsList":            return getPanelsList();
       case "savePanelsList":           return savePanelsList(p);
       case "getChairsList":            return getChairsList();
@@ -4248,6 +4250,75 @@ function savePaymentModesList(p) {
 // Master rather than in code, because a new panel is a commercial
 // arrangement, not a software change: adding one should not need a developer,
 // a deployment, or a wait.
+// ── Panel rate cards ────────────────────────────────────────────
+// A panel bills by ITS OWN code, not by the clinic's treatment names. CGHS
+// lists "RCT-Single Rooted tooth" as DP030; the clinic calls it something
+// else. Mapping the two would mean a translation table that goes wrong the day
+// either side renames anything, and a wrong code is a rejected claim — so the
+// panel's list is kept whole and separate, and panel billing picks from it by
+// code.
+//
+// CGHS publishes three columns — Non-NABH, NABH and Super Speciality. K.B.
+// Dental bills at the NABH rate, so that is the one stored and there is no
+// setting to get wrong. If the clinic's accreditation ever changes, the rate
+// card is re-imported from the column that then applies.
+var PANEL_RATES_TAB = "Panel Rates";
+var PANEL_RATE_HEADERS = ["Panel", "Code", "Procedure", "Rate", "Classification", "Updated At"];
+
+function getPanelRates(p) {
+  var sh = getSheet(PANEL_RATES_TAB);
+  var data = sh.getDataRange().getValues();
+  var want = String((p && p.panel) || "").trim().toUpperCase();
+  var items = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][1]) continue;                       // no code, no row
+    if (want && String(data[i][0]).trim().toUpperCase() !== want) continue;
+    items.push({
+      panel: data[i][0], code: String(data[i][1]).trim(), procedure: data[i][2],
+      rate: data[i][3], classification: data[i][4] || ""
+    });
+  }
+  return { success: true, rates: items };
+}
+
+// Replaces ONE panel's rates and leaves every other panel's alone. The other
+// masters rewrite themselves wholesale, which is fine for six payment modes;
+// doing that here would let one mistaken import wipe every panel's rate card.
+function savePanelRates(p) {
+  var sh = getSheet(PANEL_RATES_TAB);
+  var panel = String((p && p.panel) || "").trim();
+  if (!panel) return { success: false, error: "No panel given" };
+
+  var arr = [];
+  try { arr = JSON.parse(p.rates); } catch (e) { if (Array.isArray(p.rates)) arr = p.rates; }
+
+  var data = sh.getDataRange().getValues();
+  var kept = [];
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] && String(data[i][0]).trim().toUpperCase() !== panel.toUpperCase()) kept.push(data[i]);
+  }
+  var others = kept.length;
+
+  var now = new Date().toISOString();
+  arr.forEach(function (r) {
+    var code = String((r && r.code) || "").trim();
+    if (!code) return;                               // a rate with no code cannot be claimed
+    kept.push([panel, code, r.procedure || "", r.rate || "", r.classification || "", now]);
+  });
+
+  // Written in one block. A thousand appendRow calls is a thousand round trips
+  // and the import would time out long before it finished.
+  sh.clearContents();
+  var out = [PANEL_RATE_HEADERS].concat(kept);
+  sh.getRange(1, 1, out.length, PANEL_RATE_HEADERS.length).setValues(
+    out.map(function (row) {
+      var r = row.slice(0, PANEL_RATE_HEADERS.length);
+      while (r.length < PANEL_RATE_HEADERS.length) r.push("");
+      return r;
+    }));
+  return { success: true, saved: kept.length - others, kept: others };
+}
+
 function getPanelsList() {
   var sh = getSheet("Panels");
   var data = sh.getDataRange().getValues();
