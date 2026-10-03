@@ -43,6 +43,12 @@ ok("the rate field takes digits only", /replace\(\/\[\^0-9\]\/g, ""\)/.test(ed))
 ok("removing asks first", /window\.confirm/.test(ed));
 ok("and names the code it is about to remove", /"Remove " \+ r\.code/.test(ed));
 
+// The action buttons wrapped onto two lines in a 130px column, which made all
+// 117 rows taller for no reason.
+ok("the actions column is wide enough for both buttons", /width:170/.test(ed));
+ok("and each pair is kept on one line",
+   (ed.match(/whiteSpace:"nowrap"/g) || []).length === 3);
+
 console.log("==============================================================================");
 console.log("  " + pass + " passed, " + fail + " failed");
 console.log("==============================================================================");

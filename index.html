@@ -23706,7 +23706,7 @@ function PanelFeeEditor({ panels }) {
         React.createElement("th", { style:th }, "Procedure"),
         React.createElement("th", { style:{ ...th, width:110, textAlign:"right" } }, "Rate"),
         React.createElement("th", { style:{ ...th, width:160 } }, "Classification"),
-        React.createElement("th", { style:{ ...th, width:130 } }, ""))),
+        React.createElement("th", { style:{ ...th, width:170 } }, ""))),
       React.createElement("tbody", null,
         // The new-rate row sits at the top, where it is visible without
         // scrolling past a hundred existing ones.
@@ -23723,7 +23723,7 @@ function PanelFeeEditor({ panels }) {
           React.createElement("td", { style:td }, React.createElement("input", {
             style:inp, value:draft.classification, placeholder:"Dental Procedure",
             onChange:e => setDraft({ ...draft, classification:e.target.value }) })),
-          React.createElement("td", { style:td },
+          React.createElement("td", { style:{ ...td, whiteSpace:"nowrap" } },
             React.createElement("button", {
               disabled:!draft.code.trim() || !draft.rate,
               onClick:() => {
@@ -23759,7 +23759,7 @@ function PanelFeeEditor({ panels }) {
               React.createElement("td", { style:td }, React.createElement("input", {
                 style:inp, value:draft.classification,
                 onChange:e => setDraft({ ...draft, classification:e.target.value }) })),
-              React.createElement("td", { style:td },
+              React.createElement("td", { style:{ ...td, whiteSpace:"nowrap" } },
                 React.createElement("button", {
                   disabled:!draft.code.trim() || !draft.rate,
                   onClick:() => {
@@ -23780,7 +23780,9 @@ function PanelFeeEditor({ panels }) {
             React.createElement("td", { style:td }, r.procedure),
             React.createElement("td", { style:{ ...td, textAlign:"right", fontWeight:700 } }, "\u20b9" + r.rate),
             React.createElement("td", { style:{ ...td, color:"#444444" } }, r.classification),
-            React.createElement("td", { style:td },
+            // Edit and Remove belong side by side. At 130px the pair wrapped
+            // onto two lines and every row grew taller for no reason.
+            React.createElement("td", { style:{ ...td, whiteSpace:"nowrap" } },
               React.createElement("button", {
                 onClick:() => { setEditIndex(i); setDraft({ code:r.code, procedure:r.procedure,
                   rate:String(r.rate), classification:r.classification || "" }); },
