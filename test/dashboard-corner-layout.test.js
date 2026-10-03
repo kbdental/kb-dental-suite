@@ -25,7 +25,9 @@ function sliceFn(startMarker, endMarker) {
 }
 
 const birthdaySrc = sliceFn('function BirthdayCorner({ birthdays }) {', '\nfunction ');
-const rowSrc = sliceFn('  // One right-anchored row holding both corner widgets.', '  /*#__PURE__*/React.createElement("div", {\n    style: {\n      fontSize: 13,');
+// The end marker tracks a real font size in the page, so it moved when every
+// on-screen size was raised a notch for legibility. 13 became 14.
+const rowSrc = sliceFn('  // One right-anchored row holding both corner widgets.', '  /*#__PURE__*/React.createElement("div", {\n    style: {\n      fontSize: 14,');
 
 const page_html = `
 <div id="root"></div>
