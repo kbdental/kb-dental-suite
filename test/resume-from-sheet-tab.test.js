@@ -172,10 +172,55 @@ const RCT_ROWS = [
   await page.waitForTimeout(150);
   eq('the chart follows a newly loaded record', await marked(), ['36']);
   const msg36 = await msgFor('36');
+  // The wording moved when completion was introduced: an entry that is loaded
+  // is by definition one that is NOT finished, and the message now says so and
+  // points at the tick that ends it.
   ok('a tooth with saved field state is still loaded to continue',
-    /loaded for you to continue/.test(msg36), msg36);
+    /loaded so you can carry on/.test(msg36), msg36);
+  ok('and it says how to close the treatment when it is done',
+    /Treatment complete/.test(msg36), msg36);
   eq('and its saved note is back in the form',
     await page.evaluate(() => document.getElementById('n2').value), 'Obturation done.');
+
+  // ── the clinic's rule, run in a browser rather than matched in source ────
+  // "If the treatment is completed then start a fresh entry and keep old as
+  // history, but if incomplete reopen the old."
+  await page.evaluate(() => {
+    try { localStorage.clear(); } catch (e) {}
+    window.postMessage({ type: 'KB_CLINICAL_RECORD', record: { entries: [
+      { tooth: '36', date: '05/09/2026', status: 'complete', course: 1,
+        raw: { n2: 'Obturation done.', groups: {} } },
+      { tooth: '46', date: '05/09/2026', status: 'open', course: 1,
+        raw: { n2: 'Access opened.', groups: {} } },
+    ] } }, '*');
+  });
+  await page.waitForTimeout(300);
+
+  // A finished tooth: the next course starts and the old one becomes history.
+  await page.evaluate(() => document.getElementById('toothBtn').click());
+  await page.waitForTimeout(200);
+  const done36 = await msgFor('36');
+  ok('a completed tooth starts the next course', /Starting course 2/.test(done36), done36);
+  ok('and says the finished one is kept', /kept on the record/.test(done36), done36);
+  eq('the form is cleared for the new course',
+    await page.evaluate(() => document.getElementById('n2').value), '');
+  eq('and the new course is not ticked complete',
+    await page.evaluate(() => document.getElementById('txDone').checked), false);
+  ok('the earlier course survives as history',
+    await page.evaluate(() => {
+      const sh = JSON.parse(localStorage.getItem('kb_rct_sheet_' +
+        (document.getElementById('pId').value || 'UNKNOWN').toUpperCase()) || '{}');
+      const e = (sh.entries || []).find(x => x.tooth === '36');
+      return !!(e && e.course === 2 && (e.past || []).length === 1);
+    }));
+
+  // An unfinished tooth: reopened, with its work back in the fields.
+  const open46 = await msgFor('46');
+  ok('an unfinished tooth is reopened instead', /loaded so you can carry on/.test(open46), open46);
+  eq('with its saved work back in the form',
+    await page.evaluate(() => document.getElementById('n2').value), 'Access opened.');
+  eq('and the tick clear, so saving does not close it by accident',
+    await page.evaluate(() => document.getElementById('txDone').checked), false);
 
   eq('no uncaught page errors', errors, []);
   await browser.close();
