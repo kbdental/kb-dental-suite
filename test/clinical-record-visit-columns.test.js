@@ -83,7 +83,9 @@ function extract() {
     }
     return -1;
   });
-  eq('the date row has one cell per visit, plus its label', cells, 4);
+  // Four columns, as the clinic's paper form has: the blanks are ruled space
+  // to write in. Plus the label column.
+  eq('the date row has four columns plus its label', cells, 5);
 
   // Readability: the shrink is gone and the type is up.
   ok('the sheet is no longer shrunk to 81%', !/zoom:0\.81/.test(html));
@@ -101,7 +103,25 @@ function extract() {
     }
     return -1;
   });
-  eq('one visit makes one column, not four', single, 2);
+  eq('one visit still prints the four-column form', single, 5);
+
+  // A fifth visit must start another sheet, not vanish off the end of a table
+  // capped at four.
+  const sheets = await page.evaluate(() => {
+    const vs = [];
+    for (let i = 1; i <= 5; i++) vs.push({ date: '0' + i + '/09/2026', tooth: '46', access: 'v' + i });
+    localStorage.setItem('kb_rct_sheet_UNKNOWN', JSON.stringify({ entries: [{ tooth: '46', date: '01/09/2026', visits: vs }] }));
+    return null;
+  });
+  await page.reload(); await page.waitForTimeout(300); await openTab(); await page.waitForTimeout(200);
+  const five = await page.evaluate(() => ({
+    sheets: document.querySelectorAll('#clinRecContent #wdOuter').length,
+    html: document.getElementById('clinRecContent').innerHTML,
+  }));
+  eq('five visits print on two sheets', five.sheets, 2);
+  ok('and the fifth visit is on the second sheet, not dropped',
+     five.html.indexOf('05/09/2026') >= 0);
+  ok('the second sheet starts on a new page', /page-break-before:always/.test(five.html));
 
   // A record saved before the visit log must still print.
   await render([{ tooth: '11', date: '02/05/2026', access: 'Completed / Non-vital' }]);

@@ -44,17 +44,25 @@ FORMS.forEach(([label, name]) => {
      !/border-bottom:none;font-size:9\.5px/.test(h));
   ok(label + ": cells are at a readable size", h.indexOf("font-size:12.5px") >= 0);
 
-  ok(label + ": columns are no longer padded with blanks",
-     h.indexOf("while(g.length<PER) g.push(null);") === -1);
-  ok(label + ": a group holds only the items it has",
-     /groups\.push\(items\.slice\(gi,gi\+PER\)\);/.test(h));
-  ok(label + ": an empty record still prints a blank sheet",
-     /if\(!groups\.length\) groups=\[\[null\]\];/.test(h));
+  // Four columns, as the clinic's paper form has. The blank ones are ruled
+  // space to write in, which is how the pad is used — removing them was my
+  // misreading of "a lot of page is empty", which meant the wasted lower page
+  // and the tiny type, not the columns.
+  ok(label + ": four columns to a sheet, padded as the paper form is",
+     /while\(g\.length<PER\) g\.push\(null\);/.test(h));
+  ok(label + ": a fifth item starts another sheet rather than being dropped",
+     /for\(var gi=0; gi<items\.length; gi\+=PER\)/.test(h));
+  ok(label + ": an empty record still prints a blank four-column sheet",
+     /groups=\[\[null,null,null,null\]\]/.test(h));
 
-  ok(label + ": section bars span the real column count",
+  ok(label + ": section bars span the column count",
      /colspan="'\+\(group\.length\+1\)\+'"/.test(h));
   ok(label + ": and the columns are declared to match",
      /for\(var ci=0;ci<group\.length;ci\+\+\) colTags\+='<col>';/.test(h));
+
+  // The clinic calls this the work done sheet, so the app does too.
+  ok(label + ": the tab is called Work Done Sheet", /Work Done Sheet/.test(h));
+  ok(label + ": and nothing still says Clinical Record", h.indexOf("Clinical Record") === -1);
 
   // The blob must still be a working document, not just one that matches.
   ok(label + ": still saves to the patient record", /KB_SAVE_CLINICAL_SHEET/.test(h));
@@ -65,6 +73,11 @@ FORMS.forEach(([label, name]) => {
 const rct = blob("RCT_FORM_B64");
 ok("RCT: still unshrunk", !/zoom:0\.81/.test(rct));
 ok("RCT: still one column per visit", /One column per VISIT/.test(rct));
+ok("RCT: four columns to a sheet", /var nCols = 4;/.test(rct));
+ok("RCT: a fifth visit starts another sheet",
+   /for \(var gi = 0; gi < cols\.length; gi \+= nCols\) groups\.push/.test(rct));
+ok("RCT: the tab is called Work Done Sheet", /Work Done Sheet/.test(rct));
+ok("RCT: and nothing still says Clinical Record", rct.indexOf("Clinical Record") === -1);
 
 console.log("==============================================================================");
 console.log("  " + pass + " passed, " + fail + " failed");
