@@ -41,13 +41,23 @@ ok("12px is the smallest text in the app",
 ok("and plenty of it reached 14",
    count(/fontSize:\s*14(?![0-9.])/g) > 150);
 
-// --- the printed forms are deliberately untouched --------------------------
-// Those are page layouts. Growing the type pushes a consent form onto an extra
-// sheet, which is a worse problem than small print on paper the patient holds
-// in their hand at reading distance.
-ok("the printed forms keep their 8.5pt", count(/font-size:8\.5pt/g) === 30);
-ok("and their 10pt", count(/font-size:10pt/g) === 45);
+// --- the printed documents, with one deliberate exception ------------------
+// Consent forms, the registration printout and the rest keep their sizes:
+// those are page layouts, and growing the type pushes a form onto an extra
+// sheet, which is worse than small print on paper held at reading distance.
+//
+// The clinical work-done sheet is the exception. The clinic asked for it
+// directly — "the font size should be readable (it is too small and a lot of
+// page is empty)" — so its own stylesheet was enlarged and nothing else was.
+// The counts moved by exactly the two rules that changed in it.
+ok("the other printed documents keep their 8.5pt", count(/font-size:8\.5pt/g) === 29);
+ok("and their 10pt", count(/font-size:10pt/g) === 44);
 ok("and their 11pt", count(/font-size:11pt/g) === 14);
+
+const clcss = src.slice(src.indexOf("const CL_PCSS = `"), src.indexOf("`;", src.indexOf("const CL_PCSS = `")));
+ok("the clinical sheet's body type is readable", /font-size:12pt;color:#111/.test(clcss));
+ok("its table cells too", /td\{padding:8pt 9pt;border:0\.5pt solid #ddd;font-size:12pt/.test(clcss));
+ok("and its row labels", /\.row-lbl\{[^}]*font-size:11\.5pt/.test(clcss));
 
 // --- borders and backgrounds were never the problem ------------------------
 ok("borders were not darkened", count(/borderColor:\s*"#(4b4b4b|5a5a5a|444444|3d3d3d|383838|2e2e2e)"/g) === 0);
