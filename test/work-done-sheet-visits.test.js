@@ -72,7 +72,9 @@ const html = api.buildRCTSheetHTML(PAT, teeth, "");
 // "<thead" also starts with "<th", so match a real cell: a tag followed by a
 // space or a close bracket.
 const cols = (html.match(/<th[ >]/g) || []).length;
-ok("there is a column per visit plus the label column", cols === 4, String(cols));
+// Four columns, as the paper form has — the blanks are ruled space to write
+// in — plus the label column.
+ok("there are four columns plus the label column", cols === 5, String(cols));
 ok("the first visit's canal count is printed", /3 \(MB, ML, D\)/.test(html));
 ok("the second visit's master cone is printed", /F2/.test(html));
 ok("the third visit's restoration is printed", /Ivoclar/.test(html));
@@ -82,16 +84,18 @@ ok("the sheet says which course the visit belonged to", /Course of Treatment/.te
 ok("and whether the treatment was closed", /Treatment Status/.test(html) && /Treatment complete/.test(html));
 
 // Empty padding columns were why one tooth wasted most of a page.
-eq("a single visit makes a single column, not four padded ones",
-   api.chunkTeeth([{ toothNo: "46", visits: [{ date: "2026-10-05" }] }])[0].length, 1);
+eq("a single visit still prints the four-column form",
+   api.chunkTeeth([{ toothNo: "46", visits: [{ date: "2026-10-05" }] }])[0].length, 4);
+eq("a fifth visit starts another sheet rather than being dropped",
+   api.chunkTeeth([{ toothNo: "46", visits: [1,2,3,4,5].map(n => ({ date: "0" + n + "/09/2026" })) }]).length, 2);
 ok("a sheet with no teeth still prints a blank form",
    api.chunkTeeth([]).length === 1);
 
-// Orientation follows the content rather than always being landscape.
+// Four columns always, so every one of these sheets prints the same way up.
 const narrow = api.buildRCTSheetHTML(PAT, api.mapRCTData({ entries: [{
   tooth: "46", date: "2026-10-05", visits: [{ date: "2026-10-05", raw: {} }] }] }), "");
-ok("one dated column prints portrait, filling the page", /A4 portrait/.test(narrow));
-ok("three print landscape, which needs the width", /A4 landscape/.test(html));
+ok("one visit prints landscape, like every other count", /A4 landscape/.test(narrow));
+ok("and so do three", /A4 landscape/.test(html));
 
 // An old record saved before visits were kept must still print.
 const legacy = api.mapRCTData({ entries: [{ tooth: "11", date: "2026-05-02", ana: "Block" }] });
