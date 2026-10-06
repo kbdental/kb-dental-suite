@@ -135,8 +135,13 @@ eq('firstFreeRow: scans column 3 when asked to, not column A',
 const local = localStampFromISO_('2026-08-22');
 eq('localStampFromISO_: year/month/day match the input, not shifted by UTC parsing',
   [local.getFullYear(), local.getMonth(), local.getDate()], [2026, 7, 22]);
-eq('localStampFromISO_: not the 05:30 UTC-parse artefact',
-  [local.getHours(), local.getMinutes()] .join(':') === '5:30', false);
+// This used to assert the clock was not "5:30", which cannot tell the artefact
+// from a real 05:30 — and since the stamp carries the CURRENT time, the test
+// failed for one minute every day, at 05:30, for no reason. The artefact is
+// exactly what new Date("2026-08-22") produces, so compare against that: it is
+// deterministic and true in any timezone.
+eq('localStampFromISO_: not the UTC-midnight value the bare string parses to',
+  local.getTime() === new Date('2026-08-22').getTime(), false);
 // The clock time is "now", so assert it tracks the current time rather than
 // pinning an exact value the test could never know.
 const nowRef = new Date();
