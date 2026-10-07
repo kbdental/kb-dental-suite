@@ -547,16 +547,36 @@ function batchRead_(p) {
   }
   var out = {};
   for (var i = 0; i < names.length; i++) {
-    var name = String(names[i] || "").trim();
+    // An entry is either a bare action name or {key, action, params}. Only the
+    // parameterless reads could batch before, which left every read carrying a
+    // UHID or a date — the patient screens, in other words — making its own
+    // request. Those are the ones the clinic was waiting on.
+    var entry = names[i];
+    var isObj = entry && typeof entry === "object";
+    var name  = String((isObj ? entry.action : entry) || "").trim();
+    // The key is how the browser finds its answer: the same action asked twice
+    // with different parameters must not overwrite itself in the result.
+    var key   = String((isObj && entry.key) || name);
+
     // No batch inside a batch — it buys nothing and makes the depth unbounded.
-    if (!name || name === "batch") { out[name || "?"] = { success: false, error: "batch: not allowed" }; continue; }
+    if (!name || name === "batch") { out[key || "?"] = { success: false, error: "batch: not allowed" }; continue; }
     // Reads only. A half-applied batch of writes is a worse problem than a
     // slow page, and nothing this is for needs to write.
-    if (name.indexOf("get") !== 0) { out[name] = { success: false, error: "batch: reads only" }; continue; }
+    if (name.indexOf("get") !== 0) { out[key] = { success: false, error: "batch: reads only" }; continue; }
+
+    var payload = { action: name, token: p.token };
+    if (isObj && entry.params && typeof entry.params === "object") {
+      Object.keys(entry.params).forEach(function (k) {
+        // action and token are the batch's own, never the caller's: letting an
+        // entry set them would let one read impersonate another, or carry a
+        // different session than the request was authorised with.
+        if (k !== "action" && k !== "token") payload[k] = entry.params[k];
+      });
+    }
     try {
-      out[name] = route({ action: name, token: p.token });
+      out[key] = route(payload);
     } catch (err) {
-      out[name] = { success: false, error: String((err && err.message) || err) };
+      out[key] = { success: false, error: String((err && err.message) || err) };
     }
   }
   return { success: true, results: out };

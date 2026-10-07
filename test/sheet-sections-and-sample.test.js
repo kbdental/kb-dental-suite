@@ -60,14 +60,12 @@ FORMS.forEach(([label, name, nSections, titles]) => {
   const missing = cfg.topFields.map(p => p[0]).filter(k => !hardcoded.has(k) && !grouped.has(k));
   ok(label + ": no parameter is left off the sheet", missing.length === 0, missing.join(", "));
 
-  // And a way to see it on paper without a real patient.
-  ok(label + ": there is a Load Sample button", /id="loadSample"/.test(h));
-  ok(label + ": which fills the record, not the form",
-     /CR_RECORD=s; renderClinRec\(\);/.test(h));
-  ok(label + ": and sends nothing to the server",
-     /never leaves the screen/.test(h));
-  ok(label + ": the sample fills all four columns",
-     /\[1,2,3,4\]\.map/.test(h));
+  // The sample used to live here too, which meant two buttons printing the
+  // same layout from different places. It is on the sheets screen only now —
+  // the one place that can also do Restoration and Pedo, which print from the
+  // parent app rather than from a form. print-sample-every-sheet covers it.
+  ok(label + ": the form no longer carries its own sample button",
+     h.indexOf("loadSample") === -1);
 });
 
 console.log("==============================================================================");

@@ -30,8 +30,11 @@ function build() {
     calls.push({ action: action, data: data || {} });
     return Promise.resolve(
       action === "batch"
-        ? { success: true, results: JSON.parse(data.actions).reduce(function (o, n) {
-              o[n] = { success: true, from: n }; return o;
+        // Mirrors the real backend: entries are {key, action, params} and the
+        // results are keyed by `key`, so the same action asked twice with
+        // different parameters does not overwrite itself.
+        ? { success: true, results: JSON.parse(data.actions).reduce(function (o, e) {
+              o[e.key] = { success: true, from: e.action, params: e.params }; return o;
             }, {}) }
         : { success: true, from: action });
   }
@@ -67,12 +70,41 @@ chain = chain.then(function () { return run("writes", function (m) {
     });
 }); });
 
+// The change that mattered. A read naming a patient or a date used to go on
+// its own, and those are most of what a clinic screen asks for.
 chain = chain.then(function () { return run("params", function (m) {
-  return Promise.all([m.api("getList"), m.api("getPatient", { uhid: "AL10001" })])
-    .then(function () {
-      ok("a read carrying parameters stays its own request",
-         calls.some(function (c) { return c.action === "getPatient" && c.data.uhid === "AL10001"; }));
-    });
+  return Promise.all([
+    m.api("getPatient", { uhid: "AL1001" }),
+    m.api("getClinicalSheets", { uhid: "AL1001" }),
+    m.api("getAppointments", { date: "06/10/2026" }),
+  ]).then(function (res) {
+    ok("three reads naming a patient or a date make ONE request", calls.length === 1, calls.length);
+    var sent = JSON.parse(calls[0].data.actions);
+    ok("and each carries its own parameters",
+       sent[0].params.uhid === "AL1001" && sent[2].params.date === "06/10/2026",
+       JSON.stringify(sent.map(function (e) { return e.params; })));
+    ok("every caller gets the answer it asked for",
+       res.map(function (r) { return r.from; }).join(",") ===
+       "getPatient,getClinicalSheets,getAppointments",
+       JSON.stringify(res.map(function (r) { return r.from; })));
+  });
+}); });
+
+// Two patients are not the same read, however alike the action looks.
+chain = chain.then(function () { return run("per-patient", function (m) {
+  return Promise.all([
+    m.api("getPatient", { uhid: "AL1001" }),
+    m.api("getPatient", { uhid: "AL2002" }),
+    m.api("getPatient", { uhid: "AL1001" }),
+  ]).then(function (res) {
+    var sent = JSON.parse(calls[0].data.actions);
+    ok("the same patient asked for twice is sent once", sent.length === 2, String(sent.length));
+    ok("but a different patient is a different read",
+       sent.map(function (e) { return e.params.uhid; }).sort().join(",") === "AL1001,AL2002");
+    ok("and each caller gets its own patient back",
+       res[0].params.uhid === "AL1001" && res[1].params.uhid === "AL2002",
+       JSON.stringify(res.map(function (r) { return r.params; })));
+  });
 }); });
 
 chain = chain.then(function () { return run("dedupe", function (m) {
@@ -106,6 +138,31 @@ chain = chain.then(function () { return run("later tick", function (m) {
     });
   });
 }); });
+
+// Between merging this and deploying Code.gs, the browser sends the new entry
+// format to a backend that expects bare action names. That backend answers
+// "batch: reads only" for every entry, with success:true on the batch — so
+// trusting it would put an error on every panel until the deploy caught up.
+chain = chain.then(function () {
+  var calls2 = [];
+  function apiDirect2(action, data) {
+    calls2.push(action);
+    return Promise.resolve(action === "batch"
+      ? { success: true, results: JSON.parse(data.actions).reduce(function (o, e) {
+            o[e.key] = { success: false, error: "batch: reads only" }; return o;
+          }, {}) }
+      : { success: true, from: action });
+  }
+  var m = new Function("apiDirect", code)(apiDirect2);
+  return Promise.all([m.api("getPatient", { uhid: "AL1001" }), m.api("getCarePlan", { uhid: "AL1001" })])
+    .then(function (res) {
+      ok("an out-of-date backend does not leave the clinic with errors",
+         res.every(function (r) { return r.success; }), JSON.stringify(res));
+      ok("each unserved read is retried on its own",
+         calls2.filter(function (c) { return c !== "batch"; }).sort().join(",") ===
+         "getCarePlan,getPatient", calls2.join(","));
+    });
+});
 
 chain.then(function () {
   console.log("==============================================================================");
