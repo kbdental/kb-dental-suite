@@ -59,18 +59,31 @@ chain.push(async () => {
   ok("and the batch is one of the retryable actions", calls.length === 2, calls.length);
 });
 
-// The one that matters most.
+// A 404 is Apps Script refusing to START the execution — routing, not running.
+// Nothing can have reached the sheet, so a write is safe to retry. The clinic
+// hit this: a receipt refused with HTTP 404, in front of a patient, on a save
+// that had never run.
 chain.push(async () => {
-  const { fn, calls } = build(() => 404);
-  const res = await fn("saveRegistration", { uhid: "AL1001" });
-  ok("a WRITE is never retried", calls.length === 1, calls.length);
-  ok("and the failure is reported honestly", res.success === false && /HTTP 404/.test(res.error), res.error);
+  const { fn, calls } = build(n => (n < 3 ? 404 : 200));
+  const res = await fn("saveReceipt", { amount: "80000" });
+  ok("a write that 404s is retried and succeeds", res.success === true, JSON.stringify(res));
+  ok("after three attempts", calls.length === 3, calls.length);
+});
+
+// The one that matters most: anything other than a 404 may mean the save
+// landed and only the answer was lost. A receipt written twice is far worse
+// than one error message.
+chain.push(async () => {
+  const { fn, calls } = build(() => 500);
+  const res = await fn("savePayment", { amount: "500" });
+  ok("a write that 500s is NOT retried", calls.length === 1, calls.length);
+  ok("and the failure is reported honestly", res.success === false && /HTTP 500/.test(res.error), res.error);
 });
 
 chain.push(async () => {
-  const { fn, calls } = build(() => 500);
-  await fn("savePayment", { amount: "500" });
-  ok("a payment is never sent twice", calls.length === 1, calls.length);
+  const { fn, calls } = build(() => new Error("connection reset"));
+  await fn("saveRegistration", { uhid: "AL1001" });
+  ok("nor is one whose connection dropped mid-flight", calls.length === 1, calls.length);
 });
 
 chain.push(async () => {

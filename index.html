@@ -291,17 +291,27 @@ async function apiDirect(action, data = {}) {
     // Reads retry themselves. Writes deliberately do not: a save that reached
     // the sheet before the connection broke would be applied twice, and a
     // duplicate payment is far worse than an error message.
-    const retryable = action === "batch" || action.indexOf("get") === 0;
-    const attempts = retryable ? 3 : 1;
+    const isRead = action === "batch" || action.indexOf("get") === 0;
+    const attempts = 3;
     let lastErr;
     for (let i = 0; i < attempts; i++) {
       if (i) await new Promise(r => setTimeout(r, 400 * Math.pow(3, i - 1)));
       try {
         const r = await fetch(SCRIPT_URL + "?" + p.toString());
-        if (!r.ok) throw new Error("HTTP " + r.status);
+        if (!r.ok) throw Object.assign(new Error("HTTP " + r.status), { status: r.status });
         return handleAuthFailure(await r.json());
       } catch (e) {
         lastErr = e;
+        // A read is retried whatever went wrong. A WRITE is retried only on a
+        // 404, because that is Apps Script refusing to start the execution at
+        // all — routing, not running — so nothing can have reached the sheet
+        // and a second attempt cannot double it. A 5xx or a dropped connection
+        // may mean the save landed and the answer was lost, and a receipt
+        // written twice is far worse than one error message.
+        //
+        // The clinic hit exactly this: a receipt refused with HTTP 404, in
+        // front of a patient, on a save that had in fact never run.
+        if (!isRead && e.status !== 404) break;
       }
     }
     throw lastErr;
