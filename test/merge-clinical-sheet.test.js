@@ -70,10 +70,18 @@ function makeCtx(existingRecord) {
     // whole thing happened on the 27th. `date` is now the day the tooth was
     // first treated and `lastVisit` the day it was last seen — see
     // test/visit-history.test.js.
+    // The row now also carries a log of the visits done on it, so the sheet can
+    // print a dated column each instead of one column of flattened values.
+    const { visits: t16visits, ...t16 } = merged.teeth[0];
     eq('tooth 16 kept its position, its start date, and gained a last-seen date',
-      merged.teeth[0],
-      { n: 1, tooth: '16', date: '20/08/2026', lastVisit: '27/08/2026' });
-    eq('tooth 17 untouched', merged.teeth[1], { n: 2, tooth: '17', date: '20/08/2026' });
+      t16, { n: 1, tooth: '16', date: '20/08/2026', lastVisit: '27/08/2026' });
+    eq('and this visit is logged against it', (t16visits || []).map(v => v.date), ['27/08/2026']);
+    // The tooth was already on file before the log existed, so only visits from
+    // here on are recorded. An earlier visit that was never written down cannot
+    // be invented afterwards.
+    const { visits: t17visits, ...t17 } = merged.teeth[1];
+    eq('tooth 17 untouched', t17, { n: 2, tooth: '17', date: '20/08/2026' });
+    eq('and gains no log, because this visit did not touch it', t17visits, undefined);
   }
 
   // --- a genuinely new tooth still appends -----------------------------------
