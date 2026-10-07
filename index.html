@@ -11300,6 +11300,33 @@ const CLINICAL_FIELDS = Object.fromEntries(
   })
 );
 
+// A worked example of whichever sheet is open, so the printed layout can be
+// checked without a real patient on the books — and without the clinic having
+// to invent a case to see whether a column fits.
+//
+// It is built from the sheet's OWN section list, so a parameter added to a
+// sheet appears in the sample automatically. A hand-written sample would go
+// stale the first time a field was added, and would then be checking a layout
+// that no longer exists.
+function sampleTeethFor(tabId) {
+  const sections = CLINICAL_SECTIONS[tabId] || [];
+  // Four dated visits, matching the four columns the paper form has.
+  const visits = [1, 2, 3, 4].map(n => {
+    const v = { date: "0" + n + "/10/2026", doctor: "Dr. Viveyk" };
+    sections.forEach(sec => {
+      if (sec.dateKey) v[sec.dateKey] = "0" + n + "/10/2026";
+      sec.fields.forEach(f => {
+        // Use the field's own first option where it has one, so the sample
+        // reads like a real record rather than filler.
+        v[f.k] = (f.opts && f.opts.length) ? f.opts[Math.min(n - 1, f.opts.length - 1)]
+                                           : "Sample " + f.l.toLowerCase();
+      });
+    });
+    return v;
+  });
+  return [{ toothNo: "46", visits: visits }];
+}
+
 const CS_TABS = [
   {id:"rct",               label:"🔬 RCT",              color:"#7C3AED", itemLabel:"Tooth"},
   {id:"implant_surgery",   label:"🔩 Implant Surgery",  color:"#0078B4", itemLabel:"Implant Site"},
@@ -11670,16 +11697,20 @@ function ClinicalSheets({ globalPat, setGlobalPat }) {
     } else { setNotFound(true); setPat(null); }
   };
 
-  const printSheet = (toothArr)=>{
+  const printSheet = (toothArr, sampleFor)=>{
     const sigDoc = toothArr[0]?.visits?.[0]?.doctor;
     const sigSrc = storedSigs[sigDoc||""]||"";
+    // The sample can be printed with no patient loaded, and every builder reads
+    // pat.name for the header — so it gets a patient of its own, clearly
+    // marked, rather than throwing or printing a real name onto an example.
+    const who = pat || { name: sampleFor ? "SAMPLE \u2014 not a patient" : "\u2014", uhid: sampleFor ? "SAMPLE" : "\u2014" };
     let html = "";
-    if(tab==="rct") html=buildRCTSheetHTML(pat,toothArr,sigSrc);
-    else if(tab==="implant_surgery") html=buildImplantSurgeryHTML(pat,toothArr,sigSrc);
-    else if(tab==="implant_prosthetic") html=buildImplantProstheticHTML(pat,toothArr,sigSrc);
-    else if(tab==="crown_bridge") html=buildCrownBridgeHTML(pat,toothArr,sigSrc);
-    else if(tab==="restoration") html=buildRestorationHTML(pat,toothArr,sigSrc);
-    else html=buildPedoHTML(pat,toothArr,sigSrc);
+    if(tab==="rct") html=buildRCTSheetHTML(who,toothArr,sigSrc);
+    else if(tab==="implant_surgery") html=buildImplantSurgeryHTML(who,toothArr,sigSrc);
+    else if(tab==="implant_prosthetic") html=buildImplantProstheticHTML(who,toothArr,sigSrc);
+    else if(tab==="crown_bridge") html=buildCrownBridgeHTML(who,toothArr,sigSrc);
+    else if(tab==="restoration") html=buildRestorationHTML(who,toothArr,sigSrc);
+    else html=buildPedoHTML(who,toothArr,sigSrc);
     const w=window.open("","_blank"); w.document.write(html); w.document.close(); setTimeout(()=>w.print(),600);
   };
 
@@ -11705,9 +11736,16 @@ function ClinicalSheets({ globalPat, setGlobalPat }) {
       },t.label))
     ),
 
-    // Print all button
-    pat&&currentTeeth.length>0&&React.createElement("div",{style:{display:"flex",justifyContent:"flex-end",marginBottom:10}},
+    // Print buttons. The sample is available with or without a patient loaded:
+    // checking a printed layout should not require finding someone whose record
+    // happens to have four visits on it.
+    React.createElement("div",{style:{display:"flex",justifyContent:"flex-end",gap:8,marginBottom:10}},
       React.createElement("button",{
+        onClick:()=>printSheet(sampleTeethFor(tab), true),
+        title:"A worked example of this sheet, filled in, for checking the print layout. Nothing is saved.",
+        style:{padding:"7px 16px",fontSize:13,borderRadius:7,cursor:"pointer",background:"#fff",color:currentTab.color,border:"1.5px solid "+currentTab.color,fontWeight:700}
+      },"Print Sample"),
+      pat&&currentTeeth.length>0&&React.createElement("button",{
         onClick:()=>printSheet(currentTeeth),
         style:{padding:"7px 16px",fontSize:13,border:"none",borderRadius:7,cursor:"pointer",background:currentTab.color,color:"#fff",fontWeight:700}
       },"🖨 Print All "+currentTeeth.length+" "+currentTab.itemLabel+(currentTeeth.length!==1?"s":""))
