@@ -342,7 +342,18 @@ function flushBatch() {
     const chunk = queue.slice(i, i + KB_BATCH_MAX);
     apiDirect("batch", { actions: JSON.stringify(chunk.map(q => q.entry)) }).then(res => {
       if (res && res.success && res.results) {
-        chunk.forEach(q => q.resolve(res.results[q.key] || { success: false, error: "missing from batch" }));
+        // A backend deployed before entries carried parameters sees each one as
+        // "[object Object]" and answers "batch: reads only" for all of them —
+        // with success:true on the batch itself. Taking that at face value
+        // would show the clinic an error on every panel for as long as the two
+        // sides were out of step. An entry the batch could not serve is retried
+        // on its own instead.
+        chunk.forEach(q => {
+          const r = res.results[q.key];
+          const unserved = !r || (r.success === false && /^batch:/.test(String(r.error || "")));
+          if (unserved) apiDirect(q.action, q.data).then(q.resolve);
+          else q.resolve(r);
+        });
         return;
       }
       // The backend has not been redeployed with the batch action, or it

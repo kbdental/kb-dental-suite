@@ -139,6 +139,31 @@ chain = chain.then(function () { return run("later tick", function (m) {
   });
 }); });
 
+// Between merging this and deploying Code.gs, the browser sends the new entry
+// format to a backend that expects bare action names. That backend answers
+// "batch: reads only" for every entry, with success:true on the batch — so
+// trusting it would put an error on every panel until the deploy caught up.
+chain = chain.then(function () {
+  var calls2 = [];
+  function apiDirect2(action, data) {
+    calls2.push(action);
+    return Promise.resolve(action === "batch"
+      ? { success: true, results: JSON.parse(data.actions).reduce(function (o, e) {
+            o[e.key] = { success: false, error: "batch: reads only" }; return o;
+          }, {}) }
+      : { success: true, from: action });
+  }
+  var m = new Function("apiDirect", code)(apiDirect2);
+  return Promise.all([m.api("getPatient", { uhid: "AL1001" }), m.api("getCarePlan", { uhid: "AL1001" })])
+    .then(function (res) {
+      ok("an out-of-date backend does not leave the clinic with errors",
+         res.every(function (r) { return r.success; }), JSON.stringify(res));
+      ok("each unserved read is retried on its own",
+         calls2.filter(function (c) { return c !== "batch"; }).sort().join(",") ===
+         "getCarePlan,getPatient", calls2.join(","));
+    });
+});
+
 chain.then(function () {
   console.log("==============================================================================");
   console.log("  " + pass + " passed, " + fail + " failed");
