@@ -5957,6 +5957,30 @@ function buildSlots(t) {
   }
   return out;
 }
+// The slot a booking should open on.
+//
+// "10:00" was hardcoded, so a walk-in seen at five in the evening was offered
+// ten in the morning and somebody had to correct it every time. For today,
+// the slot the clock is actually in is the right answer; for any other day
+// there is no "now" to use, so the day opens at its first slot.
+//
+// Rounded DOWN, to the slot now falls inside: a patient standing at the desk
+// at 17:05 is being seen in the 17:00 slot, not the 17:30 one.
+function slotForNow(slots, dateISO, now) {
+  const list = (slots && slots.length) ? slots : TIME_SLOTS;
+  const first = list[0] || "10:00";
+  const when = now || new Date();
+  if (dateISO && dateISO !== isoDateLocal(when)) return first;
+  const mins = when.getHours() * 60 + when.getMinutes();
+  // Before opening, the day starts at the first slot; after closing, the last
+  // one -- neither is a reason to fall back to a time nobody chose.
+  let pick = "";
+  for (let i = 0; i < list.length; i++) {
+    if (hhmmToMin(list[i]) <= mins) pick = list[i];
+  }
+  return pick || first;
+}
+
 // Which days the clinic is shut, from Master -> Schedule -> Working Days.
 // Fetched once per page and shared, the same way the timings are.
 let _workingDaysCache = null;
@@ -6170,7 +6194,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
   const [fAge, setFAge] = useState("");
   const [fGender, setFGender] = useState("");
   const [fDate, setFDate] = useState(selDate);
-  const [fTime, setFTime] = useState("10:00");
+  const [fTime, setFTime] = useState(() => slotForNow(TIME_SLOTS, selDate));
   const [fReason, setFReason] = useState("");
   const [fDoctor, setFDoctor] = useState(doctors[0] || "");
   const [fChair, setFChair] = useState("");
@@ -6362,6 +6386,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
     setPatientMode("established"); setFUhid(""); setFFirstName(""); setFLastName(""); setFName("");
     setFMobile(""); setFEmail(""); setFAge(""); setFGender(""); setFReason(reasons[0]||"");
     setFDate(selDate);
+    setFTime(slotForNow(TIME_SLOTS, selDate));
     setFNotes(""); setFErrors({}); setPatQuery(""); setPatResults([]); setEditingId(null);
     setFProcedureCode(""); setCaseState(null); setStartAtSequenceNo(0);
   };
@@ -6386,7 +6411,9 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
     setEditingId(a.id);
     setPatientMode("established");
     setFUhid(a.uhid||""); setFName(a.patientName||""); setPatQuery(a.patientName||"");
-    setFMobile(a.mobile||""); setFDate(a.date||selDate); setFTime(a.time||"10:00"); setFReason(a.type||reasons[0]||"");
+    setFMobile(a.mobile||""); setFDate(a.date||selDate);
+    setFTime(a.time || slotForNow(TIME_SLOTS, a.date||selDate));
+    setFReason(a.type||reasons[0]||"");
     setFDoctor(a.doctor||doctors[0]||""); setFChair(a.chair||chairs[0]); setFNotes(a.notes||"");
     setFErrors({});
     // Editing a case-linked appointment keeps it linked — fetch the case's
@@ -7180,7 +7207,7 @@ function QuickApptModal({ show, defaultDate, onClose, onSaved }) {
   const [fAge, setFAge] = React.useState("");
   const [fGender, setFGender] = React.useState("");
   const [fDate, setFDate] = React.useState(defaultDate);
-  const [fTime, setFTime] = React.useState("10:00");
+  const [fTime, setFTime] = React.useState(() => slotForNow(TIME_SLOTS, defaultDate));
   const [reasons, setReasons] = React.useState(APPT_TYPES);
   const [fReason, setFReason] = React.useState(APPT_TYPES[0]||"");
   const doctors = useDoctors();
@@ -7202,7 +7229,8 @@ function QuickApptModal({ show, defaultDate, onClose, onSaved }) {
   const resetForm = () => {
     setPatientMode("established"); setFUhid(""); setFFirstName(""); setFLastName(""); setFName("");
     setFMobile(""); setFEmail(""); setFAge(""); setFGender(""); setFReason(reasons[0]||"");
-    setFDate(defaultDate); setFTime("10:00"); setFDoctor(doctors[0]||""); setFChair(chairs[0]||"");
+    setFDate(defaultDate); setFTime(slotForNow(TIME_SLOTS, defaultDate));
+    setFDoctor(doctors[0]||""); setFChair(chairs[0]||"");
     setFNotes(""); setFErrors({}); setPatQuery(""); setPatResults([]);
   };
 
