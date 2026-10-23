@@ -458,6 +458,12 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 const CONDITIONS = ["Blood Pressure High / Low", "Diabetes", "Thyroid", "Blood Disease", "Heart Problem (Angina / Stroke)", "Jaundice", "Asthma", "Liver Disease", "Respiratory Disease (Bronchitis)", "Hepatitis", "Ulcer", "Kidney Disease", "Arthritis, Rheumatism", "Herpes", "Epilepsy", "Skin Diseases", "Radiation Treatment", "COVID", "Cancer", "Rheumatic Fever", "Psychiatric Treatment", "Tuberculosis", "AIDS", "Venereal Disease"];
 const ALLERGIES_LIST = ["Penicillin", "Sulfa", "Ibuprofen", "Aspirin", "Local Anaesthesia", "Iodine", "Latex"];
 const HOW_KNOWN = ["An Existing Patient", "Website", "Word of Mouth", "Sign Board", "Social Media", "Google"];
+// Who a referrer IS. A referral does not only come from another patient:
+// a referring doctor, somebody doing PR for the practice, and the clinic's
+// own staff all send patients in, and the name alone cannot say which --
+// "Sunita" does not tell you whether to thank her, pay her, or credit her
+// team. Data only; none of it is printed on the registration slip.
+const REFERRER_KINDS = ["Patient", "Doctor", "Staff", "PR / Marketing", "Other"];
 const BLOOD_GROUPS = ["A + ve", "A - ve", "B + ve", "B - ve", "O + ve", "O - ve", "AB + ve", "AB - ve"];
 const MARITAL = ["Single", "Married", "Divorced", "Widowed"];
 const GOVTIDS = ["Aadhaar", "PAN", "Driving Licence", "Passport", "Voter ID"];
@@ -1515,6 +1521,7 @@ const emptyP = {
   govtIdType: "",
   govtIdNo: "",
   referredBy: "",
+  referredByType: "",
   emergencyName: "",
   emergencyRelation: "",
   emergencyContact: ""
@@ -1709,7 +1716,8 @@ function Registration({
             emergencyName:     p.emergencyName     || "",
             emergencyRelation: p.emergencyRelation || "",
             emergencyContact:  p.emergencyContact  || "",
-            referredBy:        p.referredBy        || ""
+            referredBy:        p.referredBy        || "",
+            referredByType:    p.referredByType    || ""
           }));
           if (p.conditions && p.conditions.length) {
             setM(prev => ({
@@ -2021,6 +2029,7 @@ function Registration({
       emergencyRelation: P.emergencyRelation,
       emergencyContact: P.emergencyContact,
       referredBy: P.referredBy || "",
+      referredByType: P.referredByType || "",
       conditions: M.conditions,
       medicines: M.medicines || "",
       allergies: [...M.allergies, ...(M.otherAllergy ? [M.otherAllergy] : [])],
@@ -2491,12 +2500,24 @@ function Registration({
     msg: errors.name
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, {
     c: "Referred By"
-  }), /*#__PURE__*/React.createElement("input", {
-    style: inp,
+  }), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 8 }
+  }, /*#__PURE__*/React.createElement("select", {
+    style: { ...inp, flex: "0 0 40%" },
+    value: P.referredByType,
+    onChange: up(setP, "referredByType"),
+    title: "Who the referrer is \u2014 a patient, a referring doctor, our own staff, or someone doing PR"
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "Who \u2014 select"), REFERRER_KINDS.map(k => /*#__PURE__*/React.createElement("option", {
+    key: k,
+    value: k
+  }, k))), /*#__PURE__*/React.createElement("input", {
+    style: { ...inp, flex: 1 },
     value: P.referredBy,
     onChange: up(setP, "referredBy"),
-    placeholder: "Name / Doctor / Source"
-  }))), /*#__PURE__*/React.createElement("div", {
+    placeholder: "Their name"
+  })))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr 1fr",
