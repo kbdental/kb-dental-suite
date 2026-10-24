@@ -7,9 +7,16 @@
 // patient into the CRM left the company blank, so every patient registered
 // between that queue arriving and the fix landed with none.
 //
-// This is for those. It reads what each contact already says their panel is
-// -- nothing is guessed, and no patient's panel is invented -- and gives them
-// the company for it, making the company if the CRM has not got one yet.
+// It reads the panel from the REGISTER, by the contact's UHID, not from the
+// contact record. The contacts were created by the first import, before the
+// panel fields were carried across, and an import SKIPS a contact it already
+// has -- so almost every one of them has a blank panel cell however many
+// times Import Patients is run. The register is where the answer actually is.
+//
+// Nothing is guessed and no patient's panel is invented: a patient the
+// register does not put on a panel is left alone. Both books are read, so
+// patients registered in the empanelled book count. The panel is written onto
+// the contact as well, so it stops being a lookup next time.
 //
 // Rows it will not touch:
 //   - a contact already filed under a company, whatever that company is
@@ -53,6 +60,44 @@ function pcRead_(name) {
   return { sheet: sh, headers: headers, rows: rows };
 }
 
+// What the register says each patient's panel is, by UHID.
+//
+// regAllRows_ and findRegColumn_ come from Code.gs in this same project, so
+// both books are read exactly the way the app reads them. Run somewhere
+// without them, it says so rather than quietly finding no panels.
+function pcPanelsFromRegister_() {
+  if (typeof regAllRows_ !== "function" || typeof findRegColumn_ !== "function") {
+    return { error: "Paste this beside Code.gs in the same Apps Script project — it reads the register through it." };
+  }
+  var data = regAllRows_();
+  if (!data || data.length <= 1) return { byUhid: {}, rows: 0, onPanel: 0 };
+  var h = data[0];
+  var uhidCol = findRegColumn_(h, ["UHID", "Registration ID"]);
+  var panelCol = findRegColumn_(h, ["Panel"]);
+  var catCol = findRegColumn_(h, ["Panel Category"]);
+  var cardCol = findRegColumn_(h, ["Card ID"]);
+  if (uhidCol < 0) return { error: "No UHID column on the register." };
+  if (panelCol < 0) return { byUhid: {}, rows: data.length - 1, onPanel: 0, noPanelColumn: true };
+
+  var byUhid = {}, onPanel = 0;
+  for (var i = 1; i < data.length; i++) {
+    var id = String(data[i][uhidCol] || "").trim().toUpperCase();
+    if (!id) continue;
+    var panel = String(data[i][panelCol] || "").trim();
+    // A patient re-registered after a gap has several rows. Any row naming a
+    // panel is taken: a blank on a later row is somebody not filling the
+    // field in again, not the patient leaving the panel.
+    if (!panel) continue;
+    if (!byUhid[id]) onPanel++;
+    byUhid[id] = {
+      panel: panel,
+      category: catCol >= 0 ? String(data[i][catCol] || "").trim() : "",
+      cardId: cardCol >= 0 ? String(data[i][cardCol] || "").trim() : ""
+    };
+  }
+  return { byUhid: byUhid, rows: data.length - 1, onPanel: onPanel };
+}
+
 function pcName_(c) {
   var n = (String(c.firstName || "").trim() + " " + String(c.lastName || "").trim()).trim();
   return n || String(c.uhid || "").trim() || "(no name)";
@@ -63,9 +108,9 @@ function pcPlan_() {
   var contacts = pcRead_("CRM Contacts");
   if (!contacts.sheet) return { error: "No CRM Contacts tab in this book. Open the CRM once first." };
   if (!contacts.rows.length) return { error: "There are no contacts in the CRM yet." };
-  if (contacts.headers.indexOf("panel") < 0) {
-    return { error: "No panel column on CRM Contacts — no panel patient has ever reached the CRM, so there is nothing to file." };
-  }
+
+  var reg = pcPanelsFromRegister_();
+  if (reg.error) return { error: reg.error };
 
   var companies = pcRead_("CRM Companies");
   var byName = {};
@@ -75,19 +120,33 @@ function pcPlan_() {
   });
 
   var plan = {
-    contacts: contacts, companies: companies, byName: byName,
+    contacts: contacts, companies: companies, byName: byName, reg: reg,
     total: contacts.rows.length,
     toFile: [],        // contacts that will get a company
     newPanels: [],     // panels the CRM has no company for yet
-    alreadyFiled: 0, private: 0
+    alreadyFiled: 0, private: 0, noUhid: 0
   };
 
   var wanted = {};
   contacts.rows.forEach(function (c) {
     if (String(c.companyId || "").trim()) { plan.alreadyFiled++; return; }
-    var panel = String(c.panel || "").trim();
-    if (!panel) { plan.private++; return; }
-    plan.toFile.push({ row: c.__row, name: pcName_(c), uhid: String(c.uhid || "").trim(), panel: panel });
+    var uhid = String(c.uhid || "").trim().toUpperCase();
+    // The contact's own panel cell first -- a contact added since the fix
+    // carries it -- then the register, which is where the answer is for
+    // everybody added before.
+    var onContact = String(c.panel || "").trim();
+    var fromReg = uhid ? reg.byUhid[uhid] : null;
+    var panel = onContact || (fromReg ? fromReg.panel : "");
+    if (!panel) {
+      if (!uhid) plan.noUhid++; else plan.private++;
+      return;
+    }
+    plan.toFile.push({
+      row: c.__row, name: pcName_(c), uhid: String(c.uhid || "").trim(), panel: panel,
+      category: onContact ? String(c.panelCategory || "") : (fromReg ? fromReg.category : ""),
+      cardId: onContact ? String(c.cardId || "") : (fromReg ? fromReg.cardId : ""),
+      fromRegister: !onContact
+    });
     var key = panel.toUpperCase();
     if (!byName[key] && !wanted[key]) { wanted[key] = panel; plan.newPanels.push(panel); }
   });
@@ -98,10 +157,15 @@ function reportPanelCompanies() {
   var p = pcPlan_();
   if (p.error) { Logger.log(p.error); return; }
 
-  Logger.log("Contacts in the CRM:            %s", p.total);
-  Logger.log("Already filed under a company:  %s", p.alreadyFiled);
-  Logger.log("Private — no panel, left alone: %s", p.private);
-  Logger.log("On a panel but filed nowhere:   %s", p.toFile.length);
+  Logger.log("Register rows read (both books):      %s", p.reg.rows);
+  Logger.log("Patients the register puts on a panel: %s", p.reg.onPanel || 0);
+  if (p.reg.noPanelColumn) Logger.log("  (the register has no Panel column at all)");
+  Logger.log("");
+  Logger.log("Contacts in the CRM:              %s", p.total);
+  Logger.log("Already filed under a company:    %s", p.alreadyFiled);
+  Logger.log("Private — no panel, left alone:   %s", p.private);
+  if (p.noUhid) Logger.log("No UHID, so nothing to look up:   %s", p.noUhid);
+  Logger.log("On a panel but filed nowhere:     %s", p.toFile.length);
   Logger.log("");
 
   if (!p.toFile.length) {
@@ -118,10 +182,11 @@ function reportPanelCompanies() {
     var isNew = p.newPanels.indexOf(panel) >= 0;
     Logger.log("%s — %s patient(s)%s", panel, byPanel[panel].length,
                isNew ? "  (no company for this panel yet — one would be made)" : "");
-    byPanel[panel].slice(0, 10).forEach(function (t) {
-      Logger.log("    row %s  %s  %s", t.row, t.uhid || "—", t.name);
+    byPanel[panel].slice(0, 20).forEach(function (t) {
+      Logger.log("    row %s  %s  %s%s", t.row, t.uhid || "—", t.name,
+                 t.fromRegister ? "   (panel read from the register)" : "");
     });
-    if (byPanel[panel].length > 10) Logger.log("    … and %s more", byPanel[panel].length - 10);
+    if (byPanel[panel].length > 20) Logger.log("    … and %s more", byPanel[panel].length - 20);
   });
 
   Logger.log("");
@@ -183,11 +248,30 @@ function backfillPanelCompanies() {
     Logger.log("Added a companyId column to CRM Contacts.");
   }
 
+  // The panel itself goes onto the contact as well, so the register is no
+  // longer the only thing that knows and the CRM can group on it directly.
+  function pcCol_(name) {
+    var at = p.contacts.headers.indexOf(name);
+    if (at >= 0) return at;
+    at = p.contacts.headers.length;
+    p.contacts.headers.push(name);
+    p.contacts.sheet.getRange(1, at + 1).setValue(name);
+    return at;
+  }
+  var panelCol = pcCol_("panel");
+  var catCol = pcCol_("panelCategory");
+  var cardCol = pcCol_("cardId");
+
   var filed = 0, missing = 0;
   p.toFile.forEach(function (t) {
     var id = p.byName[t.panel.toUpperCase()];
     if (!id) { missing++; return; }
     p.contacts.sheet.getRange(t.row, col + 1).setValue(id);
+    if (t.fromRegister) {
+      p.contacts.sheet.getRange(t.row, panelCol + 1).setValue(t.panel);
+      if (t.category) p.contacts.sheet.getRange(t.row, catCol + 1).setValue(t.category);
+      if (t.cardId) p.contacts.sheet.getRange(t.row, cardCol + 1).setValue(t.cardId);
+    }
     filed++;
   });
   SpreadsheetApp.flush();
