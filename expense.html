@@ -63,7 +63,12 @@ td{padding:7px 8px;border-bottom:1px solid #f0f0eb}
 // PUBLIC_ACTIONS list, so this page has its own lightweight staff login
 // (same staffLogin/authStatus endpoints and session token the main app
 // uses) rather than being left open.
-var SCRIPT_URL = "https://script.google.com/macros/s/AKfycby-OX-qvGE2U9Zt3b-_rpFqc5WQxRT5WMn1A030IcQIKXEaso36cMTbJ6c5xiP5O_6Zvg/exec";
+// The backend address is not baked in. Served from the clinic's own
+// machine, that machine sets window.KB_SERVER_URL and this follows it;
+// served from GitHub Pages there is no such value and it is the /exec URL,
+// exactly as before. Changing backends is a setting, not an edit.
+var SCRIPT_URL = (typeof window.KB_SERVER_URL === "string" && window.KB_SERVER_URL)
+  || "https://script.google.com/macros/s/AKfycby-OX-qvGE2U9Zt3b-_rpFqc5WQxRT5WMn1A030IcQIKXEaso36cMTbJ6c5xiP5O_6Zvg/exec";
 var TOKEN_KEY = "kb_expense_token";
 
 function getToken() { try { return sessionStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; } }

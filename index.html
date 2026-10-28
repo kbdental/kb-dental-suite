@@ -31,17 +31,29 @@ input:focus,select:focus,textarea:focus{outline:2px solid #0078B4;outline-offset
 // copies the bound Apps Script too), deploy that copy's script as a web app,
 // and paste its /exec URL into scriptUrl below.
 window.KB_LETTERHEAD = {name:"K.B. Dental Clinic",address:"BLOCK R - 74 B, DILSHAD GARDEN, DELHI - 110095",phone:"011-22131942",mobiles:"7866939786, 9319990912",email:"kbdentaldelhi@gmail.com"};
+// Where the backend is.
+//
+// Served from GitHub Pages, it is the Apps Script /exec URL below and nothing
+// here behaves differently. Served from the clinic's own machine, that machine
+// sets window.KB_SERVER_URL before this runs and both instances talk to it
+// instead — one database holds what the two books held, so a panel patient is
+// one marked Panel rather than one kept in a second book.
+//
+// That is also the way back. Nothing in this file is edited to return to
+// Sheets: a page served from Pages has no KB_SERVER_URL and uses the /exec
+// URLs, which is the whole of the rollback.
+var KB_SERVER_URL = (typeof window.KB_SERVER_URL === "string" && window.KB_SERVER_URL) || "";
 window.KB_INSTANCES = {
   main: {
     label: "K.B. Dental Clinic",
-    scriptUrl: "https://script.google.com/macros/s/AKfycby-OX-qvGE2U9Zt3b-_rpFqc5WQxRT5WMn1A030IcQIKXEaso36cMTbJ6c5xiP5O_6Zvg/exec",
+    scriptUrl: KB_SERVER_URL || "https://script.google.com/macros/s/AKfycby-OX-qvGE2U9Zt3b-_rpFqc5WQxRT5WMn1A030IcQIKXEaso36cMTbJ6c5xiP5O_6Zvg/exec",
     clinic: window.KB_LETTERHEAD
   },
   empanelled: {
     label: "Empanelled — CGHS / DGEHS",
     badge: "EMPANELLED",
     badgeColor: "#7C3AED",
-    scriptUrl: "https://script.google.com/macros/s/AKfycbxeTYU0YLb9m-gonikLnbVEfJEu3aaAf4QTg-7gf7oE8aX9s9bSg9ITXtnx5bRx7RyjmQ/exec",
+    scriptUrl: KB_SERVER_URL || "https://script.google.com/macros/s/AKfycbxeTYU0YLb9m-gonikLnbVEfJEu3aaAf4QTg-7gf7oE8aX9s9bSg9ITXtnx5bRx7RyjmQ/exec",
     clinic: window.KB_LETTERHEAD
   }
 };
@@ -129,6 +141,13 @@ const LOWER_T = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38]
 // Whichever instance was selected above. Every api() call goes here, so an
 // instance can only ever read and write its own book.
 const SCRIPT_URL = (window.KB_INSTANCE && window.KB_INSTANCE.scriptUrl) || "";
+// Apps Script can only read request PARAMETERS — doGet and doPost are handed
+// e.parameter and nothing else, and a custom header would make the request
+// non-simple and need a CORS preflight it cannot answer. The clinic's own
+// server has neither limitation. So the session token travels differently
+// depending on which of the two is on the other end, and this is the one
+// place that decides.
+const KB_BACKEND_IS_APPS_SCRIPT = /script\.google\.com/.test(SCRIPT_URL);
 // Browser storage is per-ORIGIN, and every instance is served from the same
 // URL — only the ?clinic= query string differs. So a bare key like
 // "kbdc_doctors" is one box shared by every instance on that machine, and
@@ -316,7 +335,12 @@ async function apiDirect(action, data = {}) {
     });
     Object.entries(data).forEach(([k, v]) => p.append(k, typeof v === "object" ? JSON.stringify(v) : String(v ?? "")));
     const tok = getSessionToken();
-    if (tok) p.append("token", tok);
+    // A URL is written into access logs, into browser history, and into the
+    // Referer of anything the page loads next. A session token has no business
+    // in any of them, so against our own server it goes in a header instead.
+    // Against Apps Script it has nowhere else to go.
+    if (tok && KB_BACKEND_IS_APPS_SCRIPT) p.append("token", tok);
+    const authHeader = (tok && !KB_BACKEND_IS_APPS_SCRIPT) ? { "X-KB-Token": tok } : null;
     // Apps Script refuses a request outright now and then — while a deployment
     // is being updated, or when enough executions overlap for one user. It
     // comes back as a 404 or a 5xx with nothing having run, and the clinic saw
@@ -343,15 +367,15 @@ async function apiDirect(action, data = {}) {
     const url = SCRIPT_URL + "?" + query;
     const long = query.length > 1800;
     const body = long ? JSON.stringify(Object.assign({ action }, data,
-                                       getSessionToken() ? { token: getSessionToken() } : {})) : null;
+                                       (tok && KB_BACKEND_IS_APPS_SCRIPT) ? { token: tok } : {})) : null;
     const attempts = 3;
     let lastErr;
     for (let i = 0; i < attempts; i++) {
       if (i) await new Promise(r => setTimeout(r, 400 * Math.pow(3, i - 1)));
       try {
         const r = long
-          ? await fetch(SCRIPT_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body })
-          : await fetch(url);
+          ? await fetch(SCRIPT_URL, { method: "POST", headers: Object.assign({ "Content-Type": "text/plain;charset=utf-8" }, authHeader || {}), body })
+          : await fetch(url, authHeader ? { headers: authHeader } : undefined);
         if (!r.ok) throw Object.assign(new Error("HTTP " + r.status), { status: r.status });
         return handleAuthFailure(await r.json());
       } catch (e) {
@@ -6471,18 +6495,62 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
     loadTodaySidebar();
   };
 
-  const printSchedule = () => {
+  // The day sheet, as a page. Built once and used three ways — printed,
+  // saved as a PDF, or sent to WhatsApp — so the three can never drift
+  // apart and show the clinic different versions of the same day.
+  const buildScheduleHTML = () => {
+    // A patient's name is whatever was typed at the desk, so it is escaped
+    // rather than dropped into the markup. "O'Brien & Sons" is a name.
+    const esc = s => String(s === undefined || s === null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const cell = v => esc(v) || "—";
     const rows = appts.filter(a=>a.status!=="Cancelled").sort((a,b)=>(a.time||"").localeCompare(b.time||""))
-      .map(a => `<tr><td>${a.time||"—"}</td><td>${a.chair||"—"}</td><td>${a.patientName||"—"}</td><td>${a.uhid||"—"}</td><td>${a.type||"—"}</td><td>${a.doctor||"—"}</td><td>${a.status||"—"}</td></tr>`).join("");
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>
-      body{font-family:Arial,sans-serif;font-size:11pt}table{width:100%;border-collapse:collapse;margin-top:10pt}
+      // The reason AND the step of it, exactly as the day sheet and the
+      // appointment popup show them. "RCT" alone does not tell the surgery
+      // what to lay out; "RCT · Obturation" does.
+      .map(a => `<tr><td>${cell(a.time)}</td><td>${cell(a.chair)}</td><td>${cell(a.patientName)}</td><td>${cell(a.uhid)}</td><td>${esc(reasonWithStep(a.type, a.subType))}</td><td>${cell(a.doctor)}</td><td>${cell(a.status)}</td></tr>`).join("");
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>
+      body{font-family:Arial,sans-serif;font-size:11pt;padding:14pt}table{width:100%;border-collapse:collapse;margin-top:10pt}
       th,td{border:0.5pt solid #ccc;padding:5pt 8pt;text-align:left;font-size:10pt}th{background:#0078B4;color:#fff}
-      h2{color:#0078B4}</style></head><body>
-      <h2>Schedule — ${fmtDMY(selDate+"T00:00:00")}</h2>
-      <table><thead><tr><th>Time</th><th>Chair</th><th>Patient</th><th>UHID</th><th>Type</th><th>Doctor</th><th>Status</th></tr></thead>
+      h2{color:#0078B4;margin:0}p.sub{margin:3pt 0 0;color:#4b4b4b;font-size:9.5pt}</style></head><body>
+      <h2>${esc(CLINIC && CLINIC.name || "Schedule")}</h2>
+      <p class="sub">Schedule — ${fmtDMY(selDate+"T00:00:00")}</p>
+      <table><thead><tr><th>Time</th><th>Chair</th><th>Patient</th><th>UHID</th><th>Reason</th><th>Doctor</th><th>Status</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:#4b4b4b">No appointments</td></tr>'}</tbody></table>
       </body></html>`;
-    const w = window.open("", "_blank"); w.document.write(html); w.document.close(); setTimeout(()=>w.print(), 400);
+  };
+
+  const scheduleFileName = () => "Schedule_" + selDate + ".pdf";
+
+  const printSchedule = () => {
+    const w = window.open("", "_blank"); w.document.write(buildScheduleHTML()); w.document.close(); setTimeout(()=>w.print(), 400);
+  };
+
+  // A day sheet runs to a page or several, so it is paginated rather than
+  // squeezed onto one — a clinic with twenty appointments must not get a
+  // PDF holding the first twelve.
+  const SCHEDULE_PDF_OPTS = { orientation: "portrait", format: "a4", width: 794, multipage: true };
+
+  const [schedBusy, setSchedBusy] = useState(false);
+  const downloadSchedulePDF = async () => {
+    setSchedBusy(true);
+    try {
+      downloadBlob(await renderHTMLToPDFBlob(buildScheduleHTML(), SCHEDULE_PDF_OPTS), scheduleFileName());
+    } catch (e) {
+      alert("Could not make the PDF: " + (e.message || e));
+    } finally { setSchedBusy(false); }
+  };
+  const shareScheduleWhatsApp = async () => {
+    setSchedBusy(true);
+    try {
+      await sharePDFToWhatsApp(
+        await renderHTMLToPDFBlob(buildScheduleHTML(), SCHEDULE_PDF_OPTS),
+        scheduleFileName(),
+        { title: "Schedule " + fmtDMY(selDate+"T00:00:00"),
+          text: "Schedule for " + fmtDMY(selDate+"T00:00:00") + " — " + (CLINIC && CLINIC.name || "") });
+    } catch (e) {
+      alert("Could not share the PDF: " + (e.message || e));
+    } finally { setSchedBusy(false); }
   };
 
   // ── Patient autocomplete (Established patient) ───────────────
@@ -6971,6 +7039,14 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
     React.createElement("div", { style:{ display:"flex", gap:8, marginBottom:10 } },
       React.createElement("button", { onClick:refreshAll, style:{ flex:1, padding:"7px", fontSize:12.5, border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:T, fontWeight:700 } }, "🔄 Refresh"),
       React.createElement("button", { onClick:printSchedule, style:{ flex:1, padding:"7px", fontSize:12.5, border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:T, fontWeight:700 } }, "🖨 Print")
+    ),
+    React.createElement("div", { style:{ display:"flex", gap:8, marginBottom:10 } },
+      React.createElement("button", { onClick:downloadSchedulePDF, disabled:schedBusy,
+        style:{ flex:1, padding:"7px", fontSize:12.5, border:`1px solid ${BORDER}`, borderRadius:6, cursor:schedBusy?"wait":"pointer", background:"#fff", color:T, fontWeight:700, opacity:schedBusy?0.6:1 } },
+        schedBusy ? "Working\u2026" : "📄 PDF"),
+      React.createElement("button", { onClick:shareScheduleWhatsApp, disabled:schedBusy,
+        style:{ flex:1, padding:"7px", fontSize:12.5, border:"1px solid #25D366", borderRadius:6, cursor:schedBusy?"wait":"pointer", background:"#fff", color:"#128C7E", fontWeight:700, opacity:schedBusy?0.6:1 } },
+        schedBusy ? "Working\u2026" : "💬 WhatsApp")
     ),
     React.createElement("button", { onClick:openBlockModal,
       style:{ width:"100%", padding:"9px", fontSize:13, border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#2e2e2e", fontWeight:700 } },
@@ -27895,22 +27971,49 @@ async function renderHTMLToPDFBlob(html, opts) {
   const o = opts || {};
   const orientation = o.orientation || "landscape";
   const format = o.format || "a5";
+  const width = o.width || 794;
   const iframe = document.createElement("iframe");
-  iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:794px;height:562px;border:0;";
+  iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:" + width + "px;height:562px;border:0;";
   document.body.appendChild(iframe);
   iframe.srcdoc = html;
   await new Promise(resolve => { iframe.onload = resolve; });
   await new Promise(resolve => setTimeout(resolve, 150)); // let the logo <img> paint
   const doc = iframe.contentDocument;
+  // A slip fits the window it was given. A day sheet does not, and html2canvas
+  // captures what is laid out -- so the frame is grown to the whole document
+  // first, or a busy day would be photographed down to its first few rows.
+  if (o.multipage) {
+    iframe.style.height = Math.max(562, doc.body.scrollHeight + 40) + "px";
+    await new Promise(resolve => setTimeout(resolve, 60));
+  }
   const canvas = await html2canvas(doc.body, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
   document.body.removeChild(iframe);
-  const imgData = canvas.toDataURL("image/png");
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ orientation, unit: "mm", format });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
   const imgH = (canvas.height * pageW) / canvas.width;
-  pdf.addImage(imgData, "PNG", 0, Math.max(0, (pageH - imgH) / 2), pageW, Math.min(imgH, pageH));
+
+  if (!o.multipage || imgH <= pageH) {
+    pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, Math.max(0, (pageH - imgH) / 2), pageW, Math.min(imgH, pageH));
+    return pdf.output("blob");
+  }
+
+  // Taller than a page: cut it into page-high strips rather than scale it
+  // down to illegibility or crop it. The cut lands wherever it lands, so a
+  // row can be split across two pages -- that is the cost of a picture of a
+  // page, and it is a far smaller cost than losing the rows entirely.
+  const pxPerMm = canvas.width / pageW;
+  const stripPx = Math.floor(pageH * pxPerMm);
+  for (let y = 0, page = 0; y < canvas.height; y += stripPx, page++) {
+    const h = Math.min(stripPx, canvas.height - y);
+    const strip = document.createElement("canvas");
+    strip.width = canvas.width;
+    strip.height = h;
+    strip.getContext("2d").drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
+    if (page) pdf.addPage();
+    pdf.addImage(strip.toDataURL("image/png"), "PNG", 0, 0, pageW, h / pxPerMm);
+  }
   return pdf.output("blob");
 }
 function downloadBlob(blob, filename) {

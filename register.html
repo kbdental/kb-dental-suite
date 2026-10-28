@@ -72,7 +72,12 @@ textarea{resize:vertical;min-height:70px}
 // patientCompleteRegistration. Both require the patient's own mobile number to
 // match the record, return only what this form needs, and cannot create a
 // patient or change UHID, name or DOB. Nothing is shown until that match.
-var SCRIPT_URL = "https://script.google.com/macros/s/AKfycby-OX-qvGE2U9Zt3b-_rpFqc5WQxRT5WMn1A030IcQIKXEaso36cMTbJ6c5xiP5O_6Zvg/exec";
+// The backend address is not baked in. Served from the clinic's own
+// machine, that machine sets window.KB_SERVER_URL and this follows it;
+// served from GitHub Pages there is no such value and it is the /exec URL,
+// exactly as before. Changing backends is a setting, not an edit.
+var SCRIPT_URL = (typeof window.KB_SERVER_URL === "string" && window.KB_SERVER_URL)
+  || "https://script.google.com/macros/s/AKfycby-OX-qvGE2U9Zt3b-_rpFqc5WQxRT5WMn1A030IcQIKXEaso36cMTbJ6c5xiP5O_6Zvg/exec";
 
 function api(action, data) {
   var p = new URLSearchParams({ action: action });
