@@ -25281,6 +25281,10 @@ function SimpleListEditor({ items, onAdd, onRemove, onEdit, placeholder }) {
 function TreatmentListEditor({ items, onAdd, onRemove, onEdit }) {
   const [name, setName] = React.useState("");
   const [fee, setFee] = React.useState("");
+  // What the treatment costs the clinic to deliver -- lab work, the
+  // implant, the materials. Optional: a treatment with no cost on file is
+  // left out of the margin reports rather than counted as all profit.
+  const [cost, setCost] = React.useState("");
   const [department, setDepartment] = React.useState("");
   const [newDeptMode, setNewDeptMode] = React.useState(false);
   const [newDeptText, setNewDeptText] = React.useState("");
@@ -25293,14 +25297,14 @@ function TreatmentListEditor({ items, onAdd, onRemove, onEdit }) {
     return Array.from(s).sort();
   }, [items]);
 
-  const resetForm = () => { setName(""); setFee(""); setDepartment(""); setNewDeptMode(false); setNewDeptText(""); setEditIndex(null); };
+  const resetForm = () => { setName(""); setFee(""); setCost(""); setDepartment(""); setNewDeptMode(false); setNewDeptText(""); setEditIndex(null); };
 
   const save = () => {
     const v = name.trim();
     const dept = (newDeptMode ? newDeptText : department).trim();
     if (!v) return;
-    if (editIndex !== null) onEdit(editIndex, { name:v, fee, department:dept });
-    else onAdd({ name:v, fee, department:dept });
+    if (editIndex !== null) onEdit(editIndex, { name:v, fee, cost, department:dept });
+    else onAdd({ name:v, fee, cost, department:dept });
     resetForm();
   };
 
@@ -25308,6 +25312,7 @@ function TreatmentListEditor({ items, onAdd, onRemove, onEdit }) {
     setEditIndex(i);
     setName(items[i].name);
     setFee(items[i].fee);
+    setCost(items[i].cost === undefined || items[i].cost === null ? "" : items[i].cost);
     setDepartment(items[i].department || "");
     setNewDeptMode(false); setNewDeptText("");
     window.scrollTo({ top:0, behavior:"smooth" });
@@ -25343,6 +25348,7 @@ function TreatmentListEditor({ items, onAdd, onRemove, onEdit }) {
             React.createElement("button", { onClick:()=>{ setNewDeptMode(false); setNewDeptText(""); }, style:{ padding:"0 12px", border:`1px solid ${BORDER}`, borderRadius:7, background:"#fff", cursor:"pointer", color:"#2e2e2e" } }, "✕")
           ),
       React.createElement("input", { style:{...inp, flex:1}, type:"number", value:fee, placeholder:"Fee", onChange:e=>setFee(e.target.value), onKeyDown:e=>e.key==="Enter"&&save() }),
+      React.createElement("input", { style:{...inp, flex:1}, type:"number", value:cost, placeholder:"Cost (lab, materials)", title:"What this treatment costs the clinic. Leave it blank if you do not know it yet.", onChange:e=>setCost(e.target.value), onKeyDown:e=>e.key==="Enter"&&save() }),
       React.createElement("button", { onClick:save, style:{ padding:"9px 20px", fontSize:13, border:"none", borderRadius:7, cursor:"pointer", background:T, color:"#fff", fontWeight:700 } }, editIndex !== null ? "💾 Save Changes" : "+ Add"),
       editIndex !== null && React.createElement("button", { onClick:resetForm, style:{ padding:"9px 16px", fontSize:13, border:`1px solid ${BORDER}`, borderRadius:7, cursor:"pointer", background:"#fff", color:"#2e2e2e" } }, "Cancel")
     ),
@@ -25365,6 +25371,10 @@ function TreatmentListEditor({ items, onAdd, onRemove, onEdit }) {
               React.createElement("tbody", null, grouped[dept].map(i => { const it = items[i]; return React.createElement("tr", { key:i, style:{ borderTop:`1px solid ${BORDER}`, background: editIndex===i?TL:"transparent" } },
                 React.createElement("td", { style:{ padding:"7px 12px", fontWeight:600 } }, it.name),
                 React.createElement("td", { style:{ padding:"7px 12px", textAlign:"right", fontWeight:700, color:T, width:100 } }, it.fee ? fmtRs(it.fee) : "—"),
+                React.createElement("td", { style:{ padding:"7px 12px", textAlign:"right", color:"#4b4b4b", width:160, fontSize:12.5 } },
+                  (Number(it.cost) > 0 && Number(it.fee) > 0)
+                    ? ("cost " + fmtRs(it.cost) + " · margin " + Math.round((Number(it.fee) - Number(it.cost)) * 100 / Number(it.fee)) + "%")
+                    : (Number(it.cost) > 0 ? "cost " + fmtRs(it.cost) : "no cost yet")),
                 React.createElement("td", { style:{ textAlign:"center", width:110 } },
                   React.createElement("button", { onClick:()=>startEdit(i), style:{ border:"none", background:"none", color:T, cursor:"pointer", fontSize:12.5, fontWeight:700, marginRight:12 } }, "Edit"),
                   React.createElement("button", { onClick:()=>{ if(editIndex===i) resetForm(); onRemove(i); }, style:{ border:"none", background:"none", color:"#e24b4a", cursor:"pointer", fontSize:12.5, fontWeight:700 } }, "Remove"))
@@ -29328,34 +29338,69 @@ function NotYet({ title, why, unlock }) {
     RE("div", { style: { fontSize: 12.5, color: "#78350F", marginTop: 7, lineHeight: 1.55, fontWeight: 700 } }, "To switch this on: ", RE("span", { style: { fontWeight: 400 } }, unlock)));
 }
 
+// Apps Script answers one request at a time for a single user and charges
+// about a second just to start each one. Seven reads across a year of a
+// clinic's books is the slowest thing this app does -- and until all seven
+// came back the page drew nothing below the date bar, which looks exactly
+// like a page that is broken.
+//
+// So no read may hold the rest up for ever, and one that gives up says so
+// by name instead of leaving a blank screen.
+const REPORT_READ_TIMEOUT_MS = 90000;
+
+function reportRead(action, params, onDone) {
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = v => { if (settled) return; settled = true; if (onDone) onDone(); resolve(v); };
+    const timer = setTimeout(
+      () => finish({ success: false, error: action + " did not answer in 90 seconds" }),
+      REPORT_READ_TIMEOUT_MS);
+    api(action, params)
+      .then(r => { clearTimeout(timer); finish(r); })
+      .catch(e => { clearTimeout(timer); finish({ success: false, error: String((e && e.message) || e) }); });
+  });
+}
+
 function ReportsModule() {
-  // Twelve months back to the end of this one, which is what the clinic
-  // looks at when it asks how the year is going.
+  // Three months, not twelve. A year of a busy clinic's day book is a lot
+  // to pull through Apps Script, and the range is one click to widen once
+  // the page is up.
   const today = new Date();
-  const defFrom = toISODate(new Date(today.getFullYear(), today.getMonth() - 11, 1));
+  const defFrom = toISODate(new Date(today.getFullYear(), today.getMonth() - 2, 1));
   const defTo = toISODate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
 
   const [from, setFrom] = useState(defFrom);
   const [to, setTo] = useState(defTo);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [done, setDone] = useState(0);
   const [d, setD] = useState(null);
 
   const load = React.useCallback(async () => {
-    setBusy(true); setErr("");
+    setBusy(true); setErr(""); setDone(0);
     try {
       const range = { fromDate: from, toDate: to };
+      let landed = 0;
+      const tick = () => { landed++; setDone(landed); };
       const [receipts, expenses, register, appts, patients, treatments, follow] = await Promise.all([
-        api("getReceipts", range), api("getExpenses", range), api("getDailyRegister", range),
-        api("getAppointments", range), api("getAllPatients"), api("getTreatmentsMaster"),
-        api("getFollowUps")
+        reportRead("getReceipts", range, tick), reportRead("getExpenses", range, tick),
+        reportRead("getDailyRegister", range, tick), reportRead("getAppointments", range, tick),
+        reportRead("getAllPatients", {}, tick), reportRead("getTreatmentsMaster", {}, tick),
+        reportRead("getFollowUps", {}, tick)
       ]);
       // One failed read must not be shown as a zero. A report that says
       // "nil revenue" because a request timed out is worse than no report.
       const bad = [["receipts", receipts], ["expenses", expenses], ["day book", register],
                    ["appointments", appts], ["patients", patients]]
         .filter(([, r]) => !r || !r.success).map(([n]) => n);
-      if (bad.length) { setErr("Could not read: " + bad.join(", ") + ". Nothing below would be right, so it is not shown."); setD(null); return; }
+      if (bad.length) {
+        const why = [receipts, expenses, register, appts, patients]
+          .map(r => (r && r.error) || "").filter(Boolean)[0] || "";
+        setErr("Could not read: " + bad.join(", ") + ". Nothing below would be right, so it is not shown."
+          + (why ? " (" + why + ")" : "")
+          + " A shorter date range is usually the fix \u2014 a year of the day book is a lot to pull through Google Sheets.");
+        setD(null); return;
+      }
       setD({
         receipts: receipts.receipts || [], expenses: expenses.expenses || [],
         register: register.entries || [], appts: appts.appointments || [],
@@ -29388,7 +29433,10 @@ function ReportsModule() {
         r.months.length + " month(s) · " + r.receipts.length + " receipts · " + r.register.length + " visits")),
 
     err && RE("div", { style: { background: "#FEF2F2", border: "1px solid #FCA5A5", color: "#7F1D1D", borderRadius: 10, padding: 14, marginBottom: 14, fontSize: 13 } }, "⚠ " + err),
-    busy && !r && RE("div", { style: { padding: 30, textAlign: "center", color: "#444444", fontSize: 13.5 } }, "⏳ Reading the books…"),
+    busy && RE("div", { style: { padding: 24, textAlign: "center", color: "#444444", fontSize: 13.5 } },
+      "Reading the books\u2026 " + done + " of 7",
+      RE("div", { style: { fontSize: 12, color: "#4b4b4b", marginTop: 6 } },
+        "Google Sheets answers one request at a time, so a wide range takes a while.")),
 
     r && RE(React.Fragment, null,
       // ── 1. new and returning patients ─────────────────────────────
@@ -29543,11 +29591,26 @@ function ReportsModule() {
       RE("div", { style: { fontSize: 13.5, fontWeight: 800, color: "#2e2e2e", margin: "22px 0 10px" } },
         "Three of the nine cannot be worked out yet"),
 
-      RE(NotYet, {
-        title: "4 & 5. Highest and lowest margin treatment",
-        why: "Margin is what a treatment earns less what it costs to deliver — the lab bill, the implant, the materials. The clinic records what each treatment EARNS (Treatments Master has a fee) but never what any of them COSTS. Expenses are kept by category, so a ₹12,500 lab bill is filed under Lab and cannot be traced to the crown it was for. There is no figure to subtract, and a margin guessed from a category total would be worse than none.",
-        unlock: "a Cost column on Treatments Master — roughly what each treatment costs the clinic in lab work and materials. One column, filled in once, and both reports appear. That needs a backend change and a redeploy of Code.gs, so it is not in this release."
-      }),
+      r.margins.length === 0
+        ? RE(NotYet, {
+            title: "4 & 5. Highest and lowest margin treatment",
+            why: "No treatment has a cost on file yet, so there is nothing to subtract from what it earns. "
+              + r.treatmentsTotal + " treatment(s) are on Master and none of them carries a cost.",
+            unlock: "Master \u2192 Treatments & Fees. Each row now has a Cost box beside the Fee \u2014 roughly what that treatment costs the clinic in lab work and materials. Fill in the ones you know and this report appears for those."
+          })
+        : Card({
+            title: "4 & 5. Margin by treatment",
+            subtitle: "What each treatment earned in this range, less what it cost to deliver.",
+            children: RE("div", null,
+              RE("div", { style: { fontSize: 12, fontWeight: 700, color: "#2e2e2e", marginBottom: 6 } }, "Highest margin"),
+              RE(MarginTable, { rows: r.margins.slice(0, 6) }),
+              r.margins.length > 6 && RE("div", { style: { fontSize: 12, fontWeight: 700, color: "#2e2e2e", margin: "14px 0 6px" } }, "Lowest margin"),
+              r.margins.length > 6 && RE(MarginTable, { rows: r.margins.slice(-5).reverse() })),
+            note: (r.noCostCount > 0
+              ? r.noCostCount + " treatment(s) were done or billed in this range but have no cost on Master, so they are not on this list. A blank cost is not a cost of zero, and showing them at a 100% margin would be a number somebody acted on. "
+              : "")
+              + "Cost is counted once for each time the treatment appears in the day book."
+          }),
 
       RE(NotYet, {
         title: "9c. Contribution from pharmacy",
@@ -29556,6 +29619,22 @@ function ReportsModule() {
       }),
 
       RE(ReportsPasswordChanger, null)));
+}
+
+function MarginTable({ rows }) {
+  return RE("table", { style: { width: "100%", borderCollapse: "collapse" } },
+    RE("thead", null, RE("tr", null,
+      RE("th", { style: thS }, "Treatment"), RE("th", { style: thS }, "Done"),
+      RE("th", { style: thS }, "Earned"), RE("th", { style: thS }, "Cost"),
+      RE("th", { style: thS }, "Margin"), RE("th", { style: thS }, "%"))),
+    RE("tbody", null, rows.map(m => RE("tr", { key: m.name },
+      RE("td", { style: tdS }, m.name,
+        m.estimated && RE("span", { style: { color: "#D97706", fontSize: 12 }, title: "No receipt matched this treatment by name, so the list price was used." }, " · at list price")),
+      RE("td", { style: tdS }, m.timesDone),
+      RE("td", { style: tdS }, rupees(m.revenue)),
+      RE("td", { style: tdS }, rupees(m.costTotal)),
+      RE("td", { style: { ...tdS, fontWeight: 700, color: m.margin >= 0 ? "#059669" : "#B91C1C" } }, rupees(m.margin)),
+      RE("td", { style: { ...tdS, fontWeight: 700, color: m.marginPct >= 0 ? "#059669" : "#B91C1C" } }, m.marginPct + "%")))));
 }
 
 function ServiceTable({ rows, max, total }) {
@@ -29602,6 +29681,7 @@ function computeReports(d, from, to) {
   }
   const byService = Object.values(services).sort((a, b) => b.total - a.total);
 
+
   const categories = {};
   let expenseTotal = 0;
   for (const e of d.expenses) {
@@ -29626,6 +29706,46 @@ function computeReports(d, from, to) {
   const byProcedure = Object.values(procedures)
     .map(p => ({ name: p.name, count: p.count, patients: Object.keys(p.seen).length }))
     .sort((a, b) => b.count - a.count);
+
+  // ── margins ─────────────────────────────────────────────────────────
+  //
+  // Margin is revenue less cost, and the cost is per TREATMENT DONE, not
+  // per rupee taken. A patient part-way through paying an implant has not
+  // halved its lab bill, so the cost is counted once for each time the
+  // treatment appears in the day book, and the revenue is what that
+  // treatment brought in over the same period.
+  //
+  // A treatment with no cost on file is left OUT of this report entirely
+  // rather than shown at a 100% margin, which is what treating a blank as
+  // zero would do -- and that is the number somebody would act on.
+  const margins = [];
+  let noCostCount = 0;
+  for (const t of d.treatments) {
+    const key = serviceKeyOf(t && t.name);
+    if (!key) continue;
+    const fee = Number(t.fee) || 0;
+    const cost = Number(t.cost) || 0;
+    const sold = services[key];
+    const timesDone = (procedures[t.name] && procedures[t.name].count) || 0;
+    // Nothing earned and nothing done in this range: not a margin of zero,
+    // simply not part of this period.
+    if (!sold && !timesDone) continue;
+    if (!(cost > 0)) { noCostCount++; continue; }
+    const revenueFor = sold ? sold.total : 0;
+    // Where a treatment was done but the receipt was written against some
+    // other wording, fall back to the list price so the count still means
+    // something; it is marked so nobody reads it as banked money.
+    const estimated = !sold && timesDone > 0;
+    const earned = estimated ? fee * timesDone : revenueFor;
+    const spent = cost * Math.max(timesDone, sold ? sold.count : 0);
+    margins.push({
+      name: t.name, fee, cost, timesDone,
+      revenue: earned, costTotal: spent, margin: earned - spent,
+      marginPct: earned > 0 ? Math.round((earned - spent) * 100 / earned) : 0,
+      estimated
+    });
+  }
+  margins.sort((a, b) => b.marginPct - a.marginPct);
 
   // ── patients, month by month ────────────────────────────────────────
   const registeredIn = {};
@@ -29725,6 +29845,9 @@ function computeReports(d, from, to) {
     revenue, expenseTotal, split,
     treatmentShare: revenue ? Math.round(split.treatment * 100 / revenue) : 0,
     unclassifiedRevenue: split.unclassified,
+    margins, noCostCount,
+    treatmentsWithCost: d.treatments.filter(t => Number(t && t.cost) > 0).length,
+    treatmentsTotal: d.treatments.length,
     patientsWithoutDate,
     maxSeen: Math.max(1, ...byMonth.map(m => m.newPatients + m.returning)),
     maxMonthRevenue: Math.max(1, ...byMonth.map(m => m.revenue))
