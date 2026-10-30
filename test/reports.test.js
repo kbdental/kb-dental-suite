@@ -201,6 +201,53 @@ eq('no no-show rate', empty.noShowRate, 0);
 eq('still three months', empty.byMonth.length, 3);
 ok('the bar scale never divides by zero', empty.maxSeen >= 1 && empty.maxMonthRevenue >= 1);
 
+// ── 4 & 5. margins ───────────────────────────────────────────────────────
+// RCT: cost 2500, done twice, earned 16000 across three receipts.
+//   cost counted per time done, and the receipt count is 3, so
+//   max(2, 3) = 3 -> 7500 spent, margin 8500, 53%.
+// Scaling: cost 300, done once, earned 1500, one receipt -> 300 spent,
+//   margin 1200, 80%.
+// Consultation has no cost on file, so it is left OUT entirely.
+const WITH_COST = {
+  ...BOOKS,
+  treatments: [
+    { name: 'RCT', fee: 8000, cost: 2500, department: 'Endodontics' },
+    { name: 'Scaling', fee: 1500, cost: 300, department: 'Periodontics' },
+    { name: 'Consultation', fee: 500, cost: '', department: 'Consultation' },
+    { name: 'Whitening', fee: 5000, cost: 900, department: 'Cosmetic' }  // never done
+  ]
+};
+const m = sandbox.__c(WITH_COST, '2026-08-01', '2026-10-31');
+eq('two treatments have a cost and were done', m.margins.length, 2);
+eq('highest margin is scaling', m.margins[0].name, 'Scaling');
+eq('at eighty percent', m.margins[0].marginPct, 80);
+eq('lowest is RCT', m.margins[1].name, 'RCT');
+eq('RCT earned sixteen thousand', m.margins[1].revenue, 16000);
+eq('and cost seven and a half', m.margins[1].costTotal, 7500);
+eq('leaving eight and a half', m.margins[1].margin, 8500);
+eq('fifty-three percent', m.margins[1].marginPct, 53);
+eq('a treatment with no cost is left out, not shown at 100%', m.noCostCount, 1);
+ok('consultation is nowhere on the margin list',
+   !m.margins.some(x => x.name === 'Consultation'), m.margins.map(x => x.name).join(','));
+ok('a treatment never done in the range is not on it either',
+   !m.margins.some(x => x.name === 'Whitening'), m.margins.map(x => x.name).join(','));
+// Three of the four carry a cost -- Whitening does, it simply was not
+// done in this range, which is why it is on neither margin list.
+eq('three of four treatments carry a cost', m.treatmentsWithCost, 3);
+eq('four treatments on Master in all', m.treatmentsTotal, 4);
+
+// A blank cost must never be read as zero. That would report the whole fee
+// as margin, which is the one wrong number nobody would question.
+const zeroish = sandbox.__c({ ...BOOKS, treatments: [{ name: 'RCT', fee: 8000, cost: 0, department: 'Endodontics' }] },
+                            '2026-08-01', '2026-10-31');
+eq('a cost of zero is treated as not known', zeroish.margins.length, 0);
+eq('and counted as missing', zeroish.noCostCount, 1);
+
+// Margins only appear once costs exist; before that the page says so.
+eq('with no costs anywhere there are no margins to show', r.margins.length, 0);
+eq('and the three priced treatments are all reported as missing a cost', r.noCostCount, 3);
+eq('none of them carries a cost', r.treatmentsWithCost, 0);
+
 // ── the page itself ──────────────────────────────────────────────────────
 ok('the placeholder is gone', !/The list of reports needed here is coming soon/.test(html));
 ok('and the module is what the Reports page renders',
@@ -217,8 +264,10 @@ for (const a of READS) {
 }
 ok('a failed read is reported, not shown as a zero',
    /Nothing below would be right, so it is not shown/.test(html));
-ok('the two reports that cannot be produced say so', (html.match(/RE\(NotYet, \{/g) || []).length === 2);
-ok('and margin says what would unlock it', /a Cost column on Treatments Master/.test(html));
+ok('the page still says when a report cannot be produced', (html.match(/RE\(NotYet, \{/g) || []).length === 2);
+ok('but margins now appear once costs exist', /title: "4 & 5. Margin by treatment"/.test(html));
+ok('and Master has somewhere to type the cost', /placeholder:"Cost \(lab, materials\)"/.test(html));
+ok('and margin points at where to type it', /Master \\u2192 Treatments & Fees/.test(html));
 ok('and pharmacy says what would unlock it', /bill medicines as their own receipt line/.test(html));
 
 console.log('  ' + pass + ' passed, ' + fail + ' failed');

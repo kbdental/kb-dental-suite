@@ -4440,12 +4440,43 @@ function saveExpenseCategoriesList(p) {
 // the whole list is replaced on every save from the Master UI.
 // ════════════════════════════════════════════════════════════
 
+// Read by HEADER, not by position.
+//
+// Cost is new. A sheet written by the previous version holds
+// [Name, Fee, Department, Updated At], and reading cost from a fixed column
+// there would hand back a timestamp as a rupee figure -- and every margin
+// in Reports would be nonsense computed from a date. By name, a sheet with
+// no Cost column simply has no costs, which is the truth about it.
+function treatColumn_(headers, candidates) {
+  var norm = function (v) { return String(v).toLowerCase().replace(/[^a-z0-9]/g, ""); };
+  for (var c = 0; c < candidates.length; c++) {
+    var want = norm(candidates[c]);
+    for (var j = 0; j < headers.length; j++) if (norm(headers[j]) === want) return j;
+  }
+  return -1;
+}
+
 function getTreatmentsMaster() {
   var sh = getSheet("Treatments Master");
   var data = sh.getDataRange().getValues();
+  if (!data.length) return { success: true, treatments: [] };
+  var h = data[0];
+  var iName = treatColumn_(h, ["Treatment Name", "Name"]);
+  var iFee  = treatColumn_(h, ["Fee"]);
+  var iCost = treatColumn_(h, ["Cost"]);
+  var iDept = treatColumn_(h, ["Department"]);
+  // A sheet written before this change has no headers worth matching only
+  // if it is empty; fall back to the old fixed order so nothing is lost.
+  if (iName < 0) { iName = 0; iFee = 1; iDept = 2; }
   var items = [];
   for (var i = 1; i < data.length; i++) {
-    if (data[i][0]) items.push({ name: data[i][0], fee: data[i][1], department: data[i][2] || "" });
+    if (!data[i][iName]) continue;
+    items.push({
+      name: data[i][iName],
+      fee: iFee >= 0 ? data[i][iFee] : "",
+      cost: iCost >= 0 ? data[i][iCost] : "",
+      department: (iDept >= 0 ? data[i][iDept] : "") || ""
+    });
   }
   return { success: true, treatments: items };
 }
@@ -4454,9 +4485,11 @@ function saveTreatmentsMaster(p) {
   if (arr && arr.__bad) return { success: false, error: arr.__bad };
   var sh = getSheet("Treatments Master");
   sh.clearContents();
-  sh.appendRow(["Treatment Name", "Fee", "Department", "Updated At"]);
+  sh.appendRow(["Treatment Name", "Fee", "Cost", "Department", "Updated At"]);
   var now = new Date().toISOString();
-  arr.forEach(function(t) { sh.appendRow([t.name, t.fee, t.department || "", now]); });
+  arr.forEach(function(t) {
+    sh.appendRow([t.name, t.fee, t.cost === undefined || t.cost === null ? "" : t.cost, t.department || "", now]);
+  });
   return { success: true };
 }
 
