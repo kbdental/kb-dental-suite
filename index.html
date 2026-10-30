@@ -29230,15 +29230,505 @@ function FollowUps({ onNavigate, embedded }) {
   );
 }
 
-function ReportsPlaceholder() {
-  return /*#__PURE__*/React.createElement("div", null,
-    /*#__PURE__*/React.createElement("div", {
-      style: { padding: 24, background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 10, textAlign: "center" }
-    }, /*#__PURE__*/React.createElement("div", { style: { fontSize: 32, marginBottom: 8 } }, "📊"),
-    /*#__PURE__*/React.createElement("div", { style: { fontSize: 16, fontWeight: 700, color: "#333", marginBottom: 6 } }, "Reports"),
-    /*#__PURE__*/React.createElement("div", { style: { fontSize: 14, color: "#444444" } }, "The list of reports needed here is coming soon. This section will be built out once the requirements are shared.")),
-    /*#__PURE__*/React.createElement(ReportsPasswordChanger, null)
-  );
+// ── Reports ──────────────────────────────────────────────────────────
+//
+// Everything below is worked out in the browser from what the clinic
+// already records. No new backend action and no redeploy: every read here
+// is one the app already makes somewhere else.
+//
+// Where a report CANNOT be produced from what is recorded, it says so and
+// says what one thing would unlock it. It does not estimate, and it does
+// not quietly leave itself off the page — a report that is missing because
+// nobody noticed looks exactly like a report that is missing because the
+// data is not there.
+const RE = React.createElement;
+
+function monthKeyOf(iso) { return String(iso || "").slice(0, 7); }
+
+function monthLabelOf(key) {
+  const [y, m] = String(key || "").split("-");
+  const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return (names[Number(m) - 1] || "?") + " " + (y || "");
+}
+
+// The months from `from` to `to`, oldest first.
+function monthsBetween(fromISO, toISO) {
+  const out = [];
+  if (!fromISO || !toISO) return out;
+  let y = Number(fromISO.slice(0, 4)), m = Number(fromISO.slice(5, 7));
+  const endY = Number(toISO.slice(0, 4)), endM = Number(toISO.slice(5, 7));
+  // A guard, not a limit anybody should hit: a range typed the wrong way
+  // round must not spin.
+  for (let i = 0; i < 240 && (y < endY || (y === endY && m <= endM)); i++) {
+    out.push(y + "-" + String(m).padStart(2, "0"));
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return out;
+}
+
+const rupees = n => "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
+
+// What the clinic typed, tidied only enough to group two spellings of one
+// thing together. The raw text is kept for display, so nothing is renamed
+// behind anybody's back.
+function serviceKeyOf(s) {
+  return String(s || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Consultation, treatment, or unclassified.
+//
+// The service on a receipt is typed by hand, so this looks it up in
+// Treatments Master first -- that is the clinic's own list and carries a
+// department -- and only falls back to reading the words when there is no
+// match. Anything it cannot place is counted as unclassified and SHOWN as
+// unclassified, rather than being quietly folded into treatment.
+function classifyService(service, byKey) {
+  const key = serviceKeyOf(service);
+  if (!key) return "unclassified";
+  const known = byKey[key];
+  const dept = String((known && known.department) || "").toLowerCase();
+  if (dept.includes("consult")) return "consultation";
+  if (dept.includes("pharmac") || dept.includes("medicine")) return "pharmacy";
+  if (known) return "treatment";
+  if (key.includes("consult")) return "consultation";
+  return "unclassified";
+}
+
+// A plain bar, drawn with a div. The clinic reads these on a laptop at the
+// front desk; a charting library would be another thing to load over a
+// connection that is already the slow part.
+function Bar({ value, max, color }) {
+  const pct = max > 0 ? Math.max(1.5, (Number(value) / max) * 100) : 0;
+  return RE("div", { style: { background: "#eef1f3", borderRadius: 3, height: 8, overflow: "hidden" } },
+    RE("div", { style: { width: pct + "%", background: color || T, height: "100%" } }));
+}
+
+function Card({ title, subtitle, children, note }) {
+  return RE("div", { style: { background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 10, padding: 16, marginBottom: 14 } },
+    RE("div", { style: { fontSize: 14.5, fontWeight: 800, color: "#2e2e2e" } }, title),
+    subtitle && RE("div", { style: { fontSize: 12, color: "#4b4b4b", marginTop: 2, marginBottom: 10 } }, subtitle),
+    children,
+    note && RE("div", { style: { fontSize: 12, color: "#4b4b4b", marginTop: 10, lineHeight: 1.5 } }, note));
+}
+
+function Stat({ label, value, color }) {
+  return RE("div", { style: { flex: 1, minWidth: 120 } },
+    RE("div", { style: { fontSize: 20, fontWeight: 800, color: color || T } }, value),
+    RE("div", { style: { fontSize: 12, color: "#4b4b4b", marginTop: 1 } }, label));
+}
+
+const thS = { textAlign: "left", padding: "6px 8px", fontSize: 12, color: "#4b4b4b", fontWeight: 700, borderBottom: `1px solid ${BORDER}` };
+const tdS = { padding: "6px 8px", fontSize: 12.5, borderBottom: "1px solid #f0f0ec" };
+
+// A report that cannot be produced, and the one thing that would produce it.
+function NotYet({ title, why, unlock }) {
+  return RE("div", { style: { background: "#FFFBEB", border: "1px solid #FCD34D", borderRadius: 10, padding: 14, marginBottom: 14 } },
+    RE("div", { style: { fontSize: 14, fontWeight: 800, color: "#78350F" } }, title),
+    RE("div", { style: { fontSize: 12.5, color: "#78350F", marginTop: 5, lineHeight: 1.55 } }, why),
+    RE("div", { style: { fontSize: 12.5, color: "#78350F", marginTop: 7, lineHeight: 1.55, fontWeight: 700 } }, "To switch this on: ", RE("span", { style: { fontWeight: 400 } }, unlock)));
+}
+
+function ReportsModule() {
+  // Twelve months back to the end of this one, which is what the clinic
+  // looks at when it asks how the year is going.
+  const today = new Date();
+  const defFrom = toISODate(new Date(today.getFullYear(), today.getMonth() - 11, 1));
+  const defTo = toISODate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+
+  const [from, setFrom] = useState(defFrom);
+  const [to, setTo] = useState(defTo);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [d, setD] = useState(null);
+
+  const load = React.useCallback(async () => {
+    setBusy(true); setErr("");
+    try {
+      const range = { fromDate: from, toDate: to };
+      const [receipts, expenses, register, appts, patients, treatments, follow] = await Promise.all([
+        api("getReceipts", range), api("getExpenses", range), api("getDailyRegister", range),
+        api("getAppointments", range), api("getAllPatients"), api("getTreatmentsMaster"),
+        api("getFollowUps")
+      ]);
+      // One failed read must not be shown as a zero. A report that says
+      // "nil revenue" because a request timed out is worse than no report.
+      const bad = [["receipts", receipts], ["expenses", expenses], ["day book", register],
+                   ["appointments", appts], ["patients", patients]]
+        .filter(([, r]) => !r || !r.success).map(([n]) => n);
+      if (bad.length) { setErr("Could not read: " + bad.join(", ") + ". Nothing below would be right, so it is not shown."); setD(null); return; }
+      setD({
+        receipts: receipts.receipts || [], expenses: expenses.expenses || [],
+        register: register.entries || [], appts: appts.appointments || [],
+        patients: patients.patients || [],
+        treatments: (treatments && treatments.treatments) || [],
+        follow: (follow && follow.success) ? follow : null
+      });
+    } catch (e) {
+      setErr(String((e && e.message) || e)); setD(null);
+    } finally { setBusy(false); }
+  }, [from, to]);
+
+  useEffect(() => { load(); }, []);   // once on open; re-run is the button
+
+  const r = React.useMemo(() => d ? computeReports(d, from, to) : null, [d, from, to]);
+
+  return RE("div", null,
+    // ── the range ───────────────────────────────────────────────────
+    RE("div", { style: { background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14, marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" } },
+      RE("div", null,
+        RE("div", { style: { fontSize: 12, color: "#4b4b4b", marginBottom: 3 } }, "From"),
+        RE("input", { type: "date", value: from, onChange: e => setFrom(e.target.value), style: { ...inp } })),
+      RE("div", null,
+        RE("div", { style: { fontSize: 12, color: "#4b4b4b", marginBottom: 3 } }, "To"),
+        RE("input", { type: "date", value: to, onChange: e => setTo(e.target.value), style: { ...inp } })),
+      RE("button", { onClick: load, disabled: busy,
+        style: { padding: "9px 18px", fontSize: 13, border: "none", borderRadius: 8, cursor: busy ? "wait" : "pointer", background: T, color: "#fff", fontWeight: 700 } },
+        busy ? "Working…" : "Show"),
+      r && RE("div", { style: { fontSize: 12, color: "#4b4b4b", marginLeft: "auto" } },
+        r.months.length + " month(s) · " + r.receipts.length + " receipts · " + r.register.length + " visits")),
+
+    err && RE("div", { style: { background: "#FEF2F2", border: "1px solid #FCA5A5", color: "#7F1D1D", borderRadius: 10, padding: 14, marginBottom: 14, fontSize: 13 } }, "⚠ " + err),
+    busy && !r && RE("div", { style: { padding: 30, textAlign: "center", color: "#444444", fontSize: 13.5 } }, "⏳ Reading the books…"),
+
+    r && RE(React.Fragment, null,
+      // ── 1. new and returning patients ─────────────────────────────
+      Card({
+        title: "1. Patients each month — new and returning",
+        subtitle: "New means registered that month. Returning means seen that month, having registered earlier.",
+        children: RE("table", { style: { width: "100%", borderCollapse: "collapse" } },
+          RE("thead", null, RE("tr", null,
+            RE("th", { style: thS }, "Month"), RE("th", { style: thS }, "New"),
+            RE("th", { style: thS }, "Returning"), RE("th", { style: thS }, "Seen in all"),
+            RE("th", { style: { ...thS, width: "32%" } }, ""))),
+          RE("tbody", null, r.byMonth.map(m => RE("tr", { key: m.key },
+            RE("td", { style: tdS }, monthLabelOf(m.key)),
+            RE("td", { style: { ...tdS, fontWeight: 700, color: T } }, m.newPatients),
+            RE("td", { style: tdS }, m.returning),
+            RE("td", { style: tdS }, m.seen),
+            RE("td", { style: tdS }, RE(Bar, { value: m.newPatients + m.returning, max: r.maxSeen })))))),
+        note: r.patientsWithoutDate ? r.patientsWithoutDate + " patient(s) have no registration date on file and are not counted as new in any month." : null
+      }),
+
+      // ── 2 and 3. what the money comes from ────────────────────────
+      Card({
+        title: "2 & 3. What the money comes from — highest and lowest",
+        subtitle: "Every receipt in the range, grouped by the service written on it.",
+        children: r.byService.length === 0
+          ? RE("div", { style: { fontSize: 13, color: "#4b4b4b" } }, "No receipts in this range.")
+          : RE("div", null,
+              RE("div", { style: { fontSize: 12, fontWeight: 700, color: "#2e2e2e", marginBottom: 6 } }, "Highest contributing"),
+              RE(ServiceTable, { rows: r.byService.slice(0, 8), max: r.byService[0].total, total: r.revenue }),
+              r.byService.length > 8 && RE("div", { style: { fontSize: 12, fontWeight: 700, color: "#2e2e2e", margin: "14px 0 6px" } }, "Lowest contributing"),
+              r.byService.length > 8 && RE(ServiceTable, { rows: r.byService.slice(-5).reverse(), max: r.byService[0].total, total: r.revenue })),
+        note: r.unclassifiedRevenue > 0
+          ? "The service is typed by hand on the receipt, so two spellings of one treatment count as two lines. " + rupees(r.unclassifiedRevenue) + " is on receipts whose service does not match anything in Master — tidying Treatments Master makes this report sharper."
+          : null
+      }),
+
+      // ── 6. what is actually done most ─────────────────────────────
+      Card({
+        title: "6. Most chosen treatments",
+        subtitle: "From the day book — what was actually carried out, not what was planned.",
+        children: r.byProcedure.length === 0
+          ? RE("div", { style: { fontSize: 13, color: "#4b4b4b" } }, "No visits recorded in this range.")
+          : RE("table", { style: { width: "100%", borderCollapse: "collapse" } },
+              RE("thead", null, RE("tr", null,
+                RE("th", { style: thS }, "Treatment"), RE("th", { style: thS }, "Times done"),
+                RE("th", { style: thS }, "Patients"), RE("th", { style: { ...thS, width: "30%" } }, ""))),
+              RE("tbody", null, r.byProcedure.slice(0, 12).map(p => RE("tr", { key: p.name },
+                RE("td", { style: tdS }, p.name),
+                RE("td", { style: { ...tdS, fontWeight: 700 } }, p.count),
+                RE("td", { style: tdS }, p.patients),
+                RE("td", { style: tdS }, RE(Bar, { value: p.count, max: r.byProcedure[0].count })))))),
+        note: "A planned-treatment report (what was quoted rather than what was done) needs the treatment plans read clinic-wide, which is a backend change. Say the word and I will add it."
+      }),
+
+      // ── 7. where patients stop ────────────────────────────────────
+      Card({
+        title: "7. Where patients stop",
+        subtitle: "Everyone who registered in this range, and how far each got.",
+        children: RE("div", null,
+          RE("table", { style: { width: "100%", borderCollapse: "collapse" } },
+            RE("thead", null, RE("tr", null,
+              RE("th", { style: thS }, "Step"), RE("th", { style: thS }, "Reached"),
+              RE("th", { style: thS }, "Dropped here"), RE("th", { style: { ...thS, width: "30%" } }, ""))),
+            RE("tbody", null, r.funnel.map((f, i) => RE("tr", { key: f.step },
+              RE("td", { style: tdS }, f.step),
+              RE("td", { style: { ...tdS, fontWeight: 700 } }, f.reached),
+              RE("td", { style: { ...tdS, color: f.dropped > 0 ? "#B91C1C" : "#4b4b4b" } },
+                i === 0 ? "—" : f.dropped + (f.reached + f.dropped > 0 ? " (" + Math.round(f.dropped * 100 / (f.reached + f.dropped)) + "%)" : "")),
+              RE("td", { style: tdS }, RE(Bar, { value: f.reached, max: r.funnel[0].reached, color: i === r.funnel.length - 1 ? "#059669" : T })))))),
+          RE("div", { style: { fontSize: 12.5, marginTop: 10, color: "#2e2e2e" } },
+            "Biggest drop: ", RE("b", null, r.worstStep ? r.worstStep.step : "—"),
+            r.worstStep ? " — " + r.worstStep.dropped + " patient(s) got no further." : "")),
+        note: "Counted on patients who registered inside the range, so the whole of each patient's journey is inside the window being measured."
+      }),
+
+      // ── 8. did not turn up ────────────────────────────────────────
+      Card({
+        title: "8. Booked, but did not turn up",
+        subtitle: "No-shows and cancellations in the range.",
+        children: RE("div", null,
+          RE("div", { style: { display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" } },
+            RE(Stat, { label: "Did not turn up", value: r.noShows.length, color: "#B91C1C" }),
+            RE(Stat, { label: "Cancelled", value: r.cancelled.length, color: "#D97706" }),
+            RE(Stat, { label: "Kept", value: r.kept, color: "#059669" }),
+            RE(Stat, { label: "No-show rate", value: r.noShowRate + "%", color: "#B91C1C" })),
+          r.noShows.length === 0
+            ? RE("div", { style: { fontSize: 13, color: "#4b4b4b" } }, "Nobody failed to turn up in this range.")
+            : RE("table", { style: { width: "100%", borderCollapse: "collapse" } },
+                RE("thead", null, RE("tr", null,
+                  RE("th", { style: thS }, "Date"), RE("th", { style: thS }, "Patient"),
+                  RE("th", { style: thS }, "Reason"), RE("th", { style: thS }, "Mobile"))),
+                RE("tbody", null, r.noShows.slice(0, 25).map((a, i) => RE("tr", { key: a.id || i },
+                  RE("td", { style: tdS }, fmtDMY(a.date + "T00:00:00")),
+                  RE("td", { style: tdS }, a.patientName || "—"),
+                  RE("td", { style: tdS }, reasonWithStep(a.type, a.subType)),
+                  RE("td", { style: tdS }, a.mobile || "—")))))),
+        note: r.noShows.length > 25 ? "Showing the first 25 of " + r.noShows.length + "." : null
+      }),
+
+      // ── 9. the money ──────────────────────────────────────────────
+      Card({
+        title: "9. Revenue, expenses and profit",
+        children: RE("div", null,
+          RE("div", { style: { display: "flex", gap: 16, marginBottom: 14, flexWrap: "wrap" } },
+            RE(Stat, { label: "Revenue", value: rupees(r.revenue), color: "#059669" }),
+            RE(Stat, { label: "Expenses", value: rupees(r.expenseTotal), color: "#B91C1C" }),
+            RE(Stat, { label: "Profit", value: rupees(r.revenue - r.expenseTotal), color: r.revenue - r.expenseTotal >= 0 ? T : "#B91C1C" }),
+            RE(Stat, { label: "Average a month", value: rupees(r.months.length ? r.revenue / r.months.length : 0) })),
+          RE("table", { style: { width: "100%", borderCollapse: "collapse" } },
+            RE("thead", null, RE("tr", null,
+              RE("th", { style: thS }, "Month"), RE("th", { style: thS }, "Revenue"),
+              RE("th", { style: thS }, "Expenses"), RE("th", { style: thS }, "Profit"),
+              RE("th", { style: { ...thS, width: "26%" } }, ""))),
+            RE("tbody", null, r.byMonth.map(m => RE("tr", { key: m.key },
+              RE("td", { style: tdS }, monthLabelOf(m.key)),
+              RE("td", { style: tdS }, rupees(m.revenue)),
+              RE("td", { style: tdS }, rupees(m.expenses)),
+              RE("td", { style: { ...tdS, fontWeight: 700, color: m.revenue - m.expenses >= 0 ? "#059669" : "#B91C1C" } }, rupees(m.revenue - m.expenses)),
+              RE("td", { style: tdS }, RE(Bar, { value: m.revenue, max: r.maxMonthRevenue, color: "#059669" }))))))
+        )
+      }),
+
+      Card({
+        title: "9b. Treatment against consultation",
+        subtitle: "Split by the department each service belongs to in Treatments Master.",
+        children: RE("div", { style: { display: "flex", gap: 16, flexWrap: "wrap" } },
+          RE(Stat, { label: "Treatment", value: rupees(r.split.treatment) }),
+          RE(Stat, { label: "Consultation", value: rupees(r.split.consultation) }),
+          RE(Stat, { label: "Unclassified", value: rupees(r.split.unclassified), color: "#D97706" }),
+          RE(Stat, { label: "Treatment share", value: r.treatmentShare + "%", color: "#059669" })),
+        note: r.split.unclassified > 0
+          ? "Unclassified is revenue whose service is not on Treatments Master, or is on it with no department set. Giving every treatment a department in Master empties this column."
+          : null
+      }),
+
+      Card({
+        title: "Expenses by category",
+        children: r.byCategory.length === 0
+          ? RE("div", { style: { fontSize: 13, color: "#4b4b4b" } }, "No expenses recorded in this range.")
+          : RE("table", { style: { width: "100%", borderCollapse: "collapse" } },
+              RE("thead", null, RE("tr", null,
+                RE("th", { style: thS }, "Category"), RE("th", { style: thS }, "Spent"),
+                RE("th", { style: thS }, "Share"), RE("th", { style: { ...thS, width: "30%" } }, ""))),
+              RE("tbody", null, r.byCategory.map(c => RE("tr", { key: c.name },
+                RE("td", { style: tdS }, c.name),
+                RE("td", { style: tdS }, rupees(c.total)),
+                RE("td", { style: tdS }, (r.expenseTotal ? Math.round(c.total * 100 / r.expenseTotal) : 0) + "%"),
+                RE("td", { style: tdS }, RE(Bar, { value: c.total, max: r.byCategory[0].total, color: "#B91C1C" }))))))
+      }),
+
+      // ── what the books cannot answer yet ──────────────────────────
+      RE("div", { style: { fontSize: 13.5, fontWeight: 800, color: "#2e2e2e", margin: "22px 0 10px" } },
+        "Three of the nine cannot be worked out yet"),
+
+      RE(NotYet, {
+        title: "4 & 5. Highest and lowest margin treatment",
+        why: "Margin is what a treatment earns less what it costs to deliver — the lab bill, the implant, the materials. The clinic records what each treatment EARNS (Treatments Master has a fee) but never what any of them COSTS. Expenses are kept by category, so a ₹12,500 lab bill is filed under Lab and cannot be traced to the crown it was for. There is no figure to subtract, and a margin guessed from a category total would be worse than none.",
+        unlock: "a Cost column on Treatments Master — roughly what each treatment costs the clinic in lab work and materials. One column, filled in once, and both reports appear. That needs a backend change and a redeploy of Code.gs, so it is not in this release."
+      }),
+
+      RE(NotYet, {
+        title: "9c. Contribution from pharmacy",
+        why: "Nothing in the app records a pharmacy sale. Medicines are prescribed and the prescription is kept, but what the patient was charged for medicines never reaches a receipt as its own line — if it is billed at all, it is inside a treatment total.",
+        unlock: "bill medicines as their own receipt line, and add a “Pharmacy” department in Treatments Master. This report already knows how to read that department: the moment pharmacy revenue is recorded that way, it appears here with no further work."
+      }),
+
+      RE(ReportsPasswordChanger, null)));
+}
+
+function ServiceTable({ rows, max, total }) {
+  return RE("table", { style: { width: "100%", borderCollapse: "collapse" } },
+    RE("thead", null, RE("tr", null,
+      RE("th", { style: thS }, "Service"), RE("th", { style: thS }, "Revenue"),
+      RE("th", { style: thS }, "Receipts"), RE("th", { style: thS }, "Share"),
+      RE("th", { style: { ...thS, width: "24%" } }, ""))),
+    RE("tbody", null, rows.map(s => RE("tr", { key: s.key },
+      RE("td", { style: tdS }, s.name),
+      RE("td", { style: { ...tdS, fontWeight: 700 } }, rupees(s.total)),
+      RE("td", { style: tdS }, s.count),
+      RE("td", { style: tdS }, (total ? Math.round(s.total * 100 / total) : 0) + "%"),
+      RE("td", { style: tdS }, RE(Bar, { value: s.total, max }))))));
+}
+
+// All the arithmetic, in one place and with no React in it, so it can be
+// run on its own and checked against numbers worked out by hand.
+function computeReports(d, from, to) {
+  const months = monthsBetween(monthKeyOf(from), monthKeyOf(to));
+  const inRange = iso => iso && iso >= from && iso <= to;
+
+  // Treatments Master, by a key that survives the way the service is typed.
+  const byKey = {};
+  for (const t of d.treatments) {
+    const k = serviceKeyOf(t && t.name);
+    if (k) byKey[k] = t;
+  }
+
+  // ── money ───────────────────────────────────────────────────────────
+  const services = {};
+  const split = { treatment: 0, consultation: 0, pharmacy: 0, unclassified: 0 };
+  let revenue = 0;
+  for (const rec of d.receipts) {
+    const fee = Number(rec.fee) || 0;
+    if (fee <= 0) continue;
+    revenue += fee;
+    const name = String(rec.service || "").trim() || "(not written on the receipt)";
+    const key = serviceKeyOf(name) || "__blank";
+    if (!services[key]) services[key] = { key, name, total: 0, count: 0 };
+    services[key].total += fee;
+    services[key].count++;
+    split[classifyService(rec.service, byKey)] += fee;
+  }
+  const byService = Object.values(services).sort((a, b) => b.total - a.total);
+
+  const categories = {};
+  let expenseTotal = 0;
+  for (const e of d.expenses) {
+    const amt = Number(e.amount) || 0;
+    if (amt <= 0) continue;
+    expenseTotal += amt;
+    const name = String(e.category || "").trim() || "Uncategorised";
+    categories[name] = (categories[name] || 0) + amt;
+  }
+  const byCategory = Object.entries(categories)
+    .map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total);
+
+  // ── what was done ───────────────────────────────────────────────────
+  const procedures = {};
+  for (const v of d.register) {
+    const name = String(v.procedureDone || "").trim();
+    if (!name) continue;
+    if (!procedures[name]) procedures[name] = { name, count: 0, seen: {} };
+    procedures[name].count++;
+    if (v.uhid) procedures[name].seen[String(v.uhid).toUpperCase()] = true;
+  }
+  const byProcedure = Object.values(procedures)
+    .map(p => ({ name: p.name, count: p.count, patients: Object.keys(p.seen).length }))
+    .sort((a, b) => b.count - a.count);
+
+  // ── patients, month by month ────────────────────────────────────────
+  const registeredIn = {};
+  let patientsWithoutDate = 0;
+  const firstSeen = {};
+  for (const p of d.patients) {
+    const uhid = String(p.uhid || "").trim().toUpperCase();
+    if (!uhid) continue;
+    const iso = String(p.registeredOn || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) { patientsWithoutDate++; continue; }
+    // A patient in both books has two rows; the earlier date is when they
+    // became a patient here.
+    if (!firstSeen[uhid] || iso < firstSeen[uhid]) firstSeen[uhid] = iso;
+  }
+  for (const [uhid, iso] of Object.entries(firstSeen)) {
+    const k = monthKeyOf(iso);
+    if (!registeredIn[k]) registeredIn[k] = {};
+    registeredIn[k][uhid] = true;
+  }
+
+  const seenIn = {};
+  for (const v of d.register) {
+    const uhid = String(v.uhid || "").trim().toUpperCase();
+    const k = monthKeyOf(v.date);
+    if (!uhid || !k) continue;
+    if (!seenIn[k]) seenIn[k] = {};
+    seenIn[k][uhid] = true;
+  }
+
+  const revenueIn = {}, expensesIn = {};
+  for (const rec of d.receipts) revenueIn[monthKeyOf(rec.date)] = (revenueIn[monthKeyOf(rec.date)] || 0) + (Number(rec.fee) || 0);
+  for (const e of d.expenses) expensesIn[monthKeyOf(e.date)] = (expensesIn[monthKeyOf(e.date)] || 0) + (Number(e.amount) || 0);
+
+  const byMonth = months.map(key => {
+    const reg = registeredIn[key] || {};
+    const seen = seenIn[key] || {};
+    const newPatients = Object.keys(reg).length;
+    // Seen this month, but registered before it.
+    const returning = Object.keys(seen).filter(u => !reg[u]).length;
+    return {
+      key, newPatients, returning, seen: Object.keys(seen).length,
+      revenue: revenueIn[key] || 0, expenses: expensesIn[key] || 0
+    };
+  });
+
+  // ── where patients stop ─────────────────────────────────────────────
+  // Only patients who registered inside the range, so each one's whole
+  // journey is inside the window being measured.
+  const cohort = Object.keys(firstSeen).filter(u => inRange(firstSeen[u]));
+  const visitsOf = {}, paidOf = {}, treatedOf = {};
+  for (const v of d.register) {
+    const u = String(v.uhid || "").trim().toUpperCase();
+    if (!u) continue;
+    visitsOf[u] = (visitsOf[u] || 0) + 1;
+    const proc = String(v.procedureDone || "").toLowerCase();
+    if (proc && !proc.includes("consult")) treatedOf[u] = true;
+  }
+  for (const rec of d.receipts) {
+    const u = String(rec.uhid || "").trim().toUpperCase();
+    if (u && (Number(rec.fee) || 0) > 0) paidOf[u] = true;
+  }
+
+  const registered = cohort.length;
+  const consulted = cohort.filter(u => visitsOf[u]).length;
+  const treated = cohort.filter(u => treatedOf[u]).length;
+  const paid = cohort.filter(u => paidOf[u]).length;
+  const returned = cohort.filter(u => (visitsOf[u] || 0) > 1).length;
+
+  // The order matters. Paying comes BEFORE starting treatment, because a
+  // consultation fee is a payment -- put it after and the funnel reads
+  // "4 paid, 2 treated, 4 paid again", which is nonsense. Written this way
+  // the drop the clinic actually wants to see, consulted but never started,
+  // is the one step between them.
+  const steps = [
+    { step: "Registered", reached: registered },
+    { step: "Came in for a visit", reached: consulted },
+    { step: "Paid something", reached: paid },
+    { step: "Started treatment", reached: treated },
+    { step: "Came back again", reached: returned }
+  ];
+  const funnel = steps.map((s, i) => ({
+    ...s, dropped: i === 0 ? 0 : Math.max(0, steps[i - 1].reached - s.reached)
+  }));
+  const worstStep = funnel.slice(1).sort((a, b) => b.dropped - a.dropped)[0] || null;
+
+  // ── did not turn up ─────────────────────────────────────────────────
+  const noShows = d.appts.filter(a => String(a.status) === "No Show");
+  const cancelled = d.appts.filter(a => String(a.status) === "Cancelled");
+  const kept = d.appts.filter(a => ["Completed", "In Chair", "Checked In"].includes(String(a.status))).length;
+  const decided = noShows.length + kept;
+
+  return {
+    months, receipts: d.receipts, register: d.register,
+    byService, byProcedure, byMonth, byCategory, funnel, worstStep,
+    noShows, cancelled, kept,
+    noShowRate: decided ? Math.round(noShows.length * 100 / decided) : 0,
+    revenue, expenseTotal, split,
+    treatmentShare: revenue ? Math.round(split.treatment * 100 / revenue) : 0,
+    unclassifiedRevenue: split.unclassified,
+    patientsWithoutDate,
+    maxSeen: Math.max(1, ...byMonth.map(m => m.newPatients + m.returning)),
+    maxMonthRevenue: Math.max(1, ...byMonth.map(m => m.revenue))
+  };
 }
 
 // Sits in front of the whole app when the backend has REQUIRE_AUTH switched on.
@@ -29934,7 +30424,7 @@ function App() {
   }), page === "records" && /*#__PURE__*/React.createElement(RecordsPicker, {
     globalPat: globalPat,
     onNavigate: navigateFromSearch
-  }), page === "crm" && /*#__PURE__*/React.createElement(CRMModule, null), page === "chatbot" && /*#__PURE__*/React.createElement(ChatbotModule, null), page === "master" && /*#__PURE__*/React.createElement(SimplePasswordGate, { verifyAction:"verifyMasterPassword", sessionKey:"kbdc_master_unlocked", message:"Enter the Master password to view this page." }, /*#__PURE__*/React.createElement(Master, null)), page === "followups" && /*#__PURE__*/React.createElement(FollowUps, { onNavigate: setPage }), page === "reports" && /*#__PURE__*/React.createElement(SimplePasswordGate, { verifyAction:"verifyReportsPassword", sessionKey:"kbdc_reports_unlocked", message:"Enter your password to view Reports (either of the two people's passwords works)." }, /*#__PURE__*/React.createElement(ReportsPlaceholder, null))),
+  }), page === "crm" && /*#__PURE__*/React.createElement(CRMModule, null), page === "chatbot" && /*#__PURE__*/React.createElement(ChatbotModule, null), page === "master" && /*#__PURE__*/React.createElement(SimplePasswordGate, { verifyAction:"verifyMasterPassword", sessionKey:"kbdc_master_unlocked", message:"Enter the Master password to view this page." }, /*#__PURE__*/React.createElement(Master, null)), page === "followups" && /*#__PURE__*/React.createElement(FollowUps, { onNavigate: setPage }), page === "reports" && /*#__PURE__*/React.createElement(SimplePasswordGate, { verifyAction:"verifyReportsPassword", sessionKey:"kbdc_reports_unlocked", message:"Enter your password to view Reports (either of the two people's passwords works)." }, /*#__PURE__*/React.createElement(ReportsModule, null))),
     pendingRegister && /*#__PURE__*/React.createElement(RegisterConfirm, {
       entry: pendingRegister,
       onCancel: () => setPendingRegister(null),
