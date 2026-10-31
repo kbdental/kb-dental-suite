@@ -887,6 +887,7 @@ function route(p) {
       case "saveSettings":         return saveSettings(p);
       case "saveFinancePassword":  return saveFinancePassword(p);
       case "verifyFinancePassword":return verifyFinancePassword(p);
+      case "saveAppPassword":      return saveAppPassword(p);
       case "saveMasterPassword":   return saveMasterPassword(p);
       case "verifyMasterPassword": return verifyMasterPassword(p);
       case "saveReportsPassword":  return saveReportsPassword(p);
@@ -3853,6 +3854,7 @@ function getSettings() {
     success: true, financeSheetId: getFinanceSheetId(),
     financePasswordSet: !!props.getProperty("FINANCE_PASSWORD"),
     masterPasswordSet: !!props.getProperty("MASTER_PASSWORD"),
+    appPasswordSet: !!props.getProperty("APP_PASSWORD"),
     reportsPassword1Set: !!props.getProperty("REPORTS_PASSWORD_1"),
     reportsPassword2Set: !!props.getProperty("REPORTS_PASSWORD_2")
   };
@@ -3875,6 +3877,26 @@ function verifyFinancePassword(p) {
 }
 
 // Gates the Master page — same casual-deterrent model as Finance.
+// The password that opens patient documents.
+//
+// Kept apart from MASTER_PASSWORD on purpose: the Master page and the
+// patients' X-rays are different things to hand somebody the key to. It is
+// set from Master, which is itself behind the Master password, so only
+// whoever holds that can change it.
+//
+// There is no way to clear it from here. Clearing it would lock every
+// X-ray and saved prescription behind a password nobody can type -- the
+// exact dead end this was all about -- so removing it is a deliberate trip
+// to Script Properties, not one stray click in a settings screen.
+function saveAppPassword(p) {
+  var pw = String(p.password || "").trim();
+  if (!pw) return { success: false, error: "Password required" };
+  PropertiesService.getScriptProperties().setProperty("APP_PASSWORD", pw);
+  // Everyone signs in again with the new one.
+  PropertiesService.getScriptProperties().deleteProperty("SESSIONS");
+  return { success: true };
+}
+
 function saveMasterPassword(p) {
   var pw = String(p.password || "").trim();
   if (!pw) return { success: false, error: "Password required" };

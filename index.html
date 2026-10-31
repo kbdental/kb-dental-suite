@@ -26400,6 +26400,63 @@ function PanelFeeEditor({ panels }) {
         }))) : null);
 }
 
+// The password that opens patient documents -- X-rays, scans, saved
+// prescriptions. It lives here, behind the Master password, so only
+// whoever holds that can change it; and it is deliberately NOT the same
+// password as the Master page's, because the Master page and the
+// patients' X-rays are different things to hand somebody the key to.
+//
+// Until one is set those documents cannot be opened at all: the backend
+// gates them whether or not the rest of the app is locked, and with no
+// password there is no session anybody can obtain.
+function DocumentsPasswordChanger() {
+  const [pwSet, setPwSet] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+  const [newPw, setNewPw] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [msg, setMsg] = React.useState("");
+
+  React.useEffect(() => {
+    api("getSettings", {}).then(res => {
+      setLoading(false);
+      if (res.success) setPwSet(!!res.appPasswordSet);
+    });
+  }, []);
+
+  const save = async () => {
+    const v = newPw.trim();
+    if (!v) return;
+    setSaving(true); setMsg("");
+    const res = await api("saveAppPassword", { password: v });
+    setSaving(false);
+    if (res.success) {
+      setMsg("\u2705 Saved. Everyone signs in again with this one.");
+      setPwSet(true); setNewPw("");
+      // The old session is no longer valid, so drop it rather than let the
+      // app carry on believing it is signed in.
+      setSessionToken("");
+    } else setMsg("\u274C " + (res.error || "Failed to save"));
+  };
+
+  return React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10, padding:"20px 24px", maxWidth:560, marginBottom:16 } },
+    React.createElement("div", { style:{ fontSize:14, fontWeight:700, marginBottom:4 } }, "\u{1F5BC} Patient Documents Password"),
+    React.createElement("div", { style:{ fontSize:12.5, color:"#444444", marginBottom:14, lineHeight:1.55 } },
+      loading ? "\u23F3 Loading..." : pwSet
+        ? "A password is set. Staff sign in once with it and that lasts twelve hours. Enter a new one below to change it \u2014 everyone will sign in again."
+        : "No password set yet, so X-rays, scans and saved prescriptions CANNOT BE OPENED at all. Set one below and they work again. This is separate from the Master page password above."),
+    React.createElement("div", { style:{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" } },
+      React.createElement("input", { type:"password", style:{...inp, maxWidth:220}, value:newPw, placeholder:"New password",
+        onChange:e=>setNewPw(e.target.value), onKeyDown:e=>e.key==="Enter" && save() }),
+      React.createElement("button", { onClick:save, disabled:saving || !newPw.trim(),
+        style:{ padding:"9px 22px", fontSize:14, border:"none", borderRadius:7, cursor:"pointer", background:T, color:"#fff", fontWeight:700, opacity:(saving||!newPw.trim())?0.6:1 } },
+        saving ? "Saving..." : "\u{1F4BE} Set Password"),
+      msg && React.createElement("div", { style:{ fontSize:13, fontWeight:600, color: msg.indexOf("\u2705")===0 ? "#059669" : "#c0392b" } }, msg)
+    ),
+    !loading && !pwSet && React.createElement("div", { style:{ fontSize:12, color:"#78350F", background:"#FFFBEB", border:"1px solid #FCD34D", borderRadius:7, padding:"9px 11px", marginTop:12, lineHeight:1.5 } },
+      "Everything else in the app works without this. Only the documents are held back.")
+  );
+}
+
 function MasterPasswordChanger() {
   const [pwSet, setPwSet] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
@@ -27028,7 +27085,9 @@ function Master() {
       onRemove:(i)=>saveDocCategories(docCategories.filter((_,idx)=>idx!==i)),
       onEdit:(i,v)=>saveDocCategories(docCategories.map((x,idx)=>idx===i?v:x))
     }),
-    security: () => React.createElement(MasterPasswordChanger, null),
+    security: () => React.createElement("div", null,
+      React.createElement(DocumentsPasswordChanger, null),
+      React.createElement(MasterPasswordChanger, null)),
     sales: () => React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10, padding:"20px 24px", maxWidth:560 } },
       React.createElement("div", { style:{ fontSize:14, fontWeight:700, marginBottom:4 } }, "📊 Sales Tracker"),
       React.createElement("div", { style:{ fontSize:12.5, color:"#444444", marginBottom:14 } },
