@@ -528,14 +528,28 @@ async function apiBatch(actions) {
 // Large payloads (file uploads as base64) would blow past URL length limits
 // as a GET query string like api() uses, so this posts a JSON body instead —
 // the backend's doPost already parses that the same way as GET params.
-async function apiPost(action, data = {}) {
+// quietAuth: this call must not throw the whole app into the sign-in
+// screen if it is refused for want of a session.
+//
+// Keeping a copy of a printed document is a SIDE EFFECT of printing. The
+// print itself has already happened -- the paper is coming out of the
+// printer -- and the copy going unfiled is worth a line of text, not a
+// password box over the top of a finished job. Printing a prescription did
+// exactly that: the document gate refused the copy, and the clinic was
+// shown Staff Sign In on top of a print that had worked perfectly.
+//
+// Opening the Documents screen is a different thing. That is somebody
+// asking for the documents, so being asked for the password is the right
+// answer and the gate still stands there.
+async function apiPost(action, data = {}, opts = {}) {
   try {
     const r = await fetch(SCRIPT_URL, {
       method: "POST",
       body: JSON.stringify({ action, token: getSessionToken(), ...data })
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
-    return handleAuthFailure(await r.json());
+    const res = await r.json();
+    return opts.quietAuth ? res : handleAuthFailure(res);
   } catch (e) {
     console.error("API:", e);
     return { success: false, error: e.message };
@@ -11374,8 +11388,14 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
     const docName = which === "progress" ? "Treatment Progress Notes" : "Procedure Done";
     const res = await apiPost("createDocumentPDF", {
       uhid: pat.uhid, patientName: pat.name || "", html, docName, category: "Progress Notes"
-    });
+    }, { quietAuth: true });
     setPdfBusy(false);
+    if (res && res.authRequired) {
+      alert("Patient documents are behind a password, and this computer is not signed in.\n\n"
+          + "Open Documents for this patient and sign in with the password from Master \u203A Security, then try again.\n\n"
+          + "Print still works without it.");
+      return;
+    }
     if (!res || !res.success) { alert("Could not create the PDF: " + ((res && res.error) || "unknown error")); return; }
     // No public Drive link is created any more. The PDF is downloaded locally
     // and the staff member attaches it in WhatsApp, so a patient document is
@@ -30057,7 +30077,9 @@ function StaffLoginGate({ children }) {
       React.createElement("button", { onClick:()=>{ setNeedsLogin(false); setPw(""); setErr(""); },
         style:{ width:"100%", padding:"9px", fontSize:13.5, marginBottom:8, border:`1px solid ${BORDER}`, borderRadius:8, cursor:"pointer", background:"#fff", color:"#2e2e2e", fontWeight:700 } },
         "Continue without opening documents"),
-      passwordSet !== false && React.createElement("button", { onClick:doLogin, disabled:busy||!pw.trim(),
+      passwordSet !== false && React.createElement("button", {
+        onClick:()=>{ if (!pw.trim()) { setErr("Type the password first."); return; } doLogin(); },
+        disabled:busy,
         style:{ width:"100%", padding:"10px", fontSize:14, border:"none", borderRadius:8, cursor:busy?"wait":"pointer",
           background:T, color:"#fff", fontWeight:700, opacity:(busy||!pw.trim())?0.6:1 } },
         busy ? "Signing in..." : "Sign In")
@@ -30355,12 +30377,18 @@ function App() {
             docName: d.docName || "Document", category: d.category || "Other",
             // A fingerprint of the document, so reprinting files no second copy.
             dedupeKey: d.dedupeKey || ""
-          });
+          }, { quietAuth: true });
           if (d.token && e.source) {
+            // "AUTH_REQUIRED" means nothing to somebody at a front desk, and
+            // it is not even a failure of the thing they asked for -- the
+            // document printed. Say what did and did not happen.
+            const locked = !!(res && res.authRequired);
             e.source.postMessage({ type: "KB_SAVE_PDF_RESULT", token: d.token,
               ok: !!(res && res.success), duplicate: !!(res && res.duplicate),
               fileName: (res && res.fileName) || "",
-              error: (res && res.error) || "" }, "*");
+              error: locked
+                ? "Printed. The copy was not filed \u2014 patient documents need the password from Master \u203A Security."
+                : ((res && res.error) || "") }, "*");
           }
         } else if (d.type === "KB_SAVE_RECORD" && d.saveAction && d.fields) {
           const res = await api(d.saveAction, d.fields);
