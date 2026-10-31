@@ -588,6 +588,16 @@ var PUBLIC_ACTIONS = [
   "chatbotReply", "saveChatbotAppointment", "findAppointmentsByPhone",  "patientLookup", "patientCompleteRegistration"
 ];
 
+// Is there a password to sign in with at all?
+//
+// Purely so the app can tell the front desk which situation it is in. The
+// same fact is already public: staffLogin answers "No APP_PASSWORD set in
+// Script Properties" to anybody who asks. Every gate below is unchanged.
+function appPasswordSet_() {
+  var props = PropertiesService.getScriptProperties();
+  return !!(props.getProperty("APP_PASSWORD") || props.getProperty("MASTER_PASSWORD"));
+}
+
 function authRequired_() {
   return String(PropertiesService.getScriptProperties().getProperty("REQUIRE_AUTH") || "").toLowerCase() === "true";
 }
@@ -719,7 +729,10 @@ function route(p) {
       // ── Auth ───────────────────────────────────────────────
       case "staffLogin":  return staffLogin(p);
       case "staffLogout": return staffLogout(p);
-      case "authStatus":  return { success: true, authRequired: authRequired_(), valid: isValidSession_(p.token) };
+      // passwordSet lets the app tell "you must sign in" apart from "there
+      // is nothing to sign in with", which are very different things to put
+      // in front of somebody with a patient waiting. It gates nothing.
+      case "authStatus":  return { success: true, authRequired: authRequired_(), valid: isValidSession_(p.token), passwordSet: appPasswordSet_() };
 
       // ── Health ─────────────────────────────────────────────
       case "ping":

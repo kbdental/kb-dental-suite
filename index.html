@@ -29863,19 +29863,45 @@ function StaffLoginGate({ children }) {
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // Whether the backend has a password at all. null until we have asked,
+  // and on an older backend that cannot say.
+  //
+  // This screen used to be a trap. Patient documents are gated whatever the
+  // rollout flag says, so printing a prescription or opening a patient's
+  // folder asked for a staff password -- and where no password had ever
+  // been set there was nothing that would answer it and no way off the
+  // screen. The front desk had to close the app and start it again, with a
+  // patient sitting there, every single time.
+  const [passwordSet, setPasswordSet] = useState(null);
 
   const check = React.useCallback(() => {
     api("authStatus").then(res => {
       setChecking(false);
-      if (res && res.success) setNeedsLogin(!!res.authRequired && !res.valid);
-      else setNeedsLogin(false);
+      if (res && res.success) {
+        setPasswordSet(res.passwordSet === undefined ? null : !!res.passwordSet);
+        setNeedsLogin(!!res.authRequired && !res.valid);
+      } else setNeedsLogin(false);
     }).catch(() => { setChecking(false); setNeedsLogin(false); });
+  }, []);
+
+  // Only ever updates what the backend has; never decides whether the
+  // screen is up. check() does both, and calling it here would take the
+  // screen down again the instant it appeared -- leaving the clinic with a
+  // print that silently did nothing and no idea why.
+  const refreshPasswordSet = React.useCallback(() => {
+    api("authStatus").then(res => {
+      if (res && res.success && res.passwordSet !== undefined) setPasswordSet(!!res.passwordSet);
+    }).catch(() => { /* leave it as it was */ });
   }, []);
 
   useEffect(() => {
     check();
-    setAuthRequiredHandler(() => setNeedsLogin(true));
-  }, [check]);
+    // Something was refused for want of a session. Find out WHICH situation
+    // this is before putting a password box in front of somebody: "you must
+    // sign in" and "there is nothing to sign in with" are very different
+    // things to be told with a patient waiting.
+    setAuthRequiredHandler(() => { setNeedsLogin(true); refreshPasswordSet(); });
+  }, [check, refreshPasswordSet]);
 
   const doLogin = async () => {
     if (!pw.trim()) return;
@@ -29894,12 +29920,24 @@ function StaffLoginGate({ children }) {
   return React.createElement("div", { style:{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:BGS, padding:20 } },
     React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:12, padding:"28px 30px", width:"min(380px,100%)", boxShadow:"0 4px 20px rgba(0,0,0,.08)" } },
       React.createElement("div", { style:{ fontSize:17, fontWeight:800, color:T, marginBottom:4 } }, "🔐 Staff Sign In"),
-      React.createElement("div", { style:{ fontSize:13, color:"#444444", marginBottom:18 } }, "Enter the clinic app password to access patient data."),
-      React.createElement("input", { type:"password", value:pw, autoFocus:true, placeholder:"Password",
+      passwordSet === false
+        ? React.createElement("div", { style:{ fontSize:13, color:"#78350F", background:"#FFFBEB", border:"1px solid #FCD34D", borderRadius:8, padding:"10px 12px", marginBottom:14, lineHeight:1.55 } },
+            React.createElement("div", { style:{ fontWeight:700, marginBottom:5 } }, "No password has been set yet"),
+            "X-rays, scans and saved prescriptions are the one part of the app kept behind a password, because they are the part that must not be shared. Nothing has been set yet, so there is nothing to type here, and they cannot be opened.",
+            React.createElement("div", { style:{ marginTop:7 } },
+              "Set one in ", React.createElement("b", null, "Master \u203A Security"), ", then sign in here with it. Everything else in the app works without it."))
+        : React.createElement("div", { style:{ fontSize:13, color:"#444444", marginBottom:18, lineHeight:1.5 } },
+            "X-rays, scans and saved prescriptions are kept behind this password. Sign in once and it lasts twelve hours.",
+            passwordSet === null ? "" : React.createElement("div", { style:{ marginTop:5, color:"#4b4b4b" } },
+              "It is the password set in Master \u203A Security.")),
+      passwordSet !== false && React.createElement("input", { type:"password", value:pw, autoFocus:true, placeholder:"Password",
         style:{ ...inp, width:"100%", marginBottom:12 },
         onChange:e=>setPw(e.target.value), onKeyDown:e=>e.key==="Enter"&&doLogin() }),
       err && React.createElement("div", { style:{ fontSize:13, color:"#c0392b", marginBottom:10, fontWeight:600 } }, "⚠ " + err),
-      React.createElement("button", { onClick:doLogin, disabled:busy||!pw.trim(),
+      React.createElement("button", { onClick:()=>{ setNeedsLogin(false); setPw(""); setErr(""); },
+        style:{ width:"100%", padding:"9px", fontSize:13.5, marginBottom:8, border:`1px solid ${BORDER}`, borderRadius:8, cursor:"pointer", background:"#fff", color:"#2e2e2e", fontWeight:700 } },
+        "Continue without opening documents"),
+      passwordSet !== false && React.createElement("button", { onClick:doLogin, disabled:busy||!pw.trim(),
         style:{ width:"100%", padding:"10px", fontSize:14, border:"none", borderRadius:8, cursor:busy?"wait":"pointer",
           background:T, color:"#fff", fontWeight:700, opacity:(busy||!pw.trim())?0.6:1 } },
         busy ? "Signing in..." : "Sign In")
