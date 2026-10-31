@@ -26568,6 +26568,14 @@ function PatientDocuments({ globalPat }) {
   // Why the list is empty, when it is empty for a reason other than there
   // being nothing in it.
   const [docsError, setDocsError] = React.useState("");
+  // Which category the list is showing.
+  //
+  // Kept apart from the upload category on purpose. That one says where a
+  // NEW file goes; this one says what you are LOOKING at. Sharing a single
+  // control between the two reads well until you pick All to see everything
+  // and then have no category to file an upload under.
+  const ALL_DOCS = "All documents";
+  const [filterCat, setFilterCat] = React.useState(ALL_DOCS);
   const [loading, setLoading] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [docCategories, setDocCategories] = React.useState([]);
@@ -26705,6 +26713,18 @@ function PatientDocuments({ globalPat }) {
   const grouped = {};
   docs.forEach(d => { const c = d.category || "Other"; (grouped[c] = grouped[c] || []).push(d); });
 
+  // Every category that can be chosen: the clinic's own list, plus anything
+  // already filed under a heading no longer on it -- a document must never
+  // become unreachable because somebody tidied Master.
+  const filterOptions = [ALL_DOCS].concat(
+    Array.from(new Set([].concat(docCategories || [], Object.keys(grouped)))).sort());
+  const countIn = (c) => c === ALL_DOCS ? docs.length : (grouped[c] || []).length;
+  const showingAll = filterCat === ALL_DOCS;
+  const visibleCats = showingAll
+    ? Object.keys(grouped).sort()
+    : (grouped[filterCat] ? [filterCat] : []);
+  const hiddenCount = showingAll ? 0 : docs.length - countIn(filterCat);
+
   return React.createElement("div", null,
     React.createElement(ClinicHeader, null),
     React.createElement("div", { style:{ fontSize:18, fontWeight:700, marginBottom:4 } }, "📎 Documents"),
@@ -26725,6 +26745,7 @@ function PatientDocuments({ globalPat }) {
       ),
       React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10, padding:16, marginBottom:16 } },
         React.createElement("div", { style:{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" } },
+          React.createElement("span", { style:{ fontSize:12.5, color:"#4b4b4b", fontWeight:600 } }, "File this under:"),
           React.createElement("select", { style:inp, value:category, onChange:e=>setCategory(e.target.value) },
             docCategories.map(c => React.createElement("option", { key:c, value:c }, c))
           ),
@@ -26739,8 +26760,27 @@ function PatientDocuments({ globalPat }) {
       loading && React.createElement("div", { style:{ textAlign:"center", padding:20, color:"#444444", fontSize:14 } }, "⏳ Loading..."),
       !loading && docsError && React.createElement("div", { style:{ background:"#FFFBEB", borderRadius:8, padding:"16px 18px", color:"#78350F", fontSize:13.5, border:"1px solid #FCD34D", lineHeight:1.55 } }, "\u26A0 " + docsError),
       !loading && !docsError && docs.length === 0 && React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:24, textAlign:"center", color:"#5a5a5a", fontSize:14, border:`1px dashed ${BORDER}` } }, "No documents uploaded yet."),
-      !loading && Object.keys(grouped).sort().map(cat => React.createElement("div", { key:cat, style:{ marginBottom:18 } },
-        React.createElement("div", { style:{ fontSize:12.5, fontWeight:700, color:"#383838", textTransform:"uppercase", letterSpacing:".04em", marginBottom:8 } }, cat),
+      // What you are looking at, as opposed to where a new file would go.
+      !loading && !docsError && docs.length > 0 && React.createElement("div", { style:{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", marginBottom:14 } },
+        React.createElement("span", { style:{ fontSize:12.5, color:"#4b4b4b", fontWeight:600 } }, "Show:"),
+        React.createElement("select", { style:{...inp, maxWidth:280}, value:filterCat, onChange:e=>setFilterCat(e.target.value) },
+          filterOptions.map(c => React.createElement("option", { key:c, value:c }, c + " (" + countIn(c) + ")"))
+        ),
+        !showingAll && React.createElement("button", { onClick:()=>setFilterCat(ALL_DOCS),
+          style:{ padding:"7px 14px", fontSize:12.5, border:`1px solid ${BORDER}`, borderRadius:7, cursor:"pointer", background:"#fff", color:T, fontWeight:700 } },
+          "Show all")
+      ),
+      // A filter that matches nothing must say so, and say what is being
+      // held back -- otherwise it reads as the documents having vanished.
+      !loading && !docsError && docs.length > 0 && visibleCats.length === 0 &&
+        React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:20, textAlign:"center", color:"#5a5a5a", fontSize:13.5, border:`1px dashed ${BORDER}`, lineHeight:1.6 } },
+          "Nothing filed under \u201C" + filterCat + "\u201D for this patient.",
+          React.createElement("div", { style:{ marginTop:4 } },
+            docs.length + " document" + (docs.length === 1 ? "" : "s") + " in other categories \u2014 choose \u201C" + ALL_DOCS + "\u201D to see them.")),
+      !loading && visibleCats.map(cat => React.createElement("div", { key:cat, style:{ marginBottom:18 } },
+        React.createElement("div", { style:{ fontSize:12.5, fontWeight:700, color:"#383838", textTransform:"uppercase", letterSpacing:".04em", marginBottom:8 } },
+          cat, !showingAll && hiddenCount > 0 && React.createElement("span", { style:{ fontWeight:500, textTransform:"none", letterSpacing:0, color:"#4b4b4b" } },
+            "  \u00b7  " + hiddenCount + " more hidden by this filter")),
         React.createElement("div", { style:{ display:"flex", flexWrap:"wrap", gap:10 } },
           grouped[cat].map(d => React.createElement("div", { key:d.id,
             style:{ width:150, background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8, padding:10, fontSize:12.5 } },
