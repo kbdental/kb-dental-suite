@@ -575,6 +575,19 @@ function doPost(e) {
 // in the page source — it's issued per sign-in and expires — so knowing the
 // /exec URL alone is no longer enough to read patient data.
 
+// Which build of THIS FILE is actually running.
+//
+// Pasting Code.gs into the editor changes nothing on its own: the /exec URL
+// serves whichever VERSION the deployment points at, so a paste without
+// Deploy > Manage deployments > New version leaves the old code answering.
+// That failure is silent -- the app looks fine until it calls an action the
+// running build has never heard of, which is how "Unknown action:
+// saveAppPassword" happened with the new file sitting in the editor.
+//
+// The app reads this from ping and says so when it is behind. Bump it
+// whenever this file changes in a way the app depends on.
+var BACKEND_BUILD = "2026-10-31";
+
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
 var DOCUMENT_ACTIONS = [
@@ -736,7 +749,7 @@ function route(p) {
 
       // ── Health ─────────────────────────────────────────────
       case "ping":
-        return { success: true, message: "pong", timestamp: new Date().toISOString() };
+        return { success: true, message: "pong", timestamp: new Date().toISOString(), build: BACKEND_BUILD };
       case "debugSheetHeaders": return debugSheetHeaders(p);
 
       // ── Registration ───────────────────────────────────────
