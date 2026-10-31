@@ -469,7 +469,16 @@ function flushBatch() {
           const r = res.results[q.key];
           const unserved = !r || (r.success === false && /^batch:/.test(String(r.error || "")));
           if (unserved) apiDirect(q.action, q.data).then(q.resolve);
-          else q.resolve(r);
+          // Each answer goes through handleAuthFailure on its own.
+          //
+          // The batch WRAPPER succeeds even when a read inside it was refused
+          // for want of a session: it comes back {success:true, results:{...}}
+          // with the refusal buried in results. apiDirect only ever saw the
+          // wrapper, so an expired or missing session inside a batch never
+          // reached the sign-in screen at all -- the read simply came back
+          // empty. Opening a patient's Documents did exactly that: no
+          // password asked, and a folder that looked empty.
+          else q.resolve(handleAuthFailure(r));
         });
         return;
       }
@@ -26556,6 +26565,9 @@ function PatientDocuments({ globalPat }) {
   const [pat, setPat] = React.useState(globalPat || null);
   const [notFound, setNotFound] = React.useState(false);
   const [docs, setDocs] = React.useState([]);
+  // Why the list is empty, when it is empty for a reason other than there
+  // being nothing in it.
+  const [docsError, setDocsError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [docCategories, setDocCategories] = React.useState([]);
@@ -26574,12 +26586,28 @@ function PatientDocuments({ globalPat }) {
     });
   }, []);
 
+  // A read that FAILED is not an empty folder.
+  //
+  // This used to set the list only on success, so a refused or broken read
+  // left it empty and the screen said "No documents uploaded yet." -- telling
+  // the clinic a patient has no X-rays when the truth is that nobody could
+  // look. On a patient's imaging that is the worst answer available.
   const loadDocs = (uhid) => {
-    setLoading(true);
+    setLoading(true); setDocsError("");
     api("getPatientDocuments", { uhid }).then(res => {
       setLoading(false);
-      if (res.success) setDocs(res.documents || []);
-    }).catch(() => setLoading(false));
+      if (res && res.success) { setDocs(res.documents || []); return; }
+      setDocs([]);
+      setDocsError(res && res.authRequired
+        ? "These documents are locked. Sign in with the password from Master \u203A Security to see them."
+        : "Could not read this patient's documents"
+          + (res && res.error ? " (" + res.error + ")" : "")
+          + ". That is not the same as there being none \u2014 try again.");
+    }).catch((e) => {
+      setLoading(false); setDocs([]);
+      setDocsError("Could not read this patient's documents: " + ((e && e.message) || e)
+        + ". That is not the same as there being none \u2014 try again.");
+    });
   };
 
   React.useEffect(() => {
@@ -26709,7 +26737,8 @@ function PatientDocuments({ globalPat }) {
         errMsg && React.createElement("div", { style:{ fontSize:13, fontWeight:600, color:"#c0392b", marginTop:8, lineHeight:1.5 } }, errMsg)
       ),
       loading && React.createElement("div", { style:{ textAlign:"center", padding:20, color:"#444444", fontSize:14 } }, "⏳ Loading..."),
-      !loading && docs.length === 0 && React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:24, textAlign:"center", color:"#5a5a5a", fontSize:14, border:`1px dashed ${BORDER}` } }, "No documents uploaded yet."),
+      !loading && docsError && React.createElement("div", { style:{ background:"#FFFBEB", borderRadius:8, padding:"16px 18px", color:"#78350F", fontSize:13.5, border:"1px solid #FCD34D", lineHeight:1.55 } }, "\u26A0 " + docsError),
+      !loading && !docsError && docs.length === 0 && React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:24, textAlign:"center", color:"#5a5a5a", fontSize:14, border:`1px dashed ${BORDER}` } }, "No documents uploaded yet."),
       !loading && Object.keys(grouped).sort().map(cat => React.createElement("div", { key:cat, style:{ marginBottom:18 } },
         React.createElement("div", { style:{ fontSize:12.5, fontWeight:700, color:"#383838", textTransform:"uppercase", letterSpacing:".04em", marginBottom:8 } }, cat),
         React.createElement("div", { style:{ display:"flex", flexWrap:"wrap", gap:10 } },
@@ -30386,8 +30415,11 @@ function App() {
             e.source.postMessage({ type: "KB_SAVE_PDF_RESULT", token: d.token,
               ok: !!(res && res.success), duplicate: !!(res && res.duplicate),
               fileName: (res && res.fileName) || "",
+              // The form puts "Printed, but NOT kept:" in front of this, so
+              // this is only the REASON. Repeating the outcome here read as
+              // "Printed, but NOT kept: Printed. The copy was not filed".
               error: locked
-                ? "Printed. The copy was not filed \u2014 patient documents need the password from Master \u203A Security."
+                ? "patient documents need the password from Master \u203A Security."
                 : ((res && res.error) || "") }, "*");
           }
         } else if (d.type === "KB_SAVE_RECORD" && d.saveAction && d.fields) {
