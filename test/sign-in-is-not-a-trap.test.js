@@ -148,6 +148,66 @@ async function render(browser, status, errors) {
     await page.close();
   }
 
+  // ── and the password can be set from inside the app ────────────────────
+  // It lives in Master, which is itself behind the Master password, so only
+  // whoever holds that can change it -- no Script Properties, and nobody
+  // wandering into it by accident.
+  {
+    const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+    page.on('pageerror', e => errors.push(String(e.message)));
+    await page.setContent('<div id="root"></div>');
+    for (const f of ['node_modules/react/umd/react.production.min.js',
+                     'node_modules/react-dom/umd/react-dom.production.min.js']) {
+      await page.addScriptTag({ content: fs.readFileSync(path.join(REPO, f), 'utf8') });
+    }
+    const pa = html.indexOf('function DocumentsPasswordChanger() {');
+    const pb = html.indexOf('\nfunction MasterPasswordChanger() {', pa);
+    ok('the documents password panel was found', pa > 0 && pb > pa, `${pa}..${pb}`);
+    await page.addScriptTag({ content: `
+      const { useState, useRef, useEffect } = React;
+      const T = "#0078B4", BORDER = "#e5e5e0";
+      const inp = { padding:"8px", border:"1px solid #e5e5e0", borderRadius:6, fontSize:13 };
+      window.__saved = null; window.__tokenCleared = false;
+      function setSessionToken(t){ if (!t) window.__tokenCleared = true; }
+      function api(action, params){
+        if (action === "getSettings") return Promise.resolve({ success:true, appPasswordSet:false, masterPasswordSet:true });
+        if (action === "saveAppPassword") { window.__saved = params.password; return Promise.resolve({ success:true }); }
+        return Promise.resolve({ success:true });
+      }` });
+    await page.addScriptTag({ content: html.slice(pa, pb) });
+    await page.addScriptTag({ content: `
+      ReactDOM.createRoot(document.getElementById("root"))
+        .render(React.createElement(DocumentsPasswordChanger, null));` });
+    await page.waitForTimeout(400);
+
+    const text = await page.locator('#root').innerText();
+    ok('it says documents cannot be opened until one is set',
+       /CANNOT BE OPENED/.test(text), text.slice(0, 300));
+    ok('and that it is not the Master page password',
+       /separate from the Master page password/.test(text), text.slice(0, 400));
+    ok('and that nothing else is held back',
+       /Only the documents are held back/.test(text), text.slice(0, 500));
+
+    await page.locator('input[type=password]').fill('open-the-xrays');
+    await page.locator('button', { hasText: 'Set Password' }).click();
+    await page.waitForTimeout(300);
+    eq('it writes the documents password, not the Master one',
+       await page.evaluate(() => window.__saved), 'open-the-xrays');
+    ok('the old session is dropped, so nobody carries on believing they are signed in',
+       await page.evaluate(() => window.__tokenCleared));
+    ok('and it says everyone signs in again',
+       /signs in again/.test(await page.locator('#root').innerText()));
+    await page.close();
+  }
+
+  // The backend keeps the two passwords apart, and offers no way to clear
+  // the documents one -- clearing it would rebuild the dead end.
+  ok('saveAppPassword writes its own property', /setProperty\("APP_PASSWORD", pw\)/.test(gs));
+  ok('and is reachable from the app', /case "saveAppPassword":/.test(gs));
+  ok('it refuses an empty password rather than clearing the lock',
+     /function saveAppPassword[\s\S]{0,200}if \(!pw\) return \{ success: false/.test(gs));
+  ok('getSettings reports whether it is set', /appPasswordSet: !!props\.getProperty\("APP_PASSWORD"\)/.test(gs));
+
   ok('nothing threw anywhere', errors.length === 0, errors.join(' | '));
   await browser.close();
 
