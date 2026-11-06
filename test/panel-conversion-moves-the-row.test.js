@@ -35,11 +35,14 @@ const src = gs.slice(gs.indexOf('function moveRegRowToPanelBook_('),
                      gs.indexOf('function regSheetFor_(isPanel) {'));
 ok('the mover was found', src.length > 600, src.length);
 
-function sheet(rows) {
+function sheet(rows, ssId) {
   return {
     _rows: rows.map(r => r.slice()),
-    _id: Math.random(),
-    getSheetId() { return this._id; },
+    // Both books call their tab Registrations and in both it is the first
+    // one, so both carry sheet id 0. Only the spreadsheet tells them apart.
+    _ss: ssId || 'MAIN',
+    getSheetId() { return 0; },
+    getParent() { const id = this._ss; return { getId: () => id }; },
     getLastRow() { return this._rows.length; },
     getLastColumn() { return this._rows.length ? this._rows[0].length : 0; },
     getDataRange() { const r = this._rows; return { getValues: () => r.map(x => x.slice()) }; },
@@ -95,8 +98,8 @@ const PANEL_H = ['UHID', 'Panel', 'Card ID', 'Panel Category', 'Full Name', 'Blo
 let main = sheet([MAIN_H,
   ['AL1009', 'Older Patient', 'A+', 'Normal', '', ''],
   ['AL1010', 'Santosh', 'B+', 'Panel', 'CGHS', '20542260'],
-  ['AL1011', 'Someone Else', 'O+', 'Normal', '', '']]);
-let panel = sheet([PANEL_H, ['AL2001', 'CGHS', '9', 'Pensioner', 'Existing Panel', 'AB+']]);
+  ['AL1011', 'Someone Else', 'O+', 'Normal', '', '']], 'MAIN');
+let panel = sheet([PANEL_H, ['AL2001', 'CGHS', '9', 'Pensioner', 'Existing Panel', 'AB+']], 'PANEL');
 
 let res = run(main, panel, 3);
 eq('the row is reported as moved', res, { moved: true });
@@ -116,20 +119,27 @@ eq('a column the panel book did not have is added rather than dropped',
 eq('and carries its value', moved[panel._rows[0].indexOf('Patient Type')], 'Panel');
 
 // ── nothing silly when there is nothing to do ───────────────────────────
-main = sheet([MAIN_H, ['AL1010', 'Santosh', 'B+', 'Panel', 'CGHS', '1']]);
-panel = sheet([PANEL_H]);
+main = sheet([MAIN_H, ['AL1010', 'Santosh', 'B+', 'Panel', 'CGHS', '1']], 'MAIN');
+panel = sheet([PANEL_H], 'PANEL');
 eq('on the panel instance itself there is nowhere to move to',
    run(main, panel, 2, true).moved, false);
 eq('and the row stays where it is', main._rows.length, 2);
 
-main = sheet([MAIN_H, ['AL1010', 'Santosh', 'B+', 'Panel', 'CGHS', '1']]);
+main = sheet([MAIN_H, ['AL1010', 'Santosh', 'B+', 'Panel', 'CGHS', '1']], 'PANEL');
 eq('a patient already in the panel book is not moved into it again',
    run(main, main, 2).moved, false);
+// The bug this missed the first time: two books, same tab name, same sheet
+// id, different spreadsheets. Told apart by sheet id, nothing ever moved.
+const a = sheet([MAIN_H, ['AL1010', 'Santosh', 'B+', 'Panel', 'CGHS', '1']], 'MAIN');
+const b = sheet([PANEL_H], 'PANEL');
+eq('two books whose tabs share a sheet id are still two books',
+   run(a, b, 2).moved, true);
+eq('and the patient really arrives', b._rows.length, 2);
 
 // An empty panel book takes the main book's headings rather than starting
 // with none and silently dropping everything.
-main = sheet([MAIN_H, ['AL1010', 'Santosh', 'B+', 'Panel', 'CGHS', '20542260']]);
-panel = sheet([]);
+main = sheet([MAIN_H, ['AL1010', 'Santosh', 'B+', 'Panel', 'CGHS', '20542260']], 'MAIN');
+panel = sheet([], 'PANEL');
 res = run(main, panel, 2);
 eq('an empty panel book is given headings', panel._rows[0], MAIN_H);
 eq('and the patient arrives whole', panel._rows[1],
@@ -155,7 +165,12 @@ ok('only an existing row is moved, never a fresh one',
    /isPanel && existingRow > 0/.test(gs));
 
 const build = (/var BACKEND_BUILD = "([^"]+)"/.exec(gs) || [])[1];
-ok('the fixed backend is there to deploy', build >= '2026-11-06', build);
+ok('the fixed backend is there to deploy', build >= '2026-11-06a', build);
+// Sheet ids do not identify a spreadsheet, and reaching for one here is
+// what stopped the first attempt working at all.
+ok('the books are told apart by spreadsheet, not by sheet id',
+   /dest\.getParent\(\)\.getId\(\) === fromSheet\.getParent\(\)\.getId\(\)/.test(src) &&
+   !/\.getSheetId\(\)/.test(src), src.slice(0, 400));
 
 console.log('  ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
