@@ -3,7 +3,7 @@
 //
 // A prescription that is a code, a name and a tooth number is a list, not a
 // prescription. The detail the Wellness Centre reads is already written
-// once, in Master → Notes → Clinical Note Templates, and was being retyped
+// once, in Master → Clinical Configuration → Clinical Note Templates, and
 // or left off. So each endorsed line is prefilled from the template that
 // matches it -- and stays editable, because a template is a starting point
 // and the doctor has the last word on their own sheet.
@@ -183,8 +183,10 @@ const cut = (a, b) => html.slice(html.indexOf(a), html.indexOf(b, html.indexOf(a
 
   // No templates at all: it says where to add them, and still works.
   await mount([]);
+  // The pointer has to name where they ARE. It said Master -> Notes until
+  // that category was folded into Clinical Configuration.
   ok('with no templates it says where they live',
-     /Master . Notes . Clinical Note Templates/.test(await text()), await text());
+     /Master . Clinical Configuration . Clinical Note Templates/.test(await text()), await text());
   eq('and there is still a box per line', (await boxes()).length, 3);
 
   eq('nothing threw', errors, []);

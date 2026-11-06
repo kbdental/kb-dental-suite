@@ -33,16 +33,18 @@ const eq = (name, got, want) => ok(name, JSON.stringify(got) === JSON.stringify(
   'got ' + JSON.stringify(got) + ', wanted ' + JSON.stringify(want));
 
 // ── one button, not two ─────────────────────────────────────────────────
+// It lives under Clinical Configuration now; master-menu.test.js covers the
+// move itself.
 {
-  const notes = html.slice(html.indexOf('{ id:"notes", label:"Notes", subtabs:['),
-                           html.indexOf('{ id:"accounts", label:"Accounts"'));
-  ok('the Notes group was found', notes.length > 60, notes.length);
+  const group = html.slice(html.indexOf('{ id:"clinicalConfig", label:"Clinical Configuration", subtabs:['),
+                           html.indexOf('{ id:"prescriptions", label:"Prescriptions"'));
+  ok('the group was found', group.length > 60, group.length);
   ok('Clinical Note Templates is there',
-     /\{ id:"templates",\s*label:"Clinical Note Templates" \}/.test(notes), notes);
+     /\{ id:"templates",\s*label:"Clinical Note Templates" \}/.test(group), group);
   ok('and there is no second templates button beside it',
-     !/treatmentNotes/.test(html) && !/Treatment Note Templates/.test(html), notes);
-  ok('the post-op lists were not displaced',
-     /id:"medInstructions"/.test(notes) && /id:"medNotes"/.test(notes), notes);
+     !/treatmentNotes/.test(html) && !/Treatment Note Templates/.test(html), group);
+  ok('the instruction lists came across with it',
+     /id:"medInstructions"/.test(group) && /id:"medNotes"/.test(group), group);
 }
 ok('nothing is left of the second list in the page',
    !/treatmentTemplates/.test(html) && !/TREATMENT_TEMPLATE_CATEGORIES/.test(html)

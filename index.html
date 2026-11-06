@@ -7278,8 +7278,8 @@ function rupeesInWords(n) {
 // A prescription that is a code, a name and a tooth number is a list, not a
 // prescription. The detail the Wellness Centre reads -- what was done, under
 // what anaesthesia, with what, and what the patient is to do next -- is
-// already written once, in Master → Notes → Clinical Note Templates, and was
-// being retyped or left off. Each endorsed line is prefilled from the
+// already written once, in Master → Clinical Configuration → Clinical Note
+// Templates, and was being retyped or left off. Each endorsed line is prefilled from the
 // template that matches its procedure, and stays editable: a template is a
 // starting point, and the doctor has the last word on their own sheet.
 
@@ -7353,7 +7353,7 @@ function CghsPrescription({ pat, lines }) {
       if (dropped) return;
       const list = (res && res.success && res.templates) || [];
       setTemplates(list);
-      setTplMsg(list.length ? "" : "No clinical note templates yet — add them in Master → Notes → Clinical Note Templates and they will fill in here.");
+      setTplMsg(list.length ? "" : "No clinical note templates yet — add them in Master → Clinical Configuration → Clinical Note Templates and they will fill in here.");
     }).catch(() => { if (!dropped) setTplMsg("The clinical note templates could not be read. The detail can still be typed."); });
     return () => { dropped = true; };
   }, []);
@@ -28760,10 +28760,23 @@ const MASTER_STRUCTURE = [
     { id:"occupation",     label:"Occupation" },
     { id:"docCategories",  label:"Document Categories" }
   ]},
-  // Held open, with nothing under it yet. A category with no subtabs says
-  // so on its own page rather than opening blank -- see `content` below.
+  // What the clinic writes about treatment, and what it writes it with.
+  //
+  // The three lists below were a top-level Notes category of their own.
+  // They are subtabs here rather than a group nested inside one: this menu
+  // is two deep everywhere else, and a third level for three items would
+  // cost a click on the most-used screen in Master to tidy the one above
+  // it. They sit first because they are opened far more often than the
+  // implant brands, and the first subtab is what the category opens on.
+  //
+  // "Instructions" is patient advice -- oral hygiene, diet, follow-up --
+  // not how to take a drug. Under Notes the heading supplied that; here it
+  // does not, so it says Patient Instructions.
   { id:"clinicalConfig", label:"Clinical Configuration", subtabs:[
-    { id:"implantBrands", label:"Implant Brands & Sizes" }
+    { id:"templates",       label:"Clinical Note Templates" },
+    { id:"medInstructions", label:"Patient Instructions" },
+    { id:"medNotes",        label:"Post op instructions" },
+    { id:"implantBrands",   label:"Implant Brands & Sizes" }
   ]},
   { id:"prescriptions", label:"Prescriptions", subtabs:[
     { id:"drugCategories", label:"Drugs categories", placeholder:true },
@@ -28771,11 +28784,6 @@ const MASTER_STRUCTURE = [
     { id:"medDosages",     label:"Dosages" },
     { id:"medFrequencies", label:"Frequencies" },
     { id:"medDurations",   label:"Duration" }
-  ]},
-  { id:"notes", label:"Notes", subtabs:[
-    { id:"templates",       label:"Clinical Note Templates" },
-    { id:"medInstructions", label:"Instructions" },
-    { id:"medNotes",        label:"Post op instructions" }
   ]},
   { id:"accounts", label:"Accounts", subtabs:[
     { id:"panels",       label:"Panels" },
