@@ -149,6 +149,25 @@ const TOOTH_REGIONS = [
   { label: "Q3", value: "Quadrant 3", hint: "Quadrant 3 \u2014 lower left (31\u201338)" },
   { label: "Q4", value: "Quadrant 4", hint: "Quadrant 4 \u2014 lower right (41\u201348)" }
 ];
+// How many units a claim line is worth, read off the teeth it names.
+//
+// "if we are adding more than one tooth in teeth number it should calculate
+//  number of units and put them in unit box but if it is arch, full mouth,
+//  Quadrant it should be counted as 1 unit."
+//
+// A crown on 16 and 26 is one code and two units. Scaling of a whole arch is
+// one unit however many teeth it covers -- the panel pays for the arch, not
+// for sixteen teeth -- and the same goes for a quadrant and for the full
+// mouth. A line that names no tooth at all, a consultation or an X-ray, is
+// one unit.
+function unitsFromTeeth(tooth) {
+  const t = String(tooth === undefined || tooth === null ? "" : tooth).trim();
+  if (!t) return 1;
+  if (TOOTH_REGIONS.some(r => r.value.toLowerCase() === t.toLowerCase())) return 1;
+  const teeth = t.split(",").map(x => x.trim()).filter(Boolean);
+  return teeth.length || 1;
+}
+
 const UPPER_T = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28];
 const LOWER_T = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38];
 // A bridge is a run of teeth, and the run has to follow the ARCH, not the
@@ -5904,21 +5923,26 @@ function TreatmentPlan({
       const have = String(r.tooth || "").split(",").map(x => x.trim()).filter(Boolean);
       const want = String(t);
       const next = have.indexOf(want) >= 0 ? have.filter(x => x !== want) : have.concat(want);
-      return { ...r, tooth: next.join(", ") };
+      const teeth = next.join(", ");
+      return { ...r, tooth: teeth, qty: unitsFromTeeth(teeth) };
     }));
     setSaved(false);
   };
   const endClickRange = (span) => {
     const at = endActive;
     if (at === null || at === undefined) return;
-    setTpRows(prev => prev.map((r, i) => i !== at ? r : { ...r, tooth: span.join(", ") }));
+    setTpRows(prev => prev.map((r, i) => i !== at ? r
+      : { ...r, tooth: span.join(", "), qty: unitsFromTeeth(span.join(", ")) }));
     setSaved(false);
   };
   const endClickRegion = (v) => {
     const at = endActive;
     if (at === null || at === undefined) return;
-    setTpRows(prev => prev.map((r, i) =>
-      i !== at ? r : { ...r, tooth: String(r.tooth || "").trim() === v ? "" : v }));
+    setTpRows(prev => prev.map((r, i) => {
+      if (i !== at) return r;
+      const teeth = String(r.tooth || "").trim() === v ? "" : v;
+      return { ...r, tooth: teeth, qty: unitsFromTeeth(teeth) };
+    }));
     setSaved(false);
   };
   const endRows = tpRows
@@ -6969,19 +6993,24 @@ function useEndorsementRecord(pat) {
       const have = String(r.tooth || "").split(",").map(x => x.trim()).filter(Boolean);
       const want = String(t);
       const next = have.indexOf(want) >= 0 ? have.filter(x => x !== want) : have.concat(want);
-      return { ...r, tooth: next.join(", ") };
+      const teeth = next.join(", ");
+      return { ...r, tooth: teeth, qty: unitsFromTeeth(teeth) };
     }));
     touch();
   };
   const onRange = (span) => {
     if (active === null || active === undefined) return;
-    setRows(prev => prev.map((r, i) => i !== active ? r : { ...r, tooth: span.join(", ") }));
+    setRows(prev => prev.map((r, i) => i !== active ? r
+      : { ...r, tooth: span.join(", "), qty: unitsFromTeeth(span.join(", ")) }));
     touch();
   };
   const onRegion = (v) => {
     if (active === null || active === undefined) return;
-    setRows(prev => prev.map((r, i) =>
-      i !== active ? r : { ...r, tooth: String(r.tooth || "").trim() === v ? "" : v }));
+    setRows(prev => prev.map((r, i) => {
+      if (i !== active) return r;
+      const teeth = String(r.tooth || "").trim() === v ? "" : v;
+      return { ...r, tooth: teeth, qty: unitsFromTeeth(teeth) };
+    }));
     touch();
   };
   const onAdd = () => {
@@ -7072,6 +7101,35 @@ function CghsRecords({ globalPat }) {
   const [stage, setStage] = React.useState("endorsement");
   const e = useEndorsementRecord(globalPat);
 
+  // globalPat is sometimes the whole registration and sometimes little more
+  // than a UHID and a name: the day sheet, a warning and half a dozen lists
+  // all set it from whatever they had to hand. The bill has to print the
+  // beneficiary's ADDRESS, which only the registration holds, so the record
+  // is topped up here -- once per patient, for all three stages -- rather
+  // than depending on which screen the patient was opened from.
+  const [full, setFull] = React.useState(null);
+  React.useEffect(() => {
+    setFull(null);
+    const uhid = globalPat && globalPat.uhid;
+    if (!uhid) return;
+    let dropped = false;
+    api("getPatient", { uhid }).then(res => {
+      if (!dropped && res && res.success && res.patient) setFull(res.patient);
+    }).catch(() => {});
+    return () => { dropped = true; };
+  }, [globalPat && globalPat.uhid]);
+  // The register wins wherever it actually holds something, and nowhere else:
+  // a blank from it must not wipe a name the search screen already had.
+  const pat = React.useMemo(() => {
+    if (!full) return globalPat;
+    const out = { ...globalPat };
+    Object.keys(full).forEach(k => {
+      const v = full[k];
+      if (v !== undefined && v !== null && String(v).trim() !== "") out[k] = v;
+    });
+    return out;
+  }, [full, globalPat]);
+
   if (!globalPat || !globalPat.uhid) {
     return React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`,
       borderRadius:10, padding:28, textAlign:"center", color:"#444444", fontSize:14 } },
@@ -7117,10 +7175,10 @@ function CghsRecords({ globalPat }) {
       onPreview: () => {}, onPrint: () => {}
     }),
     stage === "prescription" && (e.approved.length
-      ? React.createElement(CghsPrescription, { pat: globalPat, lines: e.approved })
+      ? React.createElement(CghsPrescription, { pat: pat, lines: e.approved })
       : nothingEndorsed),
     stage === "bill" && (e.approved.length
-      ? React.createElement(CghsBill, { pat: globalPat, panel: e.panel, card: e.card,
+      ? React.createElement(CghsBill, { pat: pat, panel: e.panel, card: e.card,
           holder: e.holder, lines: e.approved })
       : nothingEndorsed)
   );
@@ -7274,6 +7332,9 @@ function CghsBill({ pat, panel, card, holder, lines }) {
       const res = await api("saveCghsBill", {
         uhid: pat.uhid, patientName: pat.name || "", billDate: date,
         panel: panel || "", cardId: card || "", panelCategory: holder || "",
+        // Kept with the bill. A patient who moves house must not change a
+        // bill that has already gone to the panel.
+        address: pat.address || pat.Address || "",
         amount: total,
         lines: JSON.stringify(lines.map(x => ({
           code: x.code, procedure: x.r.procedure || (x.card && x.card.procedure) || "",
@@ -32147,6 +32208,7 @@ function FinanceCghsBillsTab({ globalPat }) {
       `<div class="dtitle">Bill</div><div class="g2">` +
         kv("Bill No.", b.billNo) + kv("Bill Date", fmtDMY(b.billDate) || b.billDate) +
         kv("Patient", b.patientName) + kv("Registration No", b.cardId) +
+        kv("Address", b.address || "") +
         kv("UHID", b.uhid) + kv("Panel Category", b.panelCategory) +
         kv("Panel", b.panel) +
       `</div><table><thead><tr><th style="width:6%" class="c">Sn</th>` +

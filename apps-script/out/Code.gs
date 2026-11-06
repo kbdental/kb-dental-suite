@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-06b";
+var BACKEND_BUILD = "2026-11-06c";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -2173,7 +2173,12 @@ function saveTreatmentPlan(p) {
 // same moment would otherwise both be told "0001".
 var CGHS_BILLS_SHEET = "CGHS Bills";
 var CGHS_BILL_HEADERS = ["Bill No", "Bill Date", "UHID", "Patient", "Panel",
-                         "Card ID", "Panel Category", "Amount", "Lines", "Saved At"];
+                         "Card ID", "Panel Category", "Amount", "Lines", "Saved At",
+                         // The panel wants the beneficiary's address on the
+                         // bill. Kept with the bill rather than looked up at
+                         // reprint time, because a patient who moves house
+                         // must not change a bill that was already submitted.
+                         "Address"];
 
 // The series runs per month and is taken from the BILL's date, not from
 // today: a bill written on the 2nd for work done in the previous month
@@ -2204,6 +2209,13 @@ function saveCghsBill(p) {
   try {
     var sh = getSheet(CGHS_BILLS_SHEET);
     if (sh.getLastRow() === 0) sh.appendRow(CGHS_BILL_HEADERS);
+    // A sheet written by an earlier build is one column short. Its heading
+    // is added rather than assumed, or the address would be written into
+    // nothing -- the same silent loss the registers had.
+    else if (sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].length < CGHS_BILL_HEADERS.length) {
+      ensureGridWidth_(sh, CGHS_BILL_HEADERS.length);
+      sh.getRange(1, 1, 1, CGHS_BILL_HEADERS.length).setValues([CGHS_BILL_HEADERS]);
+    }
     var data = sh.getDataRange().getValues();
 
     var prefix = cghsBillPrefix_(p.billDate);
@@ -2220,7 +2232,7 @@ function saveCghsBill(p) {
     sh.appendRow([
       billNo, p.billDate || "", uhid, p.patientName || "", p.panel || "",
       p.cardId || "", p.panelCategory || "", Number(p.amount) || 0,
-      safeJSON(p.lines), new Date().toISOString()
+      safeJSON(p.lines), new Date().toISOString(), p.address || ""
     ]);
     return { success: true, billNo: billNo };
   } catch (e) {
@@ -2228,6 +2240,22 @@ function saveCghsBill(p) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// The address on file for a patient, for a bill that was written before the
+// address was kept with it. regAllRows_ is memoised per request, so asking
+// for a page of bills costs one read of the register, not one per bill.
+function regAddressFor_(uhid) {
+  var want = String(uhid || "").trim().toUpperCase();
+  if (!want) return "";
+  var data = regAllRows_();
+  if (!data || data.length <= 1) return "";
+  var uhidCol = findRegColumn_(data[0], ["UHID", "Registration ID"]);
+  var addrCol = findRegColumn_(data[0], ["Complete Address", "Address"]);
+  if (uhidCol < 0 || addrCol < 0) return "";
+  var latest = regLatestByUhid_(data, uhidCol);
+  var hit = latest[want];
+  return hit ? String(data[hit.row][addrCol] || "").trim() : "";
 }
 
 // Every CGHS bill, or one patient's. The front desk searches by UHID; the
@@ -2246,7 +2274,12 @@ function getCghsBills(p) {
       uhid: String(data[i][2] || ""), patientName: String(data[i][3] || ""),
       panel: String(data[i][4] || ""), cardId: String(data[i][5] || ""),
       panelCategory: String(data[i][6] || ""), amount: Number(data[i][7]) || 0,
-      lines: safeParseJSON(data[i][8]), savedAt: String(data[i][9] || "")
+      lines: safeParseJSON(data[i][8]), savedAt: String(data[i][9] || ""),
+      // Bills written before the address was kept have none. Rather than
+      // reprinting them with a blank line, the register is asked -- the
+      // address on file today is better than nothing at all, and the
+      // register is already in memory for this request.
+      address: String(data[i][10] || "") || regAddressFor_(String(data[i][2] || ""))
     });
   }
   out.reverse();
