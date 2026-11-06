@@ -24,14 +24,17 @@ function extractForms() {
 }
 
 
-// The categories the parent filters by, matching the FORMS list in index.html.
+// The categories the parent filters by. They are CHECKED against index.html
+// below rather than only claiming to match it: the departments were renamed
+// once already, and a fixture that quietly disagrees with the page tests a
+// filter nobody is using.
 const FORMS = {
-  RCT_FORM_B64:            { cat: 'RCT',                notes: 'n4'  },
+  RCT_FORM_B64:            { cat: 'RCT / Endodontics',  notes: 'n4'  },
   IMP_SURGERY_B64:         { cat: 'Implant Surgery',    notes: null  },
   IMP_PROSTHETIC_B64:      { cat: 'Implant Prosthetic', notes: null  },
   CROWN_BRIDGE_B64:        { cat: 'Crown & Bridge',     notes: 'n3'  },
   RESTORATION_FORM_B64:    { cat: 'Restoration',        notes: 'n4'  },
-  MINORSURGERY_FORM_B64:   { cat: 'Minor Surgery',      notes: null  },
+  MINORSURGERY_FORM_B64:   { cat: 'Minor Oral Surgery', notes: null  },
   PATHOLOGY_FORM_B64:      { cat: 'Diagnostic',         notes: 'remarks' },
   RADIOLOGY_FORM_B64:      { cat: 'Diagnostic',         notes: 'remarks' },
   RADIOGRAPH_FORM_B64:     { cat: 'Diagnostic',         notes: 'remarks' },
@@ -39,7 +42,7 @@ const FORMS = {
   SCALING_FORM_B64:        { cat: 'Periodontics',       notes: 'remarks' },
   ORTHODONTICS_FORM_B64:   { cat: 'Orthodontics',       notes: 'remarks' },
   ORTHOPROGRESS_FORM_B64:  { cat: 'Orthodontics',       notes: 'notes'   },
-  DENTURE_FORM_B64:        { cat: 'Prosthodontics',     notes: 'remarks' },
+  DENTURE_FORM_B64:        { cat: 'Denture',            notes: 'remarks' },
   PEDO_FORM_B64:           { cat: 'Pedodontics',        notes: 'remarks' },
   TMJOINT_FORM_B64:        { cat: '*',                  notes: 'remarks' },
   LOCALANESTHESIA_FORM_B64:{ cat: '*',                  notes: 'remarks' },
@@ -49,18 +52,43 @@ const FORMS = {
 // A stand-in for Master → Clinical Note Templates, one per category plus a
 // token-bearing one to prove placeholder substitution works.
 const ALL_TEMPLATES = [
-  { situation: 'RCT Access',        text: 'Access opening done wrt {tooth}.',            category: 'RCT' },
+  { situation: 'RCT Access',        text: 'Access opening done wrt {tooth}.',            category: 'RCT / Endodontics' },
   { situation: 'Implant Placed',    text: 'Implant placed at {tooth}.',                  category: 'Implant Surgery' },
   { situation: 'Crown Cemented',    text: 'Crown cemented wrt {tooth} using {cement}.',  category: 'Implant Prosthetic' },
   { situation: 'Bridge Prep',       text: 'Bridge preparation wrt {tooth}.',             category: 'Crown & Bridge' },
   { situation: 'Composite',         text: 'Composite restoration wrt {tooth}.',          category: 'Restoration' },
-  { situation: 'Extraction',        text: 'Extraction done wrt {tooth}.',                category: 'Minor Surgery' },
+  { situation: 'Extraction',        text: 'Extraction done wrt {tooth}.',                category: 'Minor Oral Surgery' },
   { situation: 'Test Advised',      text: 'Test advised for {tooth}, sample sent.',      category: 'Diagnostic' },
   { situation: 'Scaling Done',      text: 'Full mouth scaling completed, {grade} calculus.', category: 'Periodontics' },
   { situation: 'Archwire Change',   text: 'Archwire changed to {size}.',                 category: 'Orthodontics' },
-  { situation: 'Denture Try-in',    text: 'Try-in done, occlusion verified.',            category: 'Prosthodontics' },
+  { situation: 'Denture Try-in',    text: 'Try-in done, occlusion verified.',            category: 'Denture' },
   { situation: 'Pulpotomy',         text: 'Pulpotomy done wrt {tooth}, {medicament} placed.', category: 'Pedodontics' },
 ];
+
+// Every form's category here must be the one the page declares, or this
+// whole suite is exercising a filter the clinic never sees.
+let wrong = [];
+{
+  const page = fs.readFileSync(path.join(REPO, 'index.html'), 'utf8');
+  const block = page.slice(page.indexOf('{ id:"rct",'), page.indexOf('{ id:"labLog",') + 500);
+  const declared = {};
+  const re = /id:"(\w+)"[^\n]*?templateCategory:"([^"]*)"/g;
+  let m;
+  while ((m = re.exec(block))) declared[m[1]] = m[2];
+  const BY_FORM = {
+    RCT_FORM_B64: 'rct', IMP_SURGERY_B64: 'imp_surgery', IMP_PROSTHETIC_B64: 'imp_prosth',
+    CROWN_BRIDGE_B64: 'crown', RESTORATION_FORM_B64: 'restoration',
+    MINORSURGERY_FORM_B64: 'minorSurgery', PATHOLOGY_FORM_B64: 'pathology',
+    RADIOLOGY_FORM_B64: 'radiology', RADIOGRAPH_FORM_B64: 'radiograph',
+    INTRAORAL_FORM_B64: 'intraOral', SCALING_FORM_B64: 'scaling',
+    ORTHODONTICS_FORM_B64: 'orthodontics', ORTHOPROGRESS_FORM_B64: 'orthoProgress',
+    DENTURE_FORM_B64: 'denture', PEDO_FORM_B64: 'pedo', TMJOINT_FORM_B64: 'tmJoint',
+    LOCALANESTHESIA_FORM_B64: 'localAnesthesia', LABLOG_FORM_B64: 'labLog'
+  };
+  wrong = Object.keys(BY_FORM)
+    .filter(k => declared[BY_FORM[k]] !== FORMS[k].cat)
+    .map(k => k + ': page says ' + declared[BY_FORM[k]] + ', here ' + FORMS[k].cat);
+}
 
 function expectedFor(cat) {
   return cat === '*' ? ALL_TEMPLATES : ALL_TEMPLATES.filter(t => t.category === cat);
@@ -195,6 +223,16 @@ function expectedFor(cat) {
   console.log('WORK DONE TEMPLATE DROPDOWN — FUNCTIONAL TEST');
   console.log('='.repeat(100));
   let pass = 0, fail = 0;
+  // The fixture above has to agree with the page, or every row below is
+  // exercising a filter the clinic never sees.
+  if (wrong.length) {
+    fail++;
+    console.log('  FAIL  the categories here are not the ones index.html declares');
+    wrong.forEach(w => console.log('          ' + w));
+  } else {
+    pass++;
+    console.log('  PASS  every category here is the one index.html declares');
+  }
   for (const r of results) {
     const ok = r.status === 'PASS';
     ok ? pass++ : fail++;
