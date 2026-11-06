@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-06f";
+var BACKEND_BUILD = "2026-11-06g";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -5812,6 +5812,31 @@ function saveChairsList(p) {
 var CLINICAL_TPL_SHEET = "Clinical Note Templates";
 var CLINICAL_TPL_HEADERS = ["Situation", "Template Text", "Category", "Updated At", "v2"];
 
+// Three departments were renamed to the names the rest of the clinic uses.
+// A sheet seeded before that still carries the old ones, and those headings
+// are no longer offered by the editor -- so a note under one of them could
+// be read but never filed again. The cells are corrected on read rather
+// than left for somebody to find.
+var CLINICAL_TPL_RENAMES = {
+  "RCT / Endodontics": "RCT",
+  "Minor Oral Surgery": "Minor Surgery",
+  "Denture": "Prosthodontics"
+};
+
+// Idempotent by construction: once rewritten nothing matches, so the next
+// read does no work and writes nothing.
+function clinicalTplFixCategories_(sh) {
+  if (sh.getLastRow() < 2) return;
+  var col = 3;
+  var rows = sh.getRange(2, col, sh.getLastRow() - 1, 1).getValues();
+  var touched = false;
+  for (var i = 0; i < rows.length; i++) {
+    var was = String(rows[i][0] || "").trim();
+    if (CLINICAL_TPL_RENAMES.hasOwnProperty(was)) { rows[i][0] = CLINICAL_TPL_RENAMES[was]; touched = true; }
+  }
+  if (touched) sh.getRange(2, col, rows.length, 1).setValues(rows);
+}
+
 function clinicalTplIsCurrent_(sh) {
   if (!sh || sh.getLastRow() === 0) return false;
   var head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
@@ -5863,6 +5888,7 @@ function getClinicalNoteTemplates() {
       sh.getRange(2, 1, block.length, CLINICAL_TPL_HEADERS.length).setValues(block);
     }
   }
+  clinicalTplFixCategories_(sh);
   var data = sh.getDataRange().getValues();
   var items = [];
   for (var i = 1; i < data.length; i++) {
@@ -5929,25 +5955,25 @@ var CLINICAL_NOTE_SEED = [
   ["Crown & Bridge", "Crown / FPD- recementation", "Dislodged Crown / FPD wrt {tooth} placed again with {cement}. Occlusion checked and adjusted."],
   ["Crown & Bridge", "Crown/FPD/Provisional Removal", "(Material) Crown/FPD wrt {tooth} sectioned and removed for {reason}."],
   ["Crown & Bridge", "Crown- Cord packed", "Retraction cord packed wrt {tooth} prior to {nextStep} for {crownType} crown."],
-  ["Denture", "Denture - Adjustment", "Denture adjustment done wrt {arch} for {complaint}. Advised to do phonetics exercise and also start chewing roasted chick peas and apple."],
-  ["Denture", "Denture - Border Moulding", "Border moulding done wrt {arch} using green stick compound, final impression recorded with {material}, using custom tray"],
-  ["Denture", "Denture - Cast Partial", "Cast partial framework try-in done wrt {arch}, fit and clasp adaptation verified."],
-  ["Denture", "Denture - Insertion", "Denture complete/partial insertion done wrt {arch}, fit, retention and bite verified, post-insertion instructions explained."],
-  ["Denture", "Denture - Final impression", "Final impression made wrt {arch} using {material} for denture fabrication, sent to lab."],
-  ["Denture", "Denture - Fixed Implant Supported", "Fixed implant-supported prosthesis wrt {arch} inserted at T={torque} Ncm, screw access sealed with {material}."],
-  ["Denture", "Denture - Jaw Relation", "Jaw relation recorded wrt {arch} using bite rim, vertical & centric relation established."],
-  ["Denture", "Denture - Relining", "Denture relining done for {arch} denture using {material}."],
-  ["Denture", "Denture - Repair", "Denture repair done for {arch} - {damage} repaired and polished/ OR sent to lab after removal"],
-  ["Denture", "Denture - RPD Acrylic/Flexible", "{material} RPD final impression recorded wrt {arch} with heavy & light body in custom / stock tray"],
-  ["Denture", "Denture - Teeth Trial", "Denture teeth trial done wrt {arch}, esthetics, phonetics and bite verified with patient."],
-  ["Denture", "Denture - Telescope", "Telescopic denture coping/component fitted wrt {arch}, retention and fit verified."],
-  ["Denture", "Denture- Preliminary impression", "Preliminary impression made wrt (arch) using (material) for primary cast fabrication."],
+  ["Prosthodontics", "Denture - Adjustment", "Denture adjustment done wrt {arch} for {complaint}. Advised to do phonetics exercise and also start chewing roasted chick peas and apple."],
+  ["Prosthodontics", "Denture - Border Moulding", "Border moulding done wrt {arch} using green stick compound, final impression recorded with {material}, using custom tray"],
+  ["Prosthodontics", "Denture - Cast Partial", "Cast partial framework try-in done wrt {arch}, fit and clasp adaptation verified."],
+  ["Prosthodontics", "Denture - Insertion", "Denture complete/partial insertion done wrt {arch}, fit, retention and bite verified, post-insertion instructions explained."],
+  ["Prosthodontics", "Denture - Final impression", "Final impression made wrt {arch} using {material} for denture fabrication, sent to lab."],
+  ["Prosthodontics", "Denture - Fixed Implant Supported", "Fixed implant-supported prosthesis wrt {arch} inserted at T={torque} Ncm, screw access sealed with {material}."],
+  ["Prosthodontics", "Denture - Jaw Relation", "Jaw relation recorded wrt {arch} using bite rim, vertical & centric relation established."],
+  ["Prosthodontics", "Denture - Relining", "Denture relining done for {arch} denture using {material}."],
+  ["Prosthodontics", "Denture - Repair", "Denture repair done for {arch} - {damage} repaired and polished/ OR sent to lab after removal"],
+  ["Prosthodontics", "Denture - RPD Acrylic/Flexible", "{material} RPD final impression recorded wrt {arch} with heavy & light body in custom / stock tray"],
+  ["Prosthodontics", "Denture - Teeth Trial", "Denture teeth trial done wrt {arch}, esthetics, phonetics and bite verified with patient."],
+  ["Prosthodontics", "Denture - Telescope", "Telescopic denture coping/component fitted wrt {arch}, retention and fit verified."],
+  ["Prosthodontics", "Denture- Preliminary impression", "Preliminary impression made wrt (arch) using (material) for primary cast fabrication."],
   ["Diagnostic", "Diagnostic - Digital Scan", "Digital scan recorded with {scannerType} for {purpose}/treatment planning discussion."],
   ["Diagnostic", "Diagnostic - Impression", "Diagnostic impression recorded wrt {arch} using {material} for treatment planning/study cast or to fabricate special tray."],
-  ["Minor Oral Surgery", "Extraction", "Atraumatic extraction done under LA wrt {tooth}. Hemostasis achieved, post-op instructions given."],
-  ["Minor Oral Surgery", "Extraction", "Surgical extraction with periapical curettage, periapical granuloma curetted."],
-  ["Minor Oral Surgery", "Extraction + Immediate Implant Placement", "Extraction done wrt {tooth} periapical curettage followed by immediate implant placement ({brand}, {size}) at T={torque} Ncm, {coverType} placed."],
-  ["Minor Oral Surgery", "Extraction - Complicated", "Surgical extraction with {flapType} flap done wrt {tooth}, bone edges smoothened, socket irrigated with saline+betadine, autogenous bone packed and sutures placed."],
+  ["Minor Surgery", "Extraction", "Atraumatic extraction done under LA wrt {tooth}. Hemostasis achieved, post-op instructions given."],
+  ["Minor Surgery", "Extraction", "Surgical extraction with periapical curettage, periapical granuloma curetted."],
+  ["Minor Surgery", "Extraction + Immediate Implant Placement", "Extraction done wrt {tooth} periapical curettage followed by immediate implant placement ({brand}, {size}) at T={torque} Ncm, {coverType} placed."],
+  ["Minor Surgery", "Extraction - Complicated", "Surgical extraction with {flapType} flap done wrt {tooth}, bone edges smoothened, socket irrigated with saline+betadine, autogenous bone packed and sutures placed."],
   ["Restoration", "Finishing & Polishing", "Finishing and polishing done wrt {tooth}, post-restorative instructions given."],
   ["Crown & Bridge", "FMR - Teeth Final Crown", "Final {material} crowns delivered as part of Full Mouth Rehabilitation wrt {arch}, bite verified at raised vertical dimension."],
   ["Crown & Bridge", "FMR - Trial final crown", "Final crown trial done for Full Mouth Rehabilitation wrt {arch}, esthetics and bite verified with patient."],
@@ -5963,8 +5989,8 @@ var CLINICAL_NOTE_SEED = [
   ["Crown & Bridge", "FPD - Removal", "Existing (material) FPD sectioned and removed wrt {tooth} for {reason}."],
   ["Crown & Bridge", "FPD - Trial", "Try-in of {material} FPD done wrt {tooth}, shade and fit verified with patient."],
   ["Crown & Bridge", "FPD/Bridge - cementation", "{unitCount}-unit bridge ({material}) placed wrt {tooth} with {cement}. Bite checked and adjusted. IOPA made."],
-  ["Minor Oral Surgery", "Fractured teeth", "Fractured tooth wrt {tooth} evaluated - {finding} noted, {treatment} advised."],
-  ["Minor Oral Surgery", "Frenectomy", "{frenumType} frenectomy done, sutures placed, post-op instructions explained."],
+  ["Minor Surgery", "Fractured teeth", "Fractured tooth wrt {tooth} evaluated - {finding} noted, {treatment} advised."],
+  ["Minor Surgery", "Frenectomy", "{frenumType} frenectomy done, sutures placed, post-op instructions explained."],
   ["Implant Surgery", "Implant", "Implant ({brand}, {size}) placed wrt {tooth}. Primary stability achieved, at T= ( ) Ncm {coverType} and, sutures placed."],
   ["Implant Surgery", "Implant Explantation", "Implant wrt {tooth} explanted due to {reason}, site curetted and bone graft and membrane secured with sutures."],
   ["Implant Surgery", "Implant Healing Abutment", "Cover screw removed and healing abutment placed wrt implant placed in {tooth} region."],
@@ -5978,7 +6004,7 @@ var CLINICAL_NOTE_SEED = [
   ["Implant Prosthetic", "Implant Prosthesis - Zig Trial", "H.A. removed, verification jig (zig) trial done wrt {tooth} with {sleeveType} sleeves to confirm implant position accuracy."],
   ["Implant Prosthetic", "Implant Prosthesis- Removal", "Implant prosthesis removed wrt {tooth} due to {reason} - screw removed, {action} done."],
   ["Implant Surgery", "Implant Screw Retrieval", "Loose/fractured implant screw retrieved wrt implant, {action} done, new screw torqued to {torque} Ncm."],
-  ["Minor Oral Surgery", "Incision & Drainage Abscess", "Incision and drainage done wrt {tooth} for {condition}, dressing applied"],
+  ["Minor Surgery", "Incision & Drainage Abscess", "Incision and drainage done wrt {tooth} for {condition}, dressing applied"],
   ["Restoration", "Indirect Restoration - Inlay/Onlay", "{material} inlay/onlay bonded wrt {tooth} with {cement}, occlusal adjustments done."],
   ["Diagnostic", "Intraoral & Extraoral Mid Pics", "Intraoral & extraoral mid-treatment photographs taken for {procedure} documentation."],
   ["Diagnostic", "Intraoral & Extraoral Post Pics", "Intraoral & extraoral post-treatment photographs taken for {procedure} documentation."],
@@ -5994,11 +6020,11 @@ var CLINICAL_NOTE_SEED = [
   ["Orthodontics", "Invisalign Palatal Expander", "Palatal expander delivered/activated wrt {arch}, {turns} turns done, next activation scheduled on (date)."],
   ["Orthodontics", "Invisalign Refinement Scan", "Refinement digital scan recorded with {scanner} for additional Invisalign aligners."],
   ["Diagnostic", "IOPA", "IOPA taken wrt {tooth} for {reason}."],
-  ["Minor Oral Surgery", "L.A. - Infiltration/Block", "Local anaesthesia ({anaestheticType} with adrenaline {concentration}) administered as {technique} wrt {tooth}. For {Treatment}."],
-  ["Minor Oral Surgery", "L.A. - Test Dose", "LA with adrenaline 1:80,000 administered as test dose and infilteration for (__ process)."],
-  ["Minor Oral Surgery", "Laser - Excision", "Laser-assisted excision of {lesionType with size} done at {location}, tissue sent for {disposition/biopsy}."],
-  ["Minor Oral Surgery", "Laser - LLLT", "Low-Level Laser Therapy (LLLT) done wrt {site} for {indication}."],
-  ["Minor Oral Surgery", "LASER- Flap Surgery", "Laser-assisted flap surgery done wrt {site}, {procedure} completed, irrigated with {irrigant}."],
+  ["Minor Surgery", "L.A. - Infiltration/Block", "Local anaesthesia ({anaestheticType} with adrenaline {concentration}) administered as {technique} wrt {tooth}. For {Treatment}."],
+  ["Minor Surgery", "L.A. - Test Dose", "LA with adrenaline 1:80,000 administered as test dose and infilteration for (__ process)."],
+  ["Minor Surgery", "Laser - Excision", "Laser-assisted excision of {lesionType with size} done at {location}, tissue sent for {disposition/biopsy}."],
+  ["Minor Surgery", "Laser - LLLT", "Low-Level Laser Therapy (LLLT) done wrt {site} for {indication}."],
+  ["Minor Surgery", "LASER- Flap Surgery", "Laser-assisted flap surgery done wrt {site}, {procedure} completed, irrigated with {irrigant}."],
   ["Crown & Bridge", "Occlusal Adjustment", "Occlusal adjustment done wrt {tooth} on {prosthesisType}, high points relieved and verified with articulating paper."],
   ["Crown & Bridge", "Occlusal Adjustment - Contacts Relieved", "Occlusal contacts relieved wrt {tooth}, patient advised warm saline rinses thrice daily."],
   ["TMJ / Occlusion", "Occlusal Balancing - T-Scan", "T-Scan assisted occlusal equilibration done in multibite, Left and right lateral excursive and protrusive movements recorded."],
@@ -6030,54 +6056,54 @@ var CLINICAL_NOTE_SEED = [
   ["Periodontics", "Perio - Subgingival Curettage", "Gingival abscess curetted (medication) applied."],
   ["Periodontics", "Perio - Periodontitis/Perio Pockets", "Periodontal examination done wrt {quadrant} - pocket depths recorded size treatment plan discussed."],
   ["General / Consultation", "Pre Surgical Monitoring", "Pre-surgical monitoring done for {procedure} - parameter soft & hard ---reviewed."],
-  ["RCT / Endodontics", "Pulp Capping - Direct", "Direct pulp capping done wrt {tooth} using {material}, followed by restoration."],
-  ["RCT / Endodontics", "Pulp Capping - Indirect", "Indirect pulp capping done wrt {tooth} using {material}, followed by restoration."],
-  ["RCT / Endodontics", "RCT", "Root canal treatment done wrt {tooth} - {stage} stage completed this visit."],
-  ["RCT / Endodontics", "RCT - Apicoectomy", "Apicoectomy done wrt {tooth} - flap elevated, periapical lesion curetted, root end resected and sealed with {material}."],
-  ["RCT / Endodontics", "RCT - BMP", "BMP in single canal (L-Size) with 3% NaOCl + EDTA 5 times for 1 min each. Canals dried & Apex cal dressing done"],
-  ["RCT / Endodontics", "RCT - BMP", "BMP in 2 canals merging to single apex, B= (L-Size) P= (L-Size), Irrigated with 3% NaOCl+EDTA 5 times for 1min each. Closed dressing placed."],
-  ["RCT / Endodontics", "RCT - BMP", "BMP in 3 canals,MB= (L-Size) & ML= (L-Size) & D= (L-Size) with 3% NaOCl + EDTA 5 mins for 1 min each. Canals dried & Calcipex dressing with IOPA"],
-  ["RCT / Endodontics", "RCT - BMP", "BMP in 4 canals,DB= (L-Size) & DL= (L-Size),MB= (L-Size),ML= (L-Size) with 3% NaOCl+EDTA 5 times for 1 min each. Canals dried & Calcipex dressing with IOPA"],
-  ["RCT / Endodontics", "RCT - Complex", "Complex RCT - old GP removed, (BMP completed/ dressing placed) with provisional restoration."],
-  ["RCT / Endodontics", "RCT - Composite Restoration", "Post-endodontic composite restoration done wrt {tooth} using {material}, GIC +Composite, bite adjusted. IOPA made."],
-  ["RCT / Endodontics", "RCT - Obturation", "Provisional rest removed, Obturation done in 4/3/2/1 canals ML= (L-Size), MB=(L-Size), DB= (L-Size), DL= (L-Size), D= (L-Size), P= (L-Size) with endomethasone, IOPA made."],
-  ["RCT / Endodontics", "RCT - Open", "Pulp extripated, working length determined, (no. of canals) located"],
-  ["RCT / Endodontics", "RCT - Post & core build up", "Fractured tooth, Automatrice with rubberdam placed, Post and Core build up done with multicore and composite. Using - Fiberpost. IOPA done wrt # (tooth no)."],
-  ["RCT / Endodontics", "RCT - Redo Open", "Retreatment of previously endodontically treated tooth - initiated, old obturation removed, canals re-instrumented."],
-  ["RCT / Endodontics", "RCT - Redo BMP", "BMP in single canal (L-Size) with 3% NaOCl + EDTA 5 times for 1 min each. Canals dried & Apex cal dressing done"],
-  ["RCT / Endodontics", "RCT - Redo BMP", "BMP in 2 canals merging to single apex, B= (L-Size) P= (L-Size), Irrigated with 3% NaOCl+EDTA 5 times for 1min each. Closed dressing placed."],
-  ["RCT / Endodontics", "RCT - Redo BMP", "BMP in 3 canals,MB= (L-Size) & ML= (L-Size) & D= (L-Size) with 3% NaOCl + EDTA 5 mins for 1 min each. Canals dried & Calcipex dressing with IOPA"],
-  ["RCT / Endodontics", "RCT - Redo BMP", "BMP in 4 canals,DB= (L-Size) & DL= (L-Size),MB= (L-Size),ML= (L-Size) with 3% NaOCl+EDTA 5 times for 1 min each. Canals dried & Calcipex dressing with IOPA"],
-  ["RCT / Endodontics", "RCT - Redo Obturation", "Provisional rest removed, Obturation done in 4/3/2/1 canals ML= (L-Size), MB=(L-Size), DB= (L-Size), DL= (L-Size), D= (L-Size), P= (L-Size) with endomethasone, IOPA made."],
-  ["RCT / Endodontics", "RCT - Rotary + Laser", "Laser-assisted rotary RCT done wrt {tooth} - canals instrumented, laser disinfection done, using (dye name)."],
-  ["RCT / Endodontics", "RCT - Single Visit", "Single visit LASER assisted RCT done with (canal) (size) using endomethasone."],
-  ["RCT / Endodontics", "RCT- Instrument BYPASS", "Instrument separation noted during {step} wrt {canal}. Patient informed and consent taken, instrument Bypass done & BMP completed."],
+  ["RCT", "Pulp Capping - Direct", "Direct pulp capping done wrt {tooth} using {material}, followed by restoration."],
+  ["RCT", "Pulp Capping - Indirect", "Indirect pulp capping done wrt {tooth} using {material}, followed by restoration."],
+  ["RCT", "RCT", "Root canal treatment done wrt {tooth} - {stage} stage completed this visit."],
+  ["RCT", "RCT - Apicoectomy", "Apicoectomy done wrt {tooth} - flap elevated, periapical lesion curetted, root end resected and sealed with {material}."],
+  ["RCT", "RCT - BMP", "BMP in single canal (L-Size) with 3% NaOCl + EDTA 5 times for 1 min each. Canals dried & Apex cal dressing done"],
+  ["RCT", "RCT - BMP", "BMP in 2 canals merging to single apex, B= (L-Size) P= (L-Size), Irrigated with 3% NaOCl+EDTA 5 times for 1min each. Closed dressing placed."],
+  ["RCT", "RCT - BMP", "BMP in 3 canals,MB= (L-Size) & ML= (L-Size) & D= (L-Size) with 3% NaOCl + EDTA 5 mins for 1 min each. Canals dried & Calcipex dressing with IOPA"],
+  ["RCT", "RCT - BMP", "BMP in 4 canals,DB= (L-Size) & DL= (L-Size),MB= (L-Size),ML= (L-Size) with 3% NaOCl+EDTA 5 times for 1 min each. Canals dried & Calcipex dressing with IOPA"],
+  ["RCT", "RCT - Complex", "Complex RCT - old GP removed, (BMP completed/ dressing placed) with provisional restoration."],
+  ["RCT", "RCT - Composite Restoration", "Post-endodontic composite restoration done wrt {tooth} using {material}, GIC +Composite, bite adjusted. IOPA made."],
+  ["RCT", "RCT - Obturation", "Provisional rest removed, Obturation done in 4/3/2/1 canals ML= (L-Size), MB=(L-Size), DB= (L-Size), DL= (L-Size), D= (L-Size), P= (L-Size) with endomethasone, IOPA made."],
+  ["RCT", "RCT - Open", "Pulp extripated, working length determined, (no. of canals) located"],
+  ["RCT", "RCT - Post & core build up", "Fractured tooth, Automatrice with rubberdam placed, Post and Core build up done with multicore and composite. Using - Fiberpost. IOPA done wrt # (tooth no)."],
+  ["RCT", "RCT - Redo Open", "Retreatment of previously endodontically treated tooth - initiated, old obturation removed, canals re-instrumented."],
+  ["RCT", "RCT - Redo BMP", "BMP in single canal (L-Size) with 3% NaOCl + EDTA 5 times for 1 min each. Canals dried & Apex cal dressing done"],
+  ["RCT", "RCT - Redo BMP", "BMP in 2 canals merging to single apex, B= (L-Size) P= (L-Size), Irrigated with 3% NaOCl+EDTA 5 times for 1min each. Closed dressing placed."],
+  ["RCT", "RCT - Redo BMP", "BMP in 3 canals,MB= (L-Size) & ML= (L-Size) & D= (L-Size) with 3% NaOCl + EDTA 5 mins for 1 min each. Canals dried & Calcipex dressing with IOPA"],
+  ["RCT", "RCT - Redo BMP", "BMP in 4 canals,DB= (L-Size) & DL= (L-Size),MB= (L-Size),ML= (L-Size) with 3% NaOCl+EDTA 5 times for 1 min each. Canals dried & Calcipex dressing with IOPA"],
+  ["RCT", "RCT - Redo Obturation", "Provisional rest removed, Obturation done in 4/3/2/1 canals ML= (L-Size), MB=(L-Size), DB= (L-Size), DL= (L-Size), D= (L-Size), P= (L-Size) with endomethasone, IOPA made."],
+  ["RCT", "RCT - Rotary + Laser", "Laser-assisted rotary RCT done wrt {tooth} - canals instrumented, laser disinfection done, using (dye name)."],
+  ["RCT", "RCT - Single Visit", "Single visit LASER assisted RCT done with (canal) (size) using endomethasone."],
+  ["RCT", "RCT- Instrument BYPASS", "Instrument separation noted during {step} wrt {canal}. Patient informed and consent taken, instrument Bypass done & BMP completed."],
   ["Periodontics", "Perio - Regenerative Periodontal therapy", "Regenerative periodontal therapy done wrt {tooth} - {material} applied following flap debridement and root surface preparation to promote periodontal regeneration and soft tissue healing."],
   ["Restoration", "Restoration - Composite", "Old Provisional restoration removed, caries excavated, Tooth prepared, etched and bond applied, Flowable / Packable Genial Composite restoration done under isolation using auito-matrix"],
   ["Restoration", "Restoration - Composite C.A", "Cervical abfraction wrt {tooth} restored with {material} composite, finishing and polishing completed."],
   ["Restoration", "Restoration - GIC", "Caries excavated (material) restoration done wrt {tooth} as {material} restoration under rubber dam isolation, bite adjustments done."],
   ["Restoration", "Restoration - Provisional", "Deep caries excavated provisional restoration done wrt {tooth} with {material}, Advised RCT."],
-  ["Denture", "RPD insertion", "Removable partial denture ({type}) delivered wrt {arch}, clasps/attachments checked for fit, occlusal adjustment done."],
-  ["Denture", "RPD- Final impression", "Final impression made wrt {arch} using {material} for RPD fabrication (jaw relation recorded)."],
+  ["Prosthodontics", "RPD insertion", "Removable partial denture ({type}) delivered wrt {arch}, clasps/attachments checked for fit, occlusal adjustment done."],
+  ["Prosthodontics", "RPD- Final impression", "Final impression made wrt {arch} using {material} for RPD fabrication (jaw relation recorded)."],
   ["Periodontics", "Scaling - Deep", "Deep scaling and root planing done wrt {quadrant}, subgingival calculus removed. Gingival Curettage done"],
   ["Restoration", "Sensitive Teeth", "Patient reviewed for tooth sensitivity wrt {tooth} - {finding} noted, desensitizing agent ({agent}) applied / prescribed."],
   ["Implant Surgery", "Sinus Lift - Direct", "Mucoperiosteal flap raised wrt (tooth) region & ant. wall of max. exposed. Sinus lining exposed through lateral bony window. Sinus membrane elevated, grafted with (graft material)"],
   ["Implant Surgery", "Sinus Lift - Indirect", "Indirect sinus lift done wrt {tooth} region with {graftMaterial}, IOPA taken pre/intra/post-operatively."],
   ["Implant Surgery", "Sinus Lift - Indirect", "DENSAH assisted indirect sinus lift done with Mineross bone graft."],
-  ["Minor Oral Surgery", "Implant - Bone Augmentaion", "Bone augmentation done wrt {tooth} region with {graftMaterial} placed in the jumping distance around the implant."],
-  ["Minor Oral Surgery", "Surgery - Bone graft + Membrane", "Bone graft ({graftMaterial}) placed and on secured side with {membraneType} membrane wrt {tooth}, tension-free sutures placed."],
-  ["Minor Oral Surgery", "Surgery - Fracture Reduction", "Fracture reduction done wrt {site}, fixation with {method}, occlusion verified."],
-  ["Minor Oral Surgery", "Surgery - Impaction Removal", "Surgical removal of impacted {tooth} done under LA, bone guttering and tooth sectioning done as needed. Sutures placed."],
-  ["Minor Oral Surgery", "Surgery - Intraoral Biopsy - Soft tissue", "{biopsyType} biopsy done for lesion at {location}, specimen sent for histopathology. Soft tissue excised (size)"],
-  ["Minor Oral Surgery", "Surgery-Wound Curettage", "Wound curettage done wrt {site}, irrigated with {irrigant}, medication placed."],
-  ["Minor Oral Surgery", "Suture Removal", "Sutures removed wrt {tooth}/{site}, healing satisfactory, advised warm saline rinses thrice daily."],
+  ["Minor Surgery", "Implant - Bone Augmentaion", "Bone augmentation done wrt {tooth} region with {graftMaterial} placed in the jumping distance around the implant."],
+  ["Minor Surgery", "Surgery - Bone graft + Membrane", "Bone graft ({graftMaterial}) placed and on secured side with {membraneType} membrane wrt {tooth}, tension-free sutures placed."],
+  ["Minor Surgery", "Surgery - Fracture Reduction", "Fracture reduction done wrt {site}, fixation with {method}, occlusion verified."],
+  ["Minor Surgery", "Surgery - Impaction Removal", "Surgical removal of impacted {tooth} done under LA, bone guttering and tooth sectioning done as needed. Sutures placed."],
+  ["Minor Surgery", "Surgery - Intraoral Biopsy - Soft tissue", "{biopsyType} biopsy done for lesion at {location}, specimen sent for histopathology. Soft tissue excised (size)"],
+  ["Minor Surgery", "Surgery-Wound Curettage", "Wound curettage done wrt {site}, irrigated with {irrigant}, medication placed."],
+  ["Minor Surgery", "Suture Removal", "Sutures removed wrt {tooth}/{site}, healing satisfactory, advised warm saline rinses thrice daily."],
   ["Cosmetic", "Teeth Whitening", "Teeth whitening ({type}) done, shade improvement noted, sensitivity precautions advised."],
   ["Crown & Bridge", "Temporization", "Temporization done wrt {tooth} with Protemp in putty index, shade {shade} matched."],
   ["TMJ / Occlusion", "Tongue exercise", "Tongue exercises explained and demonstrated, advised to practice {frequency} times daily."],
   ["General / Consultation", "Treatment Discontinued/Postponed", "Treatment for {procedure} discontinued/postponed due to {reason}. Patient informed and consent obtained."],
   ["Crown & Bridge", "Veneer Bond", "{material} veneer bonded wrt {tooth} with {cement}, Using Rubberdam with gingival cord."],
   ["Crown & Bridge", "Veneer Preparation", "Veneer preparation done wrt {tooth}, shade {shade}, impression made (digitally/manually)."],
-  ["Minor Oral Surgery", "Vestibuloplasty", "Vestibuloplasty done wrt {site} to deepen vestibular sulcus using {technique} technique."],
+  ["Minor Surgery", "Vestibuloplasty", "Vestibuloplasty done wrt {site} to deepen vestibular sulcus using {technique} technique."],
   ["General / Consultation", "Video Consultation/Follow up", "Video consultation done for follow-up on {procedure}, {finding} noted with instruction."],
   ["Crown & Bridge", "Wax up/Mock up - Trial", "Diagnostic wax-up/mock-up trial done wrt {teeth} using {material}, bite recorded and reviewed for function."]
 ];

@@ -29,12 +29,12 @@ function extractForms() {
 // once already, and a fixture that quietly disagrees with the page tests a
 // filter nobody is using.
 const FORMS = {
-  RCT_FORM_B64:            { cat: 'RCT / Endodontics',  notes: 'n4'  },
+  RCT_FORM_B64:            { cat: 'RCT',                notes: 'n4'  },
   IMP_SURGERY_B64:         { cat: 'Implant Surgery',    notes: null  },
   IMP_PROSTHETIC_B64:      { cat: 'Implant Prosthetic', notes: null  },
   CROWN_BRIDGE_B64:        { cat: 'Crown & Bridge',     notes: 'n3'  },
   RESTORATION_FORM_B64:    { cat: 'Restoration',        notes: 'n4'  },
-  MINORSURGERY_FORM_B64:   { cat: 'Minor Oral Surgery', notes: null  },
+  MINORSURGERY_FORM_B64:   { cat: 'Minor Surgery',      notes: null  },
   PATHOLOGY_FORM_B64:      { cat: 'Diagnostic',         notes: 'remarks' },
   RADIOLOGY_FORM_B64:      { cat: 'Diagnostic',         notes: 'remarks' },
   RADIOGRAPH_FORM_B64:     { cat: 'Diagnostic',         notes: 'remarks' },
@@ -42,7 +42,7 @@ const FORMS = {
   SCALING_FORM_B64:        { cat: 'Periodontics',       notes: 'remarks' },
   ORTHODONTICS_FORM_B64:   { cat: 'Orthodontics',       notes: 'remarks' },
   ORTHOPROGRESS_FORM_B64:  { cat: 'Orthodontics',       notes: 'notes'   },
-  DENTURE_FORM_B64:        { cat: 'Denture',            notes: 'remarks' },
+  DENTURE_FORM_B64:        { cat: 'Prosthodontics',     notes: 'remarks' },
   PEDO_FORM_B64:           { cat: 'Pedodontics',        notes: 'remarks' },
   TMJOINT_FORM_B64:        { cat: '*',                  notes: 'remarks' },
   LOCALANESTHESIA_FORM_B64:{ cat: '*',                  notes: 'remarks' },
@@ -52,16 +52,16 @@ const FORMS = {
 // A stand-in for Master → Clinical Note Templates, one per category plus a
 // token-bearing one to prove placeholder substitution works.
 const ALL_TEMPLATES = [
-  { situation: 'RCT Access',        text: 'Access opening done wrt {tooth}.',            category: 'RCT / Endodontics' },
+  { situation: 'RCT Access',        text: 'Access opening done wrt {tooth}.',            category: 'RCT' },
   { situation: 'Implant Placed',    text: 'Implant placed at {tooth}.',                  category: 'Implant Surgery' },
   { situation: 'Crown Cemented',    text: 'Crown cemented wrt {tooth} using {cement}.',  category: 'Implant Prosthetic' },
   { situation: 'Bridge Prep',       text: 'Bridge preparation wrt {tooth}.',             category: 'Crown & Bridge' },
   { situation: 'Composite',         text: 'Composite restoration wrt {tooth}.',          category: 'Restoration' },
-  { situation: 'Extraction',        text: 'Extraction done wrt {tooth}.',                category: 'Minor Oral Surgery' },
+  { situation: 'Extraction',        text: 'Extraction done wrt {tooth}.',                category: 'Minor Surgery' },
   { situation: 'Test Advised',      text: 'Test advised for {tooth}, sample sent.',      category: 'Diagnostic' },
   { situation: 'Scaling Done',      text: 'Full mouth scaling completed, {grade} calculus.', category: 'Periodontics' },
   { situation: 'Archwire Change',   text: 'Archwire changed to {size}.',                 category: 'Orthodontics' },
-  { situation: 'Denture Try-in',    text: 'Try-in done, occlusion verified.',            category: 'Denture' },
+  { situation: 'Denture Try-in',    text: 'Try-in done, occlusion verified.',            category: 'Prosthodontics' },
   { situation: 'Pulpotomy',         text: 'Pulpotomy done wrt {tooth}, {medicament} placed.', category: 'Pedodontics' },
 ];
 
