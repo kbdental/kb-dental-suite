@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-06e";
+var BACKEND_BUILD = "2026-11-06f";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -1223,8 +1223,6 @@ function route(p) {
       case "saveChairsList":           return saveChairsList(p);
       case "getClinicalNoteTemplates":  return getClinicalNoteTemplates();
       case "saveClinicalNoteTemplates": return saveClinicalNoteTemplates(p);
-      case "getTreatmentNoteTemplates":  return getTreatmentNoteTemplates();
-      case "saveTreatmentNoteTemplates": return saveTreatmentNoteTemplates(p);
       case "getSettings":          return getSettings();
       case "saveSettings":         return saveSettings(p);
       case "saveFinancePassword":  return saveFinancePassword(p);
@@ -5801,8 +5799,70 @@ function saveChairsList(p) {
   return { success: true };
 }
 
+// ── Clinical note templates ─────────────────────────────────────────────
+// There is ONE list. It was briefly two -- the clinic's 188 notes went in
+// beside the older set while they were looked over -- and the older set is
+// now replaced by them, under the name everything already calls it.
+//
+// The heading row carries a version cell. Without it there is no way to
+// tell the clinic's list from the set it replaced: both sheets can be
+// called Clinical Note Templates and both hold Situation / Template Text /
+// Category. With it, the swap below can run on every read and do nothing
+// every time but the first.
+var CLINICAL_TPL_SHEET = "Clinical Note Templates";
+var CLINICAL_TPL_HEADERS = ["Situation", "Template Text", "Category", "Updated At", "v2"];
+
+function clinicalTplIsCurrent_(sh) {
+  if (!sh || sh.getLastRow() === 0) return false;
+  var head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+  return String(head[4] || "").trim() === "v2";
+}
+
+// The sheet the list lives in, swapping the old one out of the way the
+// first time it is asked for.
+//
+// The old set is RENAMED, never deleted. It is the clinic's own writing,
+// nobody asked for it to be destroyed, and a tab sitting there clearly
+// marked is something they can delete themselves once they are sure. A
+// delete here would not be undoable.
+function clinicalTplSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(CLINICAL_TPL_SHEET);
+  if (clinicalTplIsCurrent_(sh)) return sh;
+
+  if (sh) {
+    var name = CLINICAL_TPL_SHEET + " (replaced)", n = 2;
+    while (ss.getSheetByName(name)) { name = CLINICAL_TPL_SHEET + " (replaced " + n + ")"; n++; }
+    sh.setName(name);
+  }
+  // The list may already be in the book under the name it was first given.
+  var carried = ss.getSheetByName("Treatment Note Templates");
+  if (carried) {
+    carried.setName(CLINICAL_TPL_SHEET);
+    if (carried.getLastRow() > 0) {
+      ensureGridWidth_(carried, CLINICAL_TPL_HEADERS.length);
+      carried.getRange(1, 1, 1, CLINICAL_TPL_HEADERS.length).setValues([CLINICAL_TPL_HEADERS]);
+    }
+    return carried;
+  }
+  return getSheet(CLINICAL_TPL_SHEET);
+}
+
 function getClinicalNoteTemplates() {
-  var sh = getSheet("Clinical Note Templates");
+  var sh = clinicalTplSheet_();
+  // Untouched, so the clinic's own list is put in. getLastRow() is 0 only
+  // before anything has ever been written: once saved, even an emptied list
+  // leaves its heading row, so a list the clinic deliberately cleared is
+  // never refilled behind their back.
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(CLINICAL_TPL_HEADERS);
+    var seeded = new Date().toISOString();
+    var block = CLINICAL_NOTE_SEED.map(function (r) { return [r[1], r[2], r[0], seeded, ""]; });
+    if (block.length) {
+      ensureGridWidth_(sh, CLINICAL_TPL_HEADERS.length);
+      sh.getRange(2, 1, block.length, CLINICAL_TPL_HEADERS.length).setValues(block);
+    }
+  }
   var data = sh.getDataRange().getValues();
   var items = [];
   for (var i = 1; i < data.length; i++) {
@@ -5813,15 +5873,15 @@ function getClinicalNoteTemplates() {
 function saveClinicalNoteTemplates(p) {
   var arr = parseList_(p.templates, "clinical note templates");
   if (arr && arr.__bad) return { success: false, error: arr.__bad };
-  var sh = getSheet("Clinical Note Templates");
+  var sh = clinicalTplSheet_();
   sh.clearContents();
-  sh.appendRow(["Situation", "Template Text", "Category", "Updated At"]);
+  sh.appendRow(CLINICAL_TPL_HEADERS);
   var now = new Date().toISOString();
-  arr.forEach(function(t) { sh.appendRow([t.situation, t.text, t.category || "", now]); });
+  arr.forEach(function(t) { sh.appendRow([t.situation, t.text, t.category || "", now, ""]); });
   return { success: true };
 }
 
-// The 188 treatment notes the clinic wrote, by department and treatment.
+// The 188 clinical notes the clinic wrote, by department and treatment.
 // Shipped here rather than typed into the sheet by hand: they are the
 // clinic's own text, they have to be identical on both instances, and a
 // list this long entered twice through a browser is a list entered wrong.
@@ -5831,7 +5891,7 @@ function saveClinicalNoteTemplates(p) {
 // that the sheet is the truth: every edit and every deletion sticks,
 // because saving leaves a heading row behind and an untouched sheet is the
 // only thing that seeds.
-var TREATMENT_NOTE_SEED = [
+var CLINICAL_NOTE_SEED = [
   ["General / Consultation", "Air Polishing", "Full mouth air polishing done using {powderType} powder for extrinsic stain removal."],
   ["General / Consultation", "Conscious sedation", "Conscious sedation administered for {duration} hour(s) for {procedure}."],
   ["General / Consultation", "Consultation", "Consultation for sensitivity while drinking water and / or eating from (right/left) side (front/back) treatment plan discussed"],
@@ -6021,45 +6081,6 @@ var TREATMENT_NOTE_SEED = [
   ["General / Consultation", "Video Consultation/Follow up", "Video consultation done for follow-up on {procedure}, {finding} noted with instruction."],
   ["Crown & Bridge", "Wax up/Mock up - Trial", "Diagnostic wax-up/mock-up trial done wrt {teeth} using {material}, bite recorded and reviewed for function."]
 ];
-
-// ── Treatment note templates ────────────────────────────────────────────
-// A second book of templates, kept apart from the clinical note templates on
-// purpose. A clinical note is what was done in the chair, written on a form;
-// a treatment note is what is said about the treatment itself. Mixing them
-// into one list would mean every form offering both and the clinic reading
-// past half of them to find the half it wanted.
-//
-// Its own sheet, written the way the clinical ones are: the whole list is
-// replaced on save, so what is in the sheet is exactly what is on screen.
-function getTreatmentNoteTemplates() {
-  var sh = getSheet("Treatment Note Templates");
-  // Untouched, so the clinic's own list is put in. getLastRow() is 0 only
-  // before anything has ever been written: once saved, even an emptied list
-  // leaves its heading row, so a list the clinic deliberately cleared is
-  // never refilled behind their back.
-  if (sh.getLastRow() === 0) {
-    sh.appendRow(["Situation", "Template Text", "Category", "Updated At"]);
-    var seeded = new Date().toISOString();
-    var block = TREATMENT_NOTE_SEED.map(function (r) { return [r[1], r[2], r[0], seeded]; });
-    if (block.length) sh.getRange(2, 1, block.length, 4).setValues(block);
-  }
-  var data = sh.getDataRange().getValues();
-  var items = [];
-  for (var i = 1; i < data.length; i++) {
-    if (data[i][0]) items.push({ situation: data[i][0], text: data[i][1], category: data[i][2] || "" });
-  }
-  return { success: true, templates: items };
-}
-function saveTreatmentNoteTemplates(p) {
-  var arr = parseList_(p.templates, "treatment note templates");
-  if (arr && arr.__bad) return { success: false, error: arr.__bad };
-  var sh = getSheet("Treatment Note Templates");
-  sh.clearContents();
-  sh.appendRow(["Situation", "Template Text", "Category", "Updated At"]);
-  var now = new Date().toISOString();
-  arr.forEach(function(t) { sh.appendRow([t.situation, t.text, t.category || "", now]); });
-  return { success: true };
-}
 
 function getPatientOutstanding(p) {
   try {
