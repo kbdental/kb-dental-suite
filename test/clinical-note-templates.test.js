@@ -89,8 +89,23 @@ ok('and every note falls under one the editor offers',
    SEED.every(r => CATS.indexOf(r[0]) >= 0),
    JSON.stringify([...new Set(SEED.filter(r => CATS.indexOf(r[0]) < 0).map(r => r[0]))]));
 ok('the departments the old list had no room for are among them',
-   ['General / Consultation', 'TMJ / Occlusion', 'RCT / Endodontics', 'Denture', 'Cosmetic']
+   ['General / Consultation', 'TMJ / Occlusion', 'Cosmetic']
      .every(c => CATS.indexOf(c) >= 0), JSON.stringify(CATS));
+// "Replace RCT / Endodontics with RCT, Minor Oral Surgery with Minor
+//  Surgery, Denture with Prosthodontics in the templates to match the
+//  departments." The spreadsheet's own spellings, brought into line with
+//  the names the rest of the clinic already uses.
+ok('the three renamed departments are under the clinic\'s own names',
+   ['RCT', 'Minor Surgery', 'Prosthodontics'].every(c => CATS.indexOf(c) >= 0), JSON.stringify(CATS));
+ok('and the spellings they replaced are offered nowhere',
+   ['RCT / Endodontics', 'Minor Oral Surgery', 'Denture'].every(c => CATS.indexOf(c) < 0),
+   JSON.stringify(CATS));
+ok('no note is still filed under one of them',
+   SEED.every(r => ['RCT / Endodontics', 'Minor Oral Surgery', 'Denture'].indexOf(r[0]) < 0),
+   JSON.stringify([...new Set(SEED.map(r => r[0]))]));
+eq('and the notes that moved are all still there',
+   ['RCT', 'Minor Surgery', 'Prosthodontics'].map(c => SEED.filter(r => r[0] === c).length),
+   [22, 20, 15]);
 ok('a treatment may have several notes to choose from',
    SEED.filter(r => r[1] === 'Consultation').length > 1);
 
@@ -112,9 +127,9 @@ ok('a treatment may have several notes to choose from',
   eq('and every one of them has notes to offer', empty, []);
   // The three that moved, named so a later edit cannot undo them by accident.
   const catOf = (id) => (used.find(x => x.form === id) || {}).cat;
-  eq('RCT follows its department', catOf('rct'), 'RCT / Endodontics');
-  eq('Minor Surgery follows its department', catOf('minorSurgery'), 'Minor Oral Surgery');
-  eq('Denture follows its department', catOf('denture'), 'Denture');
+  eq('RCT follows its department', catOf('rct'), 'RCT');
+  eq('Minor Surgery follows its department', catOf('minorSurgery'), 'Minor Surgery');
+  eq('Denture follows its department', catOf('denture'), 'Prosthodontics');
   // The forms that show everything must keep showing everything.
   eq('the three catch-all forms are untouched',
      used.filter(x => x.cat === '*').map(x => x.form).sort(),
@@ -244,6 +259,45 @@ const carried = () => makeSheet('Treatment Note Templates',
      JSON.stringify(ss._sheets.map(x => x.name)));
 }
 
+// ── the sheet the clinic already has ────────────────────────────────────
+// They deployed the build that seeded the 188 and have not deployed since,
+// so their rows carry the spreadsheet's own department spellings. Those
+// headings are not offered any more, so a note under one could be read and
+// never filed again. They are corrected on the way through.
+{
+  const stale = makeSheet('Treatment Note Templates',
+    [OLD_HEAD,
+     ['RCT - BMP', 'Biomechanical preparation done.', 'RCT / Endodontics', '2026-11-06'],
+     ['Extraction', 'Extraction done wrt {tooth}.', 'Minor Oral Surgery', '2026-11-06'],
+     ['Denture - Try in', 'Try-in done.', 'Denture', '2026-11-06'],
+     ['Consultation', 'Consultation done.', 'General / Consultation', '2026-11-06']]);
+  const { ctx } = book([stale]);
+  const got = ctx.get();
+  eq('every note is still there', got.templates.length, 4);
+  eq('and each is under a department the editor offers',
+     got.templates.map(t => t.category),
+     ['RCT', 'Minor Surgery', 'Prosthodontics', 'General / Consultation']);
+  eq('nothing else about them changed',
+     got.templates.map(t => t.situation),
+     ['RCT - BMP', 'Extraction', 'Denture - Try in', 'Consultation']);
+  eq('the text is untouched', got.templates[1].text, 'Extraction done wrt {tooth}.');
+  // Written back, not just corrected on the way out: the next read must not
+  // have to do it again, and the sheet itself has to be right for anyone
+  // reading it there.
+  eq('the sheet itself is corrected', ctx.get().templates.map(t => t.category),
+     ['RCT', 'Minor Surgery', 'Prosthodontics', 'General / Consultation']);
+  ok('and a correct sheet is left completely alone',
+     (function () {
+       const clean = makeSheet('Clinical Note Templates',
+         [['Situation', 'Template Text', 'Category', 'Updated At', 'v2'],
+          ['Mine', 'My note.', 'Prosthodontics', '2026-11-08', '']]);
+       const b = book([clean]);
+       const before = JSON.stringify(clean._rows);
+       b.ctx.get();
+       return JSON.stringify(clean._rows) === before;
+     })(), 'a clean sheet was rewritten');
+}
+
 // A list the clinic empties on purpose stays empty.
 {
   const { ctx } = book([carried()]);
@@ -265,7 +319,7 @@ ok('the clinical routes are there',
 ok('and the treatment-note routes are gone',
    !/case "getTreatmentNoteTemplates"/.test(gs) && !/case "saveTreatmentNoteTemplates"/.test(gs));
 ok('the backend that does this is there to deploy',
-   (/var BACKEND_BUILD = "([^"]+)"/.exec(gs) || [, ''])[1] >= '2026-11-06f',
+   (/var BACKEND_BUILD = "([^"]+)"/.exec(gs) || [, ''])[1] >= '2026-11-06g',
    (/var BACKEND_BUILD = "([^"]+)"/.exec(gs) || [])[1]);
 
 console.log('  ' + pass + ' passed, ' + fail + ' failed');
