@@ -7271,19 +7271,129 @@ function rupeesInWords(n) {
 }
 
 // ── Stage 2: the prescription ───────────────────────────────────────────
+//
+// "in the prescription there has some detail to be written from the template
+//  of work done and not the way you have left alone."
+//
+// A prescription that is a code, a name and a tooth number is a list, not a
+// prescription. The detail the Wellness Centre reads -- what was done, under
+// what anaesthesia, with what, and what the patient is to do next -- is
+// already written once, in Master → Notes → Clinical Note Templates, and was
+// being retyped or left off. Each endorsed line is prefilled from the
+// template that matches its procedure, and stays editable: a template is a
+// starting point, and the doctor has the last word on their own sheet.
+
+// The template for a procedure, matched by name.
+//
+// Nothing lines up exactly -- the rate card says "Flap Surgery- Per Tooth"
+// and the template is filed under "Flap Surgery" -- so the name is reduced
+// to its words and the closest template wins: an exact match first, then a
+// template whose name sits inside the procedure, then the other way round,
+// then the words they share. Words that say nothing about WHICH treatment
+// it is ("per", "tooth", "upper") cannot carry a match on their own, or
+// every line would find the same template.
+const CGHS_TPL_STOP = ["per", "tooth", "teeth", "each", "unit", "units", "and", "the", "of",
+  "for", "with", "single", "both", "upper", "lower", "full", "mouth", "arch", "quadrant", "a"];
+function cghsTemplateFor(procedure, templates) {
+  const norm = (v) => String(v === undefined || v === null ? "" : v)
+    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const want = norm(procedure);
+  if (!want || !templates || !templates.length) return null;
+  const words = (v) => v.split(" ").filter(x => x.length > 2 && CGHS_TPL_STOP.indexOf(x) < 0);
+  const wantWords = words(want);
+  let best = null, bestScore = 0;
+  templates.forEach(t => {
+    if (!t || !String(t.text || "").trim()) return;
+    const have = norm(t.situation);
+    if (!have) return;
+    let score = 0;
+    if (have === want) score = 10000;
+    else if ((" " + want + " ").indexOf(" " + have + " ") >= 0) score = 5000 + have.length;
+    else if ((" " + have + " ").indexOf(" " + want + " ") >= 0) score = 3000 + want.length;
+    else {
+      const shared = words(have).filter(x => wantWords.indexOf(x) >= 0);
+      if (shared.length) score = shared.join("").length;
+    }
+    if (score > bestScore) { bestScore = score; best = t; }
+  });
+  return bestScore > 0 ? best : null;
+}
+
+// A template holds {tooth}, {date} and the like. What is known is filled in;
+// what is not is LEFT showing in the box, because "{brand}" on screen is the
+// clearest possible instruction to type the brand. It never reaches the
+// paper: anything still in braces at print time becomes a blank to write on.
+function cghsFillTokens(text, vals) {
+  return String(text === undefined || text === null ? "" : text)
+    .replace(/\{(\w+)\}/g, (whole, key) => {
+      const v = vals ? vals[key] : "";
+      return (v === undefined || v === null || String(v).trim() === "") ? whole : String(v);
+    });
+}
+function cghsBlankTokens(text) {
+  return String(text === undefined || text === null ? "" : text).replace(/\{\w+\}/g, "__________");
+}
+
 function CghsPrescription({ pat, lines }) {
   const pad = usePadMargins();
   // An endorsement comes back days after it went out, so the sheet is
   // written for the day the patient is in the chair, not for the day
   // somebody opened the screen.
   const [date, setDate] = React.useState(() => toISODate(new Date()));
+  const [templates, setTemplates] = React.useState([]);
+  const [tplMsg, setTplMsg] = React.useState("Reading the clinical note templates…");
+  // Keyed by the line, not by its position: the endorsed lines are reordered
+  // by a tick elsewhere on the screen, and detail written against a flap
+  // surgery must not end up under a scaling.
+  const [edits, setEdits] = React.useState({});
+
+  React.useEffect(() => {
+    let dropped = false;
+    api("getClinicalNoteTemplates").then(res => {
+      if (dropped) return;
+      const list = (res && res.success && res.templates) || [];
+      setTemplates(list);
+      setTplMsg(list.length ? "" : "No clinical note templates yet — add them in Master → Notes → Clinical Note Templates and they will fill in here.");
+    }).catch(() => { if (!dropped) setTplMsg("The clinical note templates could not be read. The detail can still be typed."); });
+    return () => { dropped = true; };
+  }, []);
+
+  const nameOf = (x) => x.r.procedure || (x.card && x.card.procedure) || "";
+  const keyOf = (x) => [x.code || "", nameOf(x), x.r.tooth || ""].join("|");
+  const suggested = (x) => {
+    const t = cghsTemplateFor(nameOf(x), templates);
+    if (!t) return "";
+    return cghsFillTokens(t.text, {
+      tooth: x.r.tooth, teeth: x.r.tooth, toothNumber: x.r.tooth,
+      code: x.code, units: x.qty, unit: x.qty, qty: x.qty,
+      procedure: nameOf(x), treatment: nameOf(x),
+      name: pat.name, patient: pat.name, uhid: pat.uhid,
+      date: fmtDMY(date) || TODAY, age: calcAge(pat.dob || pat.DOB)
+    });
+  };
+  const detailOf = (x) => {
+    const k = keyOf(x);
+    return edits[k] !== undefined ? edits[k] : suggested(x);
+  };
+  const setDetail = (x, v) => { const k = keyOf(x); setEdits(e => ({ ...e, [k]: v })); };
+  const matched = lines.filter(x => !!suggested(x)).length;
+
   const build = () => {
     const when = fmtDMY(date) || TODAY;
-    const trs = lines.map((x, i) => `<tr><td class="c">${i + 1}</td>` +
-      `<td class="c b">${cghsEsc(x.code) || "—"}</td>` +
-      `<td>${cghsEsc(x.r.procedure || (x.card && x.card.procedure))}</td>` +
-      `<td class="c b">${cghsEsc(x.r.tooth) || "—"}</td>` +
-      `<td class="c">${x.qty}</td></tr>`).join("");
+    const trs = lines.map((x, i) => {
+      const detail = cghsBlankTokens(detailOf(x)).trim();
+      return `<tr><td class="c">${i + 1}</td>` +
+        `<td class="c b">${cghsEsc(x.code) || "—"}</td>` +
+        `<td>${cghsEsc(nameOf(x))}</td>` +
+        `<td class="c b">${cghsEsc(x.r.tooth) || "—"}</td>` +
+        `<td class="c">${x.qty}</td></tr>` +
+        // Under its own line rather than in a sixth column: the detail is
+        // sentences, and a column of sentences on a pad is unreadable.
+        (detail
+          ? `<tr><td></td><td colspan="4" style="padding-top:0;border-top:none;` +
+            `font-size:8.5pt;line-height:1.45;white-space:pre-wrap">${cghsEsc(detail)}</td></tr>`
+          : "");
+    }).join("");
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>${cghsPadCss(pad)}</style></head><body>` +
       `<div class="dtitle">Prescription — Treatment Advised</div>` +
       `<div class="g4">` +
@@ -7298,6 +7408,11 @@ function CghsPrescription({ pat, lines }) {
       `<div class="sig"><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div>` +
       `<div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(when)}</div></div></body></html>`;
   };
+
+  const note = (text) => React.createElement("div", { style:{ background:"#fffbeb",
+    border:"1px solid #fde68a", borderRadius:8, padding:"10px 13px", fontSize:13,
+    lineHeight:1.55, color:"#8a5a00", marginBottom:14 } }, text);
+
   return React.createElement("div", null,
     React.createElement("div", { style:{ display:"flex", gap:12, alignItems:"flex-end",
       flexWrap:"wrap", marginBottom:14 } },
@@ -7309,6 +7424,32 @@ function CghsPrescription({ pat, lines }) {
       React.createElement("button", { onClick: () => cghsPrint(build()),
         style:{ padding:"9px 20px", fontSize:14, fontWeight:700, border:"none", borderRadius:7,
           cursor:"pointer", background:T, color:"#fff" } }, "🖨 Print Prescription")),
+    tplMsg ? note(tplMsg) : null,
+
+    // The detail, one box per endorsed line, prefilled and editable.
+    React.createElement("div", { style:{ marginBottom:16 } },
+      React.createElement("div", { style:{ fontSize:13, fontWeight:700, marginBottom:2 } },
+        "Detail on the prescription"),
+      React.createElement("div", { style:{ fontSize:12.5, color:"#5a5a5a", marginBottom:8, lineHeight:1.5 } },
+        templates.length
+          ? "Filled in from the clinical note template that matches each treatment" +
+            (matched === lines.length ? "" : " — " + matched + " of " + lines.length + " matched") +
+            ". Edit any of it before printing; anything still in braces prints as a blank to write on."
+          : "Type what is to appear under each treatment."),
+      lines.map((x, i) => React.createElement("div", { key: keyOf(x) + "|" + i,
+        style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8,
+                padding:"10px 12px", marginBottom:8 } },
+        React.createElement("div", { style:{ display:"flex", gap:8, alignItems:"baseline",
+          flexWrap:"wrap", marginBottom:6 } },
+          React.createElement("span", { style:{ fontSize:13, fontWeight:700 } }, (i + 1) + ". " + nameOf(x)),
+          x.code ? React.createElement("span", { style:{ fontSize:12.5, fontWeight:700, color:T } }, x.code) : null,
+          React.createElement("span", { style:{ fontSize:12.5, color:"#5a5a5a" } },
+            (x.r.tooth ? x.r.tooth + " · " : "") + x.qty + (x.qty === 1 ? " unit" : " units"))),
+        React.createElement("textarea", {
+          value: detailOf(x), rows: 3, placeholder: "What is to be written under this treatment…",
+          onChange: e => setDetail(x, e.target.value),
+          style:{ ...inp, width:"100%", minHeight:62, resize:"vertical", lineHeight:1.5 } })))),
+
     React.createElement(CghsLines, { lines: lines, showAmount: false }));
 }
 
