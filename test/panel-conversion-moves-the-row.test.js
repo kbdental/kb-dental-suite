@@ -32,8 +32,13 @@ const eq = (name, got, want) => ok(name, JSON.stringify(got) === JSON.stringify(
   'got ' + JSON.stringify(got) + ', wanted ' + JSON.stringify(want));
 
 const src = gs.slice(gs.indexOf('function moveRegRowToPanelBook_('),
-                     gs.indexOf('function regSheetFor_(isPanel) {'));
-ok('the mover was found', src.length > 600, src.length);
+                     gs.indexOf('function regSheetFor_(isPanel) {'))
+  // The real widener, not a stand-in: the move writes into a book that may be
+  // narrower than the row, and a test that fakes that away tests nothing.
+  + gs.slice(gs.indexOf('function ensureGridWidth_(sh, needed) {'),
+             gs.indexOf('// Every patient marked onto a panel whose row is still in the main book.'));
+ok('the mover was found', src.indexOf('function moveRegRowToPanelBook_(') === 0
+   && src.indexOf('function ensureGridWidth_') > 0, src.length);
 
 function sheet(rows, ssId) {
   return {
@@ -43,6 +48,11 @@ function sheet(rows, ssId) {
     _ss: ssId || 'MAIN',
     getSheetId() { return 0; },
     getParent() { const id = this._ss; return { getId: () => id }; },
+    // Wide enough for these registers. The narrow book -- the one that made
+    // the move throw in the clinic -- is panel-book-grid-and-sweep's job.
+    _max: 60,
+    getMaxColumns() { return this._max; },
+    insertColumnsAfter(after, how) { this._max += how; },
     getLastRow() { return this._rows.length; },
     getLastColumn() { return this._rows.length ? this._rows[0].length : 0; },
     getDataRange() { const r = this._rows; return { getValues: () => r.map(x => x.slice()) }; },
@@ -154,11 +164,14 @@ ok('the row is appended before it is deleted',
 
 // ── and saveRegistration actually calls it ──────────────────────────────
 ok('a conversion triggers the move',
-   /if \(isPanel && existingRow > 0\) \{\s*try \{\s*movedToPanel = moveRegRowToPanelBook_\(sh, existingRow\)\.moved;/.test(gs));
+   /if \(isPanel && existingRow > 0\) \{\s*try \{\s*var mv = moveRegRowToPanelBook_\(sh, existingRow\);\s*movedToPanel = !!\(mv && mv\.moved\);/.test(gs));
 // A failed move must not look like a failed save: the details ARE saved.
 ok('a move that fails does not fail the save',
    /Logger\.log\("Panel book move failed for "/.test(gs) &&
-   /return \{ success: true, uhid: p\.uhid, movedToPanelBook: movedToPanel \};/.test(gs));
+   /return \{ success: true, uhid: p\.uhid, movedToPanelBook: movedToPanel,/.test(gs));
+// A move that did not happen said so only in a log nobody reads. The reason
+// comes back with the save now; panel-book-grid-and-sweep covers the rest.
+ok('and says why it did not move', /panelMoveNote: panelMoveNote/.test(gs));
 // A brand-new panel patient is routed to the panel book already; moving
 // them again would be a second row.
 ok('only an existing row is moved, never a fresh one',

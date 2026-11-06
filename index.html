@@ -5486,6 +5486,7 @@ function TreatmentPlan({
   const [panelEdits, setPanelEdits] = useState({});
   const [panelSaving, setPanelSaving] = useState(false);
   const [panelSaved, setPanelSaved] = useState(false);
+  const [panelNote, setPanelNote] = useState("");
   // What the register holds for this patient, when getPatient is too old to
   // hand it over itself. Null until looked up, {} when the lookup found
   // nothing, so a missing panel is never confused with one not asked for.
@@ -5644,6 +5645,9 @@ function TreatmentPlan({
       });
       if (res && res.success) {
         setPanelSaved(true);
+        const why = String((res && res.panelMoveNote) || "");
+        const benign = ["", "not moved", "already in the panel book", "already the panel book"];
+        setPanelNote(benign.indexOf(why) >= 0 ? "" : why);
         setTimeout(() => setPanelSaved(false), 2500);
       } else {
         alert("Could not save the panel details: " + ((res && res.error) || "unknown error"));
@@ -6797,6 +6801,7 @@ function TreatmentPlan({
     onCard: (v) => setPanelEdits(e => ({ ...e, cardId: v })),
     onHolder: (v) => setPanelEdits(e => ({ ...e, panelCategory: v })),
     onSavePanel: savePanelDetails, panelSaving: panelSaving, panelSaved: panelSaved,
+    panelNote: panelNote,
     rates: panelRates, ratesMsg: ratesMsg,
     rows: endRows, total: endTotal, missing: endMissing,
     approvedCount: endApproved.length, approvedTotal: endApprovedTotal,
@@ -6851,6 +6856,7 @@ function useEndorsementRecord(pat) {
   const [panelFallback, setPanelFallback] = React.useState(null);
   const [panelSaving, setPanelSaving] = React.useState(false);
   const [panelSaved, setPanelSaved] = React.useState(false);
+  const [panelNote, setPanelNote] = React.useState("");
   const [panels, setPanels] = React.useState([]);
   const [active, setActive] = React.useState(null);
 
@@ -7030,7 +7036,13 @@ function useEndorsementRecord(pat) {
       const res = await api("saveRegistration", {
         uhid, patientType: "Panel", panel, panelCategory: holder, cardId: card
       });
-      if (res && res.success) { setPanelSaved(true); setTimeout(() => setPanelSaved(false), 2500); }
+      if (res && res.success) {
+        setPanelSaved(true);
+        const why = String((res && res.panelMoveNote) || "");
+        const benign = ["", "not moved", "already in the panel book", "already the panel book"];
+        setPanelNote(benign.indexOf(why) >= 0 ? "" : why);
+        setTimeout(() => setPanelSaved(false), 2500);
+      }
       else alert("Could not save the panel details: " + ((res && res.error) || "unknown error"));
     } catch (e) {
       alert("Could not save the panel details: " + (e && e.message ? e.message : e));
@@ -7045,7 +7057,7 @@ function useEndorsementRecord(pat) {
     onPanel: (v) => setPanelEdits(e => ({ ...e, panel: v })),
     onCard: (v) => setPanelEdits(e => ({ ...e, cardId: v })),
     onHolder: (v) => setPanelEdits(e => ({ ...e, panelCategory: v })),
-    savePanelDetails, panelSaving, panelSaved,
+    savePanelDetails, panelSaving, panelSaved, panelNote,
     save, saving, saved
   };
 }
@@ -7093,6 +7105,7 @@ function CghsRecords({ globalPat }) {
       card: e.card, holder: e.holder,
       onPanel: e.onPanel, onCard: e.onCard, onHolder: e.onHolder,
       onSavePanel: e.savePanelDetails, panelSaving: e.panelSaving, panelSaved: e.panelSaved,
+      panelNote: e.panelNote,
       rates: e.panelRates, ratesMsg: e.ratesMsg,
       rows: e.endRows, total: e.total, missing: e.missing,
       approvedCount: e.approved.length, approvedTotal: e.approvedTotal,
@@ -7377,7 +7390,7 @@ function CghsLines({ lines, showAmount }) {
 }
 
 function EndorsementView({ showApproved, pat, panel, recordedPanel, panels, onPanel, card, holder,
-                           onCard, onHolder, onSavePanel, panelSaving, panelSaved,
+                           onCard, onHolder, onSavePanel, panelSaving, panelSaved, panelNote,
                            rates, ratesMsg,
                            showPrint, rows, total, missing, approvedCount, approvedTotal,
                            setCode, setRowField, setProcedure, active, setActive,
@@ -7455,6 +7468,13 @@ function EndorsementView({ showApproved, pat, panel, recordedPanel, panels, onPa
           color: panelSaved ? "#fff" : (panel ? "#059669" : "#5a5a5a") } },
         panelSaving ? "Saving\u2026" : panelSaved ? "\u2713 Saved to patient" : "Save to patient"),
       React.createElement("div", { style:{ marginLeft:"auto" } }, addBtn())),
+
+    // Saved on the patient, but not filed where an empanelled patient
+    // belongs. That used to happen in silence.
+    panelNote
+      ? note("Saved on the patient, but this row was not moved into the empanelled book \u2014 " + panelNote
+             + ". Master \u2192 Accounts \u2192 Panels will move it.", "warn")
+      : null,
 
     // One notice at a time, and only when it changes what to do next.
     !panel
@@ -29602,6 +29622,122 @@ function ClinicProfileEditor({ profile, onSave }) {
   );
 }
 
+// "I updated their record to panel patients ... but when I am opening the
+//  google sheet I am not seeing that patient in empanelled sheet."
+//
+// A patient marked onto a panel today is carried into the empanelled book by
+// the save itself. The ones marked before that existed are still sitting in
+// the main book, and reopening each of them by hand is not a plan. This lists
+// them and moves them.
+//
+// It also names the backend it is talking to. A sheet that will not change
+// has two possible causes -- the code is wrong, or the code was never
+// deployed -- and until the screen says which, every fix is a guess.
+function PanelBookRepair() {
+  const [look, setLook] = React.useState({ phase: "loading" });
+  const [busy, setBusy] = React.useState(false);
+  const [done, setDone] = React.useState(null);
+
+  const audit = () => {
+    setLook({ phase: "loading" });
+    api("auditPanelBook").then(res => {
+      if (res && res.success) {
+        setLook({ phase: "ok", here: res.here, stranded: res.stranded || [], build: res.build || "" });
+      } else {
+        setLook({ phase: "err", msg: (res && res.error) || "The server did not answer." });
+      }
+    }).catch(e => setLook({ phase: "err", msg: (e && e.message) || String(e) }));
+  };
+  React.useEffect(() => { audit(); }, []);
+
+  const move = async () => {
+    setBusy(true); setDone(null);
+    try {
+      const res = await api("sweepPanelBook");
+      if (res && res.success) {
+        setDone({ ok: true, found: res.found || 0, moved: res.moved || 0, left: res.left || [] });
+        audit();
+      } else {
+        setDone({ ok: false, msg: (res && res.error) || "The server did not answer." });
+      }
+    } catch (e) {
+      setDone({ ok: false, msg: (e && e.message) || String(e) });
+    }
+    setBusy(false);
+  };
+
+  const card = (bg, border, kids) => React.createElement("div", {
+    style:{ background:bg, border:"1px solid " + border, borderRadius:8,
+            padding:"12px 14px", marginTop:16, maxWidth:560, fontSize:13, lineHeight:1.55 } }, kids);
+
+  const title = React.createElement("div", {
+    style:{ fontSize:13, fontWeight:700, marginBottom:6 } }, "Empanelled book");
+
+  if (look.phase === "loading") {
+    return card("#f8f8f8", "#e3e3e3", [title,
+      React.createElement("div", { key:"m" }, "Checking which book the empanelled patients are in…")]);
+  }
+
+  if (look.phase === "err") {
+    return card("#fdf2f2", "#e5b4b4", [title,
+      React.createElement("div", { key:"m" }, look.msg),
+      React.createElement("div", { key:"h", style:{ marginTop:6, color:"#7a4a4a" } },
+        "If that says the action is unknown, the Code.gs on this instance is older than this app and needs deploying — Deploy → Manage deployments → pencil → Version: New version."),
+      React.createElement("button", { key:"r", onClick: audit,
+        style:{ marginTop:10, padding:"7px 12px", fontSize:13, fontWeight:700, borderRadius:7,
+                border:"1px solid #b45454", background:"#fff", color:"#7a2f2f", cursor:"pointer" } },
+        "Check again")]);
+  }
+
+  if (look.here === "panel") {
+    return card("#f8f8f8", "#e3e3e3", [title,
+      React.createElement("div", { key:"m" },
+        "This is the empanelled app, so every registration here is already in the empanelled book. Open the main clinic app to move anyone across."),
+      React.createElement("div", { key:"b", style:{ marginTop:6, color:"#5a5a5a", fontSize:12 } },
+        "Backend " + (look.build || "unknown"))]);
+  }
+
+  const stranded = look.stranded || [];
+  const result = done
+    ? React.createElement("div", { key:"d", style:{ marginTop:10, fontWeight:600,
+        color: done.ok ? "#065f46" : "#7a2f2f" } },
+        done.ok
+          ? (done.moved + " of " + done.found + " moved into the empanelled book."
+             + (done.left.length ? " Not moved: " + done.left.join("; ") : ""))
+          : done.msg)
+    : null;
+
+  if (!stranded.length) {
+    return card("#f0fdf4", "#bbf7d0", [title,
+      React.createElement("div", { key:"m" },
+        "Every patient marked onto a panel is in the empanelled book."),
+      result,
+      React.createElement("div", { key:"b", style:{ marginTop:6, color:"#5a5a5a", fontSize:12 } },
+        "Backend " + (look.build || "unknown")),
+      React.createElement("button", { key:"r", onClick: audit,
+        style:{ marginTop:8, padding:"6px 11px", fontSize:12, fontWeight:700, borderRadius:7,
+                border:"1px solid #999", background:"#fff", color:"#444444", cursor:"pointer" } },
+        "Check again")]);
+  }
+
+  return card("#fffbeb", "#fde68a", [title,
+    React.createElement("div", { key:"m" },
+      stranded.length + " patient" + (stranded.length === 1 ? " is" : "s are")
+      + " marked onto a panel but still filed in the main register, so they do not appear in the empanelled sheet."),
+    React.createElement("div", { key:"l", style:{ marginTop:8, maxHeight:150, overflowY:"auto",
+        background:"#fff", border:"1px solid #f3e4b0", borderRadius:6, padding:"6px 9px" } },
+      stranded.map((x, i) => React.createElement("div", { key:i, style:{ fontSize:12.5, padding:"1px 0" } },
+        (x.name || "(no name)") + (x.uhid ? " — " + x.uhid : "") + (x.panel ? " — " + x.panel : "")))),
+    React.createElement("button", { key:"go", onClick: move, disabled: busy,
+      style:{ marginTop:10, padding:"8px 14px", fontSize:13, fontWeight:700, borderRadius:7,
+              border:"1px solid #b45309", background: busy ? "#f3f3f3" : "#b45309",
+              color: busy ? "#777" : "#fff", cursor: busy ? "not-allowed" : "pointer" } },
+      busy ? "Moving…" : "Move " + stranded.length + " into the empanelled book"),
+    result,
+    React.createElement("div", { key:"b", style:{ marginTop:6, color:"#8a7435", fontSize:12 } },
+      "Backend " + (look.build || "unknown") + ". The row is copied across by column name and only then removed from the main register, so nothing is lost if it fails half way.")]);
+}
+
 function Master() {
   const [topTab, setTopTab] = React.useState("clinic");
   const [subTab, setSubTab] = React.useState("doctors");
@@ -29812,12 +29948,16 @@ function Master() {
       onRemove:(i)=>saveExpenseCats(expenseCats.filter((_,idx)=>idx!==i)),
       onEdit:(i,v)=>saveExpenseCats(expenseCats.map((x,idx)=>idx===i?v:x))
     }),
-    panels: () => React.createElement(SimpleListEditor, {
-      items: panels,
-      placeholder: "e.g. CGHS, DGEHS, BSES, DJB, MCD, Delhi Police",
-      onAdd: (v) => savePanels([...panels, v]),
-      onRemove: (i) => savePanels(panels.filter((_, idx) => idx !== i))
-    }),
+    panels: () => React.createElement(React.Fragment, null,
+      React.createElement(SimpleListEditor, {
+        items: panels,
+        placeholder: "e.g. CGHS, DGEHS, BSES, DJB, MCD, Delhi Police",
+        onAdd: (v) => savePanels([...panels, v]),
+        onRemove: (i) => savePanels(panels.filter((_, idx) => idx !== i))
+      }),
+      // The panels are named here, so this is where "where did the empanelled
+      // patients go" belongs too.
+      React.createElement(PanelBookRepair, null)),
     modes: () => React.createElement(SimpleListEditor, {
       items:paymentModes, placeholder:"New payment mode...",
       onAdd:(v)=>saveModes([...paymentModes, v]),
