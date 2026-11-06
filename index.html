@@ -232,7 +232,13 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-02b";
 //
 // It moves with every change to this file. Same shape as the backend's: a
 // date, and a letter when there is more than one in a day.
-const KB_APP_BUILD = "2026-11-06";
+// Bumped on EVERY change to this file, not only on the days it happens to
+// be a new date. It sat at "2026-11-06" through six page changes in one
+// day, and the whole point of it is to answer "did the new page reach this
+// browser" -- which it cannot do if it says the same thing either way.
+// GitHub Pages caches index.html hard, so a plain refresh serves the old
+// file and looks exactly like a change that was never made.
+const KB_APP_BUILD = "2026-11-06h";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
