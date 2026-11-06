@@ -28376,15 +28376,21 @@ function ImplantBrandListEditor({ items, onAdd, onRemove, onEdit }) {
 // (see sendTemplatesToForm in ClinicalRecords) — keep in sync when a new
 // form gets template-picker support.
 const CLINICAL_TEMPLATE_CATEGORIES = ["RCT", "Restoration", "Minor Surgery", "Implant Surgery", "Implant Prosthetic", "Crown & Bridge", "Diagnostic", "Periodontics", "Pedodontics", "Prosthodontics", "Orthodontics"];
+// The treatment notes are filed by the clinic's own departments, which are
+// not the clinical-note categories and should not be forced into them:
+// there is no "General / Consultation" or "TMJ / Occlusion" in that list,
+// and a note filed under the wrong heading is a note nobody finds.
+const TREATMENT_TEMPLATE_CATEGORIES = ["General / Consultation", "Crown & Bridge", "Denture", "Diagnostic", "Minor Oral Surgery", "Restoration", "Implant Surgery", "Implant Prosthetic", "Orthodontics", "TMJ / Occlusion", "Periodontics", "Pedodontics", "RCT / Endodontics", "Cosmetic"];
 
-function TemplateListEditor({ items, onAdd, onRemove, onEdit }) {
+function TemplateListEditor({ items, onAdd, onRemove, onEdit, categories }) {
+  const CATS = (categories && categories.length) ? categories : CLINICAL_TEMPLATE_CATEGORIES;
   const [situation, setSituation] = React.useState("");
   const [text, setText] = React.useState("");
-  const [category, setCategory] = React.useState(CLINICAL_TEMPLATE_CATEGORIES[0]);
+  const [category, setCategory] = React.useState(CATS[0]);
   const [editIndex, setEditIndex] = React.useState(null);
   const tokensOf = (t) => Array.from(new Set((t.match(/\{(\w+)\}/g) || []).map(m => m.slice(1,-1))));
 
-  const resetForm = () => { setSituation(""); setText(""); setCategory(CLINICAL_TEMPLATE_CATEGORIES[0]); setEditIndex(null); };
+  const resetForm = () => { setSituation(""); setText(""); setCategory(CATS[0]); setEditIndex(null); };
 
   const save = () => {
     const s = situation.trim(), t = text.trim();
@@ -28398,7 +28404,7 @@ function TemplateListEditor({ items, onAdd, onRemove, onEdit }) {
     setEditIndex(i);
     setSituation(items[i].situation);
     setText(items[i].text);
-    setCategory(items[i].category || CLINICAL_TEMPLATE_CATEGORIES[0]);
+    setCategory(items[i].category || CATS[0]);
     window.scrollTo({ top:0, behavior:"smooth" });
   };
 
@@ -28444,7 +28450,7 @@ function TemplateListEditor({ items, onAdd, onRemove, onEdit }) {
       React.createElement("div", { style:{ marginBottom:8 } },
         React.createElement(Lbl, { c:"Applies To" }),
         React.createElement("select", { style:inp, value:category, onChange:e=>setCategory(e.target.value) },
-          CLINICAL_TEMPLATE_CATEGORIES.map(c => React.createElement("option", { key:c, value:c }, c))
+          CATS.map(c => React.createElement("option", { key:c, value:c }, c))
         )
       ),
       React.createElement("input", { style:{...inp, marginBottom:8}, value:situation, placeholder:"Situation / treatment (e.g. Crown Prep - Zirconia)", onChange:e=>setSituation(e.target.value) }),
@@ -28765,6 +28771,11 @@ const MASTER_STRUCTURE = [
   ]},
   { id:"notes", label:"Notes", subtabs:[
     { id:"templates",       label:"Clinical Note Templates" },
+    // Beside the clinical ones, not inside them. A clinical note is what was
+    // done in the chair, written on a form; a treatment note is what is said
+    // about the treatment itself. One list holding both would mean every
+    // form offering both and reading past half of them.
+    { id:"treatmentNotes",  label:"Treatment Note Templates" },
     { id:"medInstructions", label:"Instructions" },
     { id:"medNotes",        label:"Post op instructions" }
   ]},
@@ -29950,6 +29961,7 @@ function Master() {
   const [paymentModes, setPaymentModes] = React.useState([]);
   const [chairsList, setChairsList] = React.useState([]);
   const [clinicalTemplates, setClinicalTemplates] = React.useState([]);
+  const [treatmentTemplates, setTreatmentTemplates] = React.useState([]);
   const [medicines, setMedicines] = React.useState([]);
   const [medDosages, setMedDosages] = React.useState([]);
   const [medFrequencies, setMedFrequencies] = React.useState([]);
@@ -29987,8 +29999,8 @@ function Master() {
       "getClinicProfile", "getDocumentCategoriesList", "getProcedureLibrary",
       "getImplantBrandsList", "getPanelsList", "getWorkingDays", "getClinicTimings",
       "getSafetyFlagsList", "getOccupationsList",
-      "getReferralSourcesList", "getPatientTypesList"
-    ]).then(([t,d,e,c,m,tpl,ch,med,dos,freq,dur,instr,mn,ar,cp,dc,pl,ib,pnl,wd,ct,sf,oc,rs,pt]) => {
+      "getReferralSourcesList", "getPatientTypesList", "getTreatmentNoteTemplates"
+    ]).then(([t,d,e,c,m,tpl,ch,med,dos,freq,dur,instr,mn,ar,cp,dc,pl,ib,pnl,wd,ct,sf,oc,rs,pt,tnt]) => {
       setLoading(false);
       if (t.success) setTreatments(t.treatments || []);
       // An older backend without this list simply leaves it empty, and the
@@ -30002,6 +30014,9 @@ function Master() {
       if (c.success) setExpenseCats(c.categories || []);
       if (m.success) setPaymentModes(m.modes || []);
       if (tpl.success) setClinicalTemplates(tpl.templates || []);
+      // A backend that predates this list answers nothing, and the screen
+      // shows an empty list rather than breaking.
+      if (tnt && tnt.success) setTreatmentTemplates(tnt.templates || []);
       if (ch.success) setChairsList(ch.chairs || []);
       if (med.success) setMedicines(med.medicines || []);
       if (dos.success) setMedDosages(dos.dosages || []);
@@ -30062,6 +30077,7 @@ function Master() {
   const savePanels = (arr) => persist("savePanelsList", { panels: JSON.stringify(arr) }, arr, setPanels, panels);
   const saveModes = (arr) => persist("savePaymentModesList", { modes: JSON.stringify(arr) }, arr, setPaymentModes, paymentModes);
   const saveTemplates = (arr) => persist("saveClinicalNoteTemplates", { templates: JSON.stringify(arr) }, arr, setClinicalTemplates, clinicalTemplates);
+  const saveTreatmentTemplates = (arr) => persist("saveTreatmentNoteTemplates", { templates: JSON.stringify(arr) }, arr, setTreatmentTemplates, treatmentTemplates);
   const saveChairs = (arr) => persist("saveChairsList", { chairs: JSON.stringify(arr) }, arr, setChairsList, chairsList);
   const saveMedicines = (arr) => persist("saveMedicinesMaster", { medicines: JSON.stringify(arr) }, arr, setMedicines, medicines);
   const saveImplantBrands = (arr) => persist("saveImplantBrandsList", { brands: JSON.stringify(arr) }, arr, setImplantBrands, implantBrands);
@@ -30177,6 +30193,16 @@ function Master() {
       onAdd:(item)=>saveTemplates([...clinicalTemplates, item]),
       onRemove:(i)=>saveTemplates(clinicalTemplates.filter((_,idx)=>idx!==i)),
       onEdit:(i,item)=>saveTemplates(clinicalTemplates.map((it,idx)=>idx===i?item:it))
+    }),
+    // The same editor, deliberately: the two lists have the same shape and
+    // the same {token} mechanics, and staff should not have to learn a
+    // second screen to write the same kind of thing.
+    treatmentNotes: () => React.createElement(TemplateListEditor, {
+      items:treatmentTemplates,
+      categories:TREATMENT_TEMPLATE_CATEGORIES,
+      onAdd:(item)=>saveTreatmentTemplates([...treatmentTemplates, item]),
+      onRemove:(i)=>saveTreatmentTemplates(treatmentTemplates.filter((_,idx)=>idx!==i)),
+      onEdit:(i,item)=>saveTreatmentTemplates(treatmentTemplates.map((it,idx)=>idx===i?item:it))
     }),
     implantBrands: () => React.createElement(ImplantBrandListEditor, {
       items:implantBrands,
