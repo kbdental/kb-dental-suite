@@ -161,6 +161,7 @@ function moveRegRowToPanelBook_(fromSheet, rowNum) {
   // The panel book must be able to hold everything the main row carries,
   // or the move would quietly drop whatever it has no column for.
   if (dest.getLastRow() === 0) {
+    ensureGridWidth_(dest, srcHeaders.length);
     dest.getRange(1, 1, 1, srcHeaders.length).setValues([srcHeaders]);
   } else {
     ensureRegColumns_(dest, srcHeaders.filter(function (h) { return String(h).trim(); }));
@@ -175,6 +176,7 @@ function moveRegRowToPanelBook_(fromSheet, rowNum) {
     if (col >= 0) out[col] = srcValues[i];
   });
 
+  ensureGridWidth_(dest, out.length);
   dest.appendRow(out);
   fromSheet.deleteRow(rowNum);
   regCacheClear_();
@@ -197,7 +199,96 @@ function ensureRegColumns_(sh, names) {
   var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
   var missing = names.filter(function (n) { return findRegColumn_(headers, [n]) < 0; });
   if (!missing.length) return;
+  ensureGridWidth_(sh, headers.length + missing.length);
   sh.getRange(1, headers.length + 1, 1, missing.length).setValues([missing]);
+}
+
+// A sheet is a fixed grid, and writing one column past its right-hand edge
+// does NOT widen it -- it throws "those columns are out of bounds". A new
+// sheet is 26 columns wide and the main register carries more than that, so
+// moving a row into a panel book that had never been widened threw here,
+// inside a try/catch, and the row stayed exactly where it was while the save
+// reported success. Widened by what is short, and by nothing more.
+function ensureGridWidth_(sh, needed) {
+  var have = sh.getMaxColumns();
+  if (needed > have) sh.insertColumnsAfter(have, needed - have);
+}
+
+// Every patient marked onto a panel whose row is still in the main book.
+//
+// The hook on save only catches a conversion at the moment it is made. The
+// clinic had years of CGHS patients on file before the panel went live, and
+// every one of them would otherwise have to be opened and re-saved by hand.
+// This is also the only honest answer to "is the move working": it reports
+// what it found, what it moved, and the reason for anything it could not.
+//
+// Walked from the bottom up, because deleting a row shifts every row under it.
+function panelBookStrandedRows_() {
+  var sh = getSheet("Registrations");
+  var data = sh.getDataRange().getValues();
+  var out = { sheet: sh, rows: [] };
+  if (data.length <= 1) return out;
+  var typeCol = findRegColumn_(data[0], ["Patient Type"]);
+  var panelCol = findRegColumn_(data[0], ["Panel"]);
+  var uhidCol = findRegColumn_(data[0], ["UHID", "Registration ID"]);
+  var nameCol = findRegColumn_(data[0], ["Full Name", "Name"]);
+  for (var r = data.length - 1; r >= 1; r--) {
+    var type = typeCol >= 0 ? String(data[r][typeCol] || "").trim() : "";
+    var panel = panelCol >= 0 ? String(data[r][panelCol] || "").trim() : "";
+    // Marked Panel, or carrying a panel name and never marked either way.
+    // Somebody explicitly marked Normal is left alone even if a panel name
+    // was once typed against them: that was a decision.
+    var isPanel = type.toLowerCase() === "panel" || (!type && !!panel);
+    if (!isPanel) continue;
+    out.rows.push({
+      row: r + 1,
+      uhid: uhidCol >= 0 ? String(data[r][uhidCol] || "").trim() : "",
+      name: nameCol >= 0 ? String(data[r][nameCol] || "").trim() : "",
+      panel: panel
+    });
+  }
+  return out;
+}
+
+function auditPanelBook(p) {
+  if (SS_ID === PANEL_PMS_SHEET_ID) {
+    return { success: true, here: "panel", stranded: [], build: BACKEND_BUILD };
+  }
+  var found = panelBookStrandedRows_();
+  return {
+    success: true, here: "main", build: BACKEND_BUILD,
+    stranded: found.rows.map(function (r) {
+      return { uhid: r.uhid, name: r.name, panel: r.panel };
+    })
+  };
+}
+
+function sweepPanelBook(p) {
+  if (SS_ID === PANEL_PMS_SHEET_ID) {
+    return { success: false, error: "Open the main clinic app to do this. From the empanelled app there is nowhere to move a row to." };
+  }
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) {
+    return { success: false, error: "The sheet is busy. Try again in a moment." };
+  }
+  try {
+    var found = panelBookStrandedRows_();
+    var moved = 0, left = [];
+    found.rows.forEach(function (r) {
+      var who = (r.name || r.uhid || ("row " + r.row));
+      try {
+        var res = moveRegRowToPanelBook_(found.sheet, r.row);
+        if (res && res.moved) moved++;
+        else left.push(who + " — " + ((res && res.reason) || "not moved"));
+      } catch (e) {
+        left.push(who + " — " + e.message);
+      }
+    });
+    regCacheClear_();
+    return { success: true, found: found.rows.length, moved: moved, left: left, build: BACKEND_BUILD };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function getSheet(name) {
@@ -810,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-06a";
+var BACKEND_BUILD = "2026-11-06b";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -980,6 +1071,8 @@ function route(p) {
       case "getNextUHID":       return getNextUHID();
       case "checkDuplicate":    return checkDuplicate(p);
       case "saveRegistration":  return saveRegistration(p);
+      case "auditPanelBook":    return auditPanelBook(p);
+      case "sweepPanelBook":    return sweepPanelBook(p);
       case "patientLookup":     return patientLookup(p);
       case "patientCompleteRegistration": return patientCompleteRegistration(p);
       case "getPending":        return getPending();
@@ -1385,17 +1478,27 @@ function saveRegistration(p) {
   // The row is written before it is moved, so the move carries the panel
   // details that were just saved rather than the state before them.
   var movedToPanel = false;
+  // Why it did not move, in words, carried back to whoever pressed Save.
+  // The first attempt at this failed silently for a week: the move threw,
+  // the throw was logged where nobody reads logs, and the save reported
+  // success. A reason on the screen is what turns the next report into a
+  // diagnosis instead of another round of guessing.
+  var panelMoveNote = "";
   if (isPanel && existingRow > 0) {
     try {
-      movedToPanel = moveRegRowToPanelBook_(sh, existingRow).moved;
+      var mv = moveRegRowToPanelBook_(sh, existingRow);
+      movedToPanel = !!(mv && mv.moved);
+      if (!movedToPanel) panelMoveNote = (mv && mv.reason) || "not moved";
     } catch (e) {
       // The save itself worked. Say the move did not rather than failing
       // the whole thing and leaving the desk thinking nothing saved.
+      panelMoveNote = e.message;
       Logger.log("Panel book move failed for " + p.uhid + ": " + e.message);
     }
   }
 
-  return { success: true, uhid: p.uhid, movedToPanelBook: movedToPanel };
+  return { success: true, uhid: p.uhid, movedToPanelBook: movedToPanel,
+           panelMoveNote: panelMoveNote, build: BACKEND_BUILD };
 }
 
 // ── Patient-facing registration completion (register.html) ──────────
