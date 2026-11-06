@@ -145,7 +145,13 @@ function regAllRows_() {
 function moveRegRowToPanelBook_(fromSheet, rowNum) {
   if (SS_ID === PANEL_PMS_SHEET_ID) return { moved: false, reason: "already the panel book" };
   var dest = regSheetFor_(true);
-  if (!dest || dest.getSheetId() === fromSheet.getSheetId()) {
+  if (!dest) return { moved: false, reason: "no panel book" };
+  // Compared by SPREADSHEET, not by sheet id. getSheetId() is unique within
+  // one spreadsheet and says nothing across two: both books have a tab
+  // called Registrations and in each it is usually the first one, so both
+  // ids are 0. Comparing them concluded the row was already in the panel
+  // book and moved nothing, which is exactly what was reported.
+  if (dest.getParent().getId() === fromSheet.getParent().getId()) {
     return { moved: false, reason: "already in the panel book" };
   }
 
@@ -804,7 +810,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-06";
+var BACKEND_BUILD = "2026-11-06a";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
