@@ -126,6 +126,55 @@ function regAllRows_() {
 // The sheet a NEW registration is written to. Only ever called once the UHID
 // has been looked for in both books, so an existing patient is updated where
 // they already are rather than copied into the other book.
+
+// A patient who was ours before the panel existed, and is marked as a panel
+// patient now, has their row in the MAIN book -- saveRegistration updates a
+// patient where they already live, which is what stops the iPad form
+// splitting somebody across two books. Right for an edit, wrong for a
+// conversion: the row has to end up in the panel book, or the panel book is
+// missing the very patients the panel is for.
+//
+// Moved by HEADER NAME, never by position. The two books drift: the panel
+// book has columns the main one does not, and a positional copy would file
+// a card number under a blood group.
+//
+// Appended first and deleted second, deliberately. If the append fails the
+// patient is still in the main book and nothing is lost; if the delete
+// fails there are two rows, which is visible and fixable. The other order
+// risks losing the patient outright.
+function moveRegRowToPanelBook_(fromSheet, rowNum) {
+  if (SS_ID === PANEL_PMS_SHEET_ID) return { moved: false, reason: "already the panel book" };
+  var dest = regSheetFor_(true);
+  if (!dest || dest.getSheetId() === fromSheet.getSheetId()) {
+    return { moved: false, reason: "already in the panel book" };
+  }
+
+  var srcHeaders = fromSheet.getRange(1, 1, 1, fromSheet.getLastColumn()).getValues()[0];
+  var srcValues = fromSheet.getRange(rowNum, 1, 1, fromSheet.getLastColumn()).getValues()[0];
+
+  // The panel book must be able to hold everything the main row carries,
+  // or the move would quietly drop whatever it has no column for.
+  if (dest.getLastRow() === 0) {
+    dest.getRange(1, 1, 1, srcHeaders.length).setValues([srcHeaders]);
+  } else {
+    ensureRegColumns_(dest, srcHeaders.filter(function (h) { return String(h).trim(); }));
+  }
+
+  var destHeaders = dest.getRange(1, 1, 1, dest.getLastColumn()).getValues()[0];
+  var out = destHeaders.map(function () { return ""; });
+  srcHeaders.forEach(function (h, i) {
+    var name = String(h).trim();
+    if (!name) return;
+    var col = findRegColumn_(destHeaders, [name]);
+    if (col >= 0) out[col] = srcValues[i];
+  });
+
+  dest.appendRow(out);
+  fromSheet.deleteRow(rowNum);
+  regCacheClear_();
+  return { moved: true };
+}
+
 function regSheetFor_(isPanel) {
   if (!isPanel || SS_ID === PANEL_PMS_SHEET_ID) return getSheet("Registrations");
   var ss = SpreadsheetApp.openById(PANEL_PMS_SHEET_ID);
@@ -755,7 +804,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-04a";
+var BACKEND_BUILD = "2026-11-06";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -1327,7 +1376,20 @@ function saveRegistration(p) {
   else sh.appendRow(rowValues);
   regCacheClear_();
 
-  return { success: true, uhid: p.uhid };
+  // The row is written before it is moved, so the move carries the panel
+  // details that were just saved rather than the state before them.
+  var movedToPanel = false;
+  if (isPanel && existingRow > 0) {
+    try {
+      movedToPanel = moveRegRowToPanelBook_(sh, existingRow).moved;
+    } catch (e) {
+      // The save itself worked. Say the move did not rather than failing
+      // the whole thing and leaving the desk thinking nothing saved.
+      Logger.log("Panel book move failed for " + p.uhid + ": " + e.message);
+    }
+  }
+
+  return { success: true, uhid: p.uhid, movedToPanelBook: movedToPanel };
 }
 
 // ── Patient-facing registration completion (register.html) ──────────
