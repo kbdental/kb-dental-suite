@@ -176,7 +176,10 @@ ok('and the plan carries no copy of the note text',
   eq('the library is accepted', ctx.saveLib({ rows: JSON.stringify(LIB) }), { success: true, saved: 3 });
   eq('and comes back as it went in', ctx.getLib().rows, LIB);
   eq('the plan is accepted', ctx.savePlan({ rows: JSON.stringify(ROWS) }), { success: true, saved: 2 });
-  eq('and comes back as it went in', ctx.getPlan().rows, ROWS);
+  // A plan treatment also carries the Hindi a patient reads; a row saved
+  // without it comes back with an empty one rather than the field missing.
+  eq('and comes back as it went in',
+     ctx.getPlan().rows, ROWS.map(r => ({ ...r, hindi: '' })));
 
   // The thing that was actually broken: two tables answering to one name.
   // Each read found the other's heading row, moved that sheet aside and made
@@ -193,7 +196,7 @@ ok('and the plan carries no copy of the note text',
   eq('the library has its own headings', sheets['Clinical Templates (Type 1 & 2)']._rows[0],
      ['Category', 'Template', 'Type 1 (Concise)', 'Type 2 (Comprehensive)', 'Updated At']);
   eq('and the plan has its own', sheets['Clinical Note Plan']._rows[0],
-     ['Plan', 'Plan Treatment', 'Category', 'Templates', 'Updated At']);
+     ['Plan', 'Plan Treatment', 'Category', 'Templates', 'Updated At', 'Hindi']);
   ok('each goes in one block, not one call per row',
      /sh\.getRange\(2, 1, block\.length, CLINICAL_TPL_LIB_HEADERS\.length\)\.setValues\(block\)/.test(src) &&
      /sh\.getRange\(2, 1, block\.length, CLINICAL_PLAN_HEADERS\.length\)\.setValues\(block\)/.test(src));
@@ -494,7 +497,7 @@ ok('and the plan carries no copy of the note text',
                areas: box.querySelectorAll('textarea').length };
     });
     eq('a plan row opens in place, with its own fields', card.inputs,
-       ['Flap Surgery- Per Tooth', 'Flap Surgery']);
+       ['Flap Surgery- Per Tooth', 'Flap Surgery', '']);
     eq('and no note boxes, because the notes are not kept here', card.areas, 0);
   }
   await (await button('^Save$')).asElement().click();

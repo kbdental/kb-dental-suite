@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-08d";
+var BACKEND_BUILD = "2026-11-08e";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -5157,7 +5157,8 @@ function getMedicineInstructionsList() {
   var data = sh.getDataRange().getValues();
   var items = [];
   for (var i = 1; i < data.length; i++) {
-    if (data[i][0]) items.push({ situation: data[i][0], text: data[i][1] || data[i][0], category: data[i][2] || "" });
+    if (data[i][0]) items.push({ situation: data[i][0], text: data[i][1] || data[i][0],
+                                 category: data[i][2] || "", hindi: data[i][4] || "" });
   }
   return { success: true, instructions: items };
 }
@@ -5166,11 +5167,11 @@ function saveMedicineInstructionsList(p) {
   if (arr && arr.__bad) return { success: false, error: arr.__bad };
   var sh = getSheet("Medicine Instructions");
   sh.clearContents();
-  sh.appendRow(["Situation", "Instruction", "Category", "Updated At"]);
+  sh.appendRow(["Situation", "Instruction", "Category", "Updated At", "Hindi"]);
   var now = new Date().toISOString();
   arr.forEach(function(v) {
-    if (typeof v === "string") sh.appendRow([v, v, "", now]);
-    else sh.appendRow([v.situation, v.text, v.category || "", now]);
+    if (typeof v === "string") sh.appendRow([v, v, "", now, ""]);
+    else sh.appendRow([v.situation, v.text, v.category || "", now, v.hindi || ""]);
   });
   return { success: true };
 }
@@ -5179,17 +5180,27 @@ function getMedicineNotesList() {
   var sh = getSheet("Medicine Notes");
   var data = sh.getDataRange().getValues();
   var items = [];
-  for (var i = 1; i < data.length; i++) { if (data[i][0]) items.push(data[i][0]); }
-  return { success: true, medNotes: items };
+  var pairs = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    items.push(data[i][0]);
+    pairs.push({ text: String(data[i][0]), hindi: String(data[i][2] || "") });
+  }
+  // medNotes stays a list of plain strings: the prescription form reads it
+  // that way, and it is a base64 blob. The Hindi rides alongside.
+  return { success: true, medNotes: items, medNotesLib: pairs };
 }
 function saveMedicineNotesList(p) {
   var arr = parseList_(p.medNotes, "medicine notes");
   if (arr && arr.__bad) return { success: false, error: arr.__bad };
   var sh = getSheet("Medicine Notes");
   sh.clearContents();
-  sh.appendRow(["Note", "Updated At"]);
+  sh.appendRow(["Note", "Updated At", "Hindi"]);
   var now = new Date().toISOString();
-  arr.forEach(function(v) { sh.appendRow([v, now]); });
+  arr.forEach(function(v) {
+    if (typeof v === "string") sh.appendRow([v, now, ""]);
+    else sh.appendRow([v.text || "", now, v.hindi || ""]);
+  });
   return { success: true };
 }
 
@@ -5833,7 +5844,10 @@ var CLINICAL_TPL_LIB_SHEET = "Clinical Templates (Type 1 & 2)";
 var CLINICAL_TPL_LIB_HEADERS = ["Category", "Template", "Type 1 (Concise)",
                                 "Type 2 (Comprehensive)", "Updated At"];
 var CLINICAL_PLAN_SHEET = "Clinical Note Plan";
-var CLINICAL_PLAN_HEADERS = ["Plan", "Plan Treatment", "Category", "Templates", "Updated At"];
+var CLINICAL_PLAN_HEADERS = ["Plan", "Plan Treatment", "Category", "Templates", "Updated At",
+                             // The treatment as a patient reads it. A plan is
+                             // handed to the patient, so this one is theirs.
+                             "Hindi"];
 
 var TYPE1_SUFFIX = " \u00b7 Type 1 (Concise)";
 var TYPE2_SUFFIX = " \u00b7 Type 2 (Comprehensive)";
@@ -5923,7 +5937,8 @@ function getClinicalNotePlan() {
       plan: String(data[i][0] || "").trim(),
       treatment: String(data[i][1] || "").trim(),
       category: String(data[i][2] || "").trim(),
-      templates: String(data[i][3] || "").trim()
+      templates: String(data[i][3] || "").trim(),
+      hindi: String(data[i][5] || "").trim()
     });
   }
   return { success: true, rows: items };
@@ -5938,7 +5953,8 @@ function saveClinicalNotePlan(p) {
   sh.appendRow(CLINICAL_PLAN_HEADERS);
   var now = new Date().toISOString();
   var block = arr.map(function (r) {
-    return [r.plan || "", r.treatment || "", r.category || "", r.templates || "", now];
+    return [r.plan || "", r.treatment || "", r.category || "", r.templates || "", now,
+            r.hindi || ""];
   });
   if (block.length) {
     sh.getRange(2, 1, block.length, CLINICAL_PLAN_HEADERS.length).setValues(block);

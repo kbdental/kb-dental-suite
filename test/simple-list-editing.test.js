@@ -45,7 +45,9 @@ const sites = [];
     sites.push({ tab: key ? key[1] : "(none)", hasEdit: /onEdit:/.test(m[1]) });
   }
 }
-eq("all ten plain lists are accounted for", sites.length, 10);
+// Nine, not ten: post-op instructions moved to the bilingual editor, which
+// keeps the Hindi a patient reads beside each entry.
+eq("all nine plain lists are accounted for", sites.length, 9);
 // Appointment Reasons is a plain list of names. The steps of a treatment are
 // the procedure library's stages, which the appointment form already picks —
 // keeping a second list of them here meant two places to edit and two to
