@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-02b";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-08h";
+const KB_APP_BUILD = "2026-11-08i";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -29208,7 +29208,7 @@ function ClinicalPlanEditor({ plan, rows, templates, onSave, saving, seed, categ
   const [q, setQ] = React.useState("");
   const [editAt, setEditAt] = React.useState(null);
   const blank = () => ({ plan: which, treatment: "",
-                         category: CATS[0], templates: "" });
+                         category: CATS[0], templates: "", hindi: "" });
   const [form, setForm] = React.useState(blank);
   const [draft, setDraft] = React.useState(null);
   const all = rows || [];
@@ -29327,11 +29327,15 @@ function ClinicalPlanEditor({ plan, rows, templates, onSave, saving, seed, categ
         React.createElement("input", { style:inp, value: txt(form.treatment),
           placeholder:"e.g. RCT - Access Open",
           onChange: e => setForm({ ...form, treatment: e.target.value }) })),
-      React.createElement("div", { style:{ marginBottom:10 } },
+      React.createElement("div", { style:{ marginBottom:8 } },
         React.createElement(Lbl, { c:"Templates it is made of" }),
         React.createElement("input", { style:inp, value: txt(form.templates),
           placeholder:"e.g. Access Opening → Working Length",
           onChange: e => setForm({ ...form, templates: e.target.value }) })),
+      React.createElement("div", { style:{ marginBottom:10 } },
+        React.createElement(Lbl, { c:"Hindi \u2014 what the patient reads (optional)" }),
+        React.createElement("input", { style:inp, value: txt(form.hindi), lang:"hi",
+          onChange: e => setForm({ ...form, hindi: e.target.value }) })),
       React.createElement("div", { style:{ display:"flex", gap:8 } },
         React.createElement("button", { onClick: add, disabled: saving || !txt(form.treatment).trim(),
           style:{ padding:"9px 20px", fontSize:13, fontWeight:700, border:"none", borderRadius:7,
@@ -29365,6 +29369,8 @@ function ClinicalPlanEditor({ plan, rows, templates, onSave, saving, seed, categ
               gap:10, marginBottom:4 } },
               React.createElement("span", { style:{ fontSize:14, fontWeight:700, color:T } },
                 txt(x.r.treatment)),
+              txt(x.r.hindi) ? React.createElement("span", { lang:"hi",
+                style:{ fontSize:13.5, color:"#3d3d3d" } }, txt(x.r.hindi)) : null,
               React.createElement(KbClinRowBtns, { onEdit: () => startEdit(x.at),
                 onRemove: () => remove(x.at) })),
             (editAt === x.at && draft)
@@ -29378,10 +29384,14 @@ function ClinicalPlanEditor({ plan, rows, templates, onSave, saving, seed, categ
                     React.createElement(Lbl, { c:"Plan treatment" }),
                     React.createElement("input", { style:inp, value: txt(draft.treatment),
                       onChange: e => setDraft({ ...draft, treatment: e.target.value }) })),
-                  React.createElement("div", null,
+                  React.createElement("div", { style:{ marginBottom:8 } },
                     React.createElement(Lbl, { c:"Templates it is made of" }),
                     React.createElement("input", { style:inp, value: txt(draft.templates),
-                      onChange: e => setDraft({ ...draft, templates: e.target.value }) }))))
+                      onChange: e => setDraft({ ...draft, templates: e.target.value }) })),
+                  React.createElement("div", null,
+                    React.createElement(Lbl, { c:"Hindi \u2014 what the patient reads (optional)" }),
+                    React.createElement("input", { style:inp, value: txt(draft.hindi), lang:"hi",
+                      onChange: e => setDraft({ ...draft, hindi: e.target.value }) }))))
               : null,
             (!(editAt === x.at && draft) && withDetail) ? React.createElement("div", { style:{ fontSize:12.5,
               color:"#5a5a5a", marginBottom:6 } }, txt(x.r.templates) || "no template named") : null,
@@ -29692,19 +29702,97 @@ function TemplateListEditor({ items, onAdd, onRemove, onEdit }) {
 // are plain patient-facing text, not clinical-note fill-in-the-blank templates.
 const INSTRUCTION_CATEGORIES = ["Oral Hygiene", "Warm Saline / Rinses", "Diet", "Chewing Advice", "Medications", "Tobacco & Alcohol", "Denture Care", "Restorations", "Follow-Up", "Contact The Clinic If"];
 
+// A plain list, with the Hindi the patient reads beside each entry. The
+// post-op notes were bare strings; an entry that is still a bare string is
+// read as its own English with no Hindi yet, so nothing already saved is
+// lost.
+function BilingualListEditor({ items, onAdd, onRemove, onEdit, placeholder }) {
+  const pair = (v) => (v && typeof v === "object") ? { text: v.text || "", hindi: v.hindi || "" }
+                                                   : { text: String(v == null ? "" : v), hindi: "" };
+  const [text, setText] = React.useState("");
+  const [hindi, setHindi] = React.useState("");
+  const [editAt, setEditAt] = React.useState(null);
+  const [draft, setDraft] = React.useState(null);
+
+  const add = () => {
+    const t = text.trim();
+    if (!t) return;
+    if ((items || []).some(x => pair(x).text.trim().toLowerCase() === t.toLowerCase())) return;
+    setText(""); setHindi("");
+    onAdd({ text: t, hindi: hindi.trim() });
+  };
+  const commit = () => {
+    if (!draft || !draft.text.trim()) return;
+    const at = editAt, row = { text: draft.text.trim(), hindi: draft.hindi.trim() };
+    setEditAt(null); setDraft(null);
+    onEdit(at, row);
+  };
+
+  return React.createElement("div", { style:{ maxWidth:640 } },
+    React.createElement("div", { style:{ marginBottom:16 } },
+      React.createElement(Lbl, { c:"Instruction" }),
+      React.createElement("input", { style:{ ...inp, marginBottom:8 }, value:text,
+        placeholder: placeholder || "", onChange: e => setText(e.target.value) }),
+      React.createElement(Lbl, { c:"Hindi \u2014 what the patient reads (optional)" }),
+      React.createElement("input", { style:{ ...inp, marginBottom:8 }, value:hindi, lang:"hi",
+        onChange: e => setHindi(e.target.value) }),
+      React.createElement("button", { onClick: add, disabled: !text.trim(),
+        style:{ padding:"9px 20px", fontSize:13, fontWeight:700, border:"none", borderRadius:7,
+          cursor: text.trim() ? "pointer" : "not-allowed",
+          background: text.trim() ? T : "#e3e3e3", color: text.trim() ? "#fff" : "#444444" } },
+        "Add")),
+    React.createElement("div", { style:{ display:"flex", flexDirection:"column", gap:8 } },
+      (items || []).map((it, i) => {
+        const p = pair(it);
+        return React.createElement("div", { key:i,
+          style:{ background: editAt === i ? TL : "#fff",
+            border:`1px solid ${editAt === i ? T : BORDER}`, borderRadius:8, padding:"10px 14px" } },
+          (editAt === i && draft)
+            ? React.createElement("div", null,
+                React.createElement(Lbl, { c:"Instruction" }),
+                React.createElement("input", { style:{ ...inp, marginBottom:8 }, value:draft.text,
+                  onChange: e => setDraft({ ...draft, text: e.target.value }) }),
+                React.createElement(Lbl, { c:"Hindi" }),
+                React.createElement("input", { style:{ ...inp, marginBottom:10 }, value:draft.hindi,
+                  lang:"hi", onChange: e => setDraft({ ...draft, hindi: e.target.value }) }),
+                React.createElement("div", { style:{ display:"flex", gap:8 } },
+                  React.createElement("button", { onClick: commit,
+                    style:{ padding:"8px 18px", fontSize:13, fontWeight:700, border:"none",
+                      borderRadius:7, cursor:"pointer", background:T, color:"#fff" } }, "Save"),
+                  React.createElement("button", { onClick: () => { setEditAt(null); setDraft(null); },
+                    style:{ padding:"8px 15px", fontSize:13, fontWeight:700,
+                      border:`1px solid ${BORDER}`, borderRadius:7, cursor:"pointer",
+                      background:"#fff", color:"#444444" } }, "Cancel")))
+            : React.createElement("div", null,
+                React.createElement("div", { style:{ display:"flex", alignItems:"center",
+                  gap:10, marginBottom: p.hindi ? 4 : 0 } },
+                  React.createElement("span", { style:{ fontSize:13.5 } }, p.text),
+                  React.createElement(KbClinRowBtns, {
+                    onEdit: () => { setEditAt(i); setDraft(p); },
+                    onRemove: () => { if (window.confirm("Remove \u201c" + p.text + "\u201d?")) onRemove(i); } })),
+                p.hindi ? React.createElement("div", { lang:"hi", style:{ fontSize:13.5,
+                  color:"#3d3d3d", lineHeight:1.6 } }, p.hindi) : null));
+      })));
+}
+
 function InstructionListEditor({ items, onAdd, onRemove, onEdit }) {
   const [situation, setSituation] = React.useState("");
   const [text, setText] = React.useState("");
+  // The patient reads this one. It is optional: an instruction with no Hindi
+  // written yet falls back to the English rather than printing nothing.
+  const [hindi, setHindi] = React.useState("");
   const [category, setCategory] = React.useState(INSTRUCTION_CATEGORIES[0]);
   const [editIndex, setEditIndex] = React.useState(null);
 
-  const resetForm = () => { setSituation(""); setText(""); setCategory(INSTRUCTION_CATEGORIES[0]); setEditIndex(null); };
+  const resetForm = () => { setSituation(""); setText(""); setHindi("");
+    setCategory(INSTRUCTION_CATEGORIES[0]); setEditIndex(null); };
 
   const save = () => {
     const s = situation.trim(), t = text.trim();
     if (!s || !t) return;
-    if (editIndex !== null) onEdit(editIndex, { situation:s, text:t, category });
-    else onAdd({ situation:s, text:t, category });
+    const row = { situation:s, text:t, category, hindi: hindi.trim() };
+    if (editIndex !== null) onEdit(editIndex, row);
+    else onAdd(row);
     resetForm();
   };
 
@@ -29712,6 +29800,7 @@ function InstructionListEditor({ items, onAdd, onRemove, onEdit }) {
     setEditIndex(i);
     setSituation(items[i].situation);
     setText(items[i].text);
+    setHindi(items[i].hindi || "");
     setCategory(items[i].category || INSTRUCTION_CATEGORIES[0]);
     window.scrollTo({ top:0, behavior:"smooth" });
   };
@@ -29762,6 +29851,10 @@ function InstructionListEditor({ items, onAdd, onRemove, onEdit }) {
       React.createElement("input", { style:{...inp, marginBottom:8}, value:situation, placeholder:"Situation (e.g. Maintain Good Oral Hygiene)", onChange:e=>setSituation(e.target.value) }),
       React.createElement("textarea", { style:{...ta, minHeight:60, marginBottom:8}, value:text, onChange:e=>setText(e.target.value),
         placeholder:"Instruction text, e.g. Brush your teeth twice daily using a soft-bristled toothbrush and fluoridated toothpaste." }),
+      React.createElement(Lbl, { c:"Hindi \u2014 what the patient reads (optional)" }),
+      React.createElement("textarea", { style:{...ta, minHeight:60, marginBottom:8}, value:hindi,
+        onChange:e=>setHindi(e.target.value), lang:"hi",
+        placeholder:"\u0926\u093f\u0928 \u092e\u0947\u0902 \u0926\u094b \u092c\u093e\u0930 \u092c\u094d\u0930\u0936 \u0915\u0930\u0947\u0902\u2026" }),
       React.createElement("div", { style:{ display:"flex", gap:8 } },
         React.createElement("button", { onClick:save, style:{ padding:"9px 20px", fontSize:13, border:"none", borderRadius:7, cursor:"pointer", background:T, color:"#fff", fontWeight:700 } }, editIndex !== null ? "💾 Save Changes" : "+ Add Instruction"),
         editIndex !== null && React.createElement("button", { onClick:resetForm, style:{ padding:"9px 16px", fontSize:13, border:`1px solid ${BORDER}`, borderRadius:7, cursor:"pointer", background:"#fff", color:"#2e2e2e" } }, "Cancel")
@@ -29781,7 +29874,9 @@ function InstructionListEditor({ items, onAdd, onRemove, onEdit }) {
                 React.createElement("button", { onClick:()=>{ if(editIndex===i) resetForm(); onRemove(i); }, style:{ border:"none", background:"none", color:"#e24b4a", cursor:"pointer", fontSize:12.5, fontWeight:700 } }, "Remove")
               )
             ),
-            React.createElement("div", { style:{ fontSize:13.5, color:"#444", lineHeight:1.5 } }, it.text)
+            React.createElement("div", { style:{ fontSize:13.5, color:"#444", lineHeight:1.5 } }, it.text),
+            it.hindi ? React.createElement("div", { lang:"hi", style:{ fontSize:13.5,
+              color:"#3d3d3d", lineHeight:1.6, marginTop:4 } }, it.hindi) : null
             ); })
           )
         ))
@@ -31187,6 +31282,7 @@ function Master() {
   const [medDurations, setMedDurations] = React.useState([]);
   const [medInstructions, setMedInstructions] = React.useState([]);
   const [medNotes, setMedNotes] = React.useState([]);
+  const [medNotesLib, setMedNotesLib] = React.useState([]);
   const [apptReasons, setApptReasons] = React.useState([]);
   const [docCategories, setDocCategories] = React.useState([]);
   const [safetyFlags, setSafetyFlags] = React.useState([]);
@@ -31247,7 +31343,12 @@ function Master() {
       if (freq.success) setMedFrequencies(freq.frequencies || []);
       if (dur.success) setMedDurations(dur.durations || []);
       if (instr.success) setMedInstructions(instr.instructions || []);
-      if (mn.success) setMedNotes(mn.medNotes || []);
+      if (mn.success) {
+        setMedNotes(mn.medNotes || []);
+        // Pairs where the backend sends them; plain strings read as English
+        // with no Hindi yet, so an older backend still edits.
+        setMedNotesLib(mn.medNotesLib || (mn.medNotes || []));
+      }
       if (ar.success) setApptReasons(ar.reasons || []);
       if (cp.success && cp.profile) setClinicProfile(cp.profile);
       if (dc.success) setDocCategories(dc.categories || []);
@@ -31311,7 +31412,11 @@ function Master() {
   const saveMedFrequencies = (arr) => persist("saveMedicineFrequenciesList", { frequencies: JSON.stringify(arr) }, arr, setMedFrequencies, medFrequencies);
   const saveMedDurations = (arr) => persist("saveMedicineDurationsList", { durations: JSON.stringify(arr) }, arr, setMedDurations, medDurations);
   const saveMedInstructions = (arr) => persist("saveMedicineInstructionsList", { instructions: JSON.stringify(arr) }, arr, setMedInstructions, medInstructions);
-  const saveMedNotes = (arr) => persist("saveMedicineNotesList", { medNotes: JSON.stringify(arr) }, arr, setMedNotes, medNotes);
+  const saveMedNotes = (arr) => {
+    setMedNotesLib(arr);
+    return persist("saveMedicineNotesList", { medNotes: JSON.stringify(arr) },
+      arr.map(x => (x && typeof x === "object") ? (x.text || "") : String(x)), setMedNotes, medNotes);
+  };
   const saveApptReasons = (arr) => persist("saveReasonsList", { reasons: JSON.stringify(arr) }, arr, setApptReasons, apptReasons);
   const saveDocCategories = (arr) => persist("saveDocumentCategoriesList", { categories: JSON.stringify(arr) }, arr, setDocCategories, docCategories);
   const saveSafetyFlags = (arr) => persist("saveSafetyFlagsList", { flags: JSON.stringify(arr) }, arr, setSafetyFlags, safetyFlags);
@@ -31474,11 +31579,12 @@ function Master() {
       onRemove:(i)=>saveMedInstructions(medInstructions.filter((_,idx)=>idx!==i)),
       onEdit:(i,item)=>saveMedInstructions(medInstructions.map((it,idx)=>idx===i?item:it))
     }),
-    medNotes: () => React.createElement(SimpleListEditor, {
-      items:medNotes, placeholder:"New post-op instruction (e.g. Avoid hot food for 24 hours)...",
-      onAdd:(v)=>saveMedNotes([...medNotes, v]),
-      onRemove:(i)=>saveMedNotes(medNotes.filter((_,idx)=>idx!==i)),
-      onEdit:(i,v)=>saveMedNotes(medNotes.map((x,idx)=>idx===i?v:x))
+    // A patient reads these, so each carries its Hindi.
+    medNotes: () => React.createElement(BilingualListEditor, {
+      items:medNotesLib, placeholder:"New post-op instruction (e.g. Avoid hot food for 24 hours)...",
+      onAdd:(v)=>saveMedNotes([...medNotesLib, v]),
+      onRemove:(i)=>saveMedNotes(medNotesLib.filter((_,idx)=>idx!==i)),
+      onEdit:(i,v)=>saveMedNotes(medNotesLib.map((x,idx)=>idx===i?v:x))
     }),
     // A plain list again. The steps of a treatment are the procedure
     // library's stages, which the appointment form already picks -- keeping a
@@ -31891,6 +31997,20 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
       globalPat && globalPat.name && React.createElement("span", { style:{ color:"rgba(255,255,255,.7)", fontSize:12 } },
         "— " + (globalPat.name !== globalPat.uhid ? globalPat.name : "")
       ),
+      // What the PATIENT gets. With this on, the instruction and post-op
+      // lists handed to the form carry their Hindi, so what is inserted and
+      // printed is Hindi. The clinical record stays English either way.
+      React.createElement("button", {
+        onClick: () => setHindiOut(!hindiOut),
+        title: hindiOut
+          ? "Patient-facing text is in Hindi. Press to go back to English."
+          : "Patient-facing text is in English. Press for Hindi.",
+        style:{ padding:"5px 12px", fontSize:12, fontWeight:700, borderRadius:16,
+          cursor:"pointer", fontFamily:"inherit",
+          border: hindiOut ? "1px solid #fff" : "1px solid rgba(255,255,255,.4)",
+          background: hindiOut ? "#fff" : "rgba(255,255,255,.15)",
+          color: hindiOut ? T : "#fff" }
+      }, hindiOut ? "\u0939\u093f\u0902\u0926\u0940" : "A \u00b7 \u0905"),
       !isSuite && globalPat && globalPat.uhid && React.createElement("div", {
         style:{ display:"flex", gap:2, background:"rgba(255,255,255,.15)", borderRadius:8, padding:2, marginLeft:"auto" }
       },
@@ -32122,7 +32242,23 @@ function Prescription({ globalPat }) {
   const iframeRef = React.useRef(null);
   const [todaysProcedures, setTodaysProcedures] = React.useState([]);
   const [medicines, setMedicines] = React.useState([]);
-  const [medLists, setMedLists] = React.useState({ dosages: [], frequencies: [], durations: [], instructions: [], medNotes: [], instructionsLib: [] });
+  const [medLists, setMedLists] = React.useState({ dosages: [], frequencies: [], durations: [], instructions: [], medNotes: [], instructionsLib: [], medNotesLib: [] });
+  // Hindi for the patient-facing text. It changes what the prescription form
+  // is GIVEN, so what it inserts and prints is Hindi -- rather than being a
+  // reading aid on this screen that the paper never sees. The clinical
+  // record stays English: that is the medico-legal document, and it is not
+  // what this toggle is for.
+  //
+  // Remembered per browser, because a clinic that works in Hindi works in
+  // Hindi every day and should not have to say so at every patient.
+  const [hindiOut, setHindiOut] = React.useState(() => {
+    // Scoped: the two instances share one browser origin, and an unscoped
+    // key would set the empanelled clinic's language from the main one.
+    try { return window.localStorage.getItem(lsKey("kbHindiOut")) === "1"; } catch (e) { return false; }
+  });
+  React.useEffect(() => {
+    try { window.localStorage.setItem(lsKey("kbHindiOut"), hindiOut ? "1" : "0"); } catch (e) {}
+  }, [hindiOut]);
   // Filled from the clinic profile below, which is where the margins are set
   // and always has been. A second fetch of its own here would race that one,
   // and whichever answered last would decide what the pad looks like.
@@ -32177,7 +32313,8 @@ function Prescription({ globalPat }) {
           ...(((instr.success && instr.instructions) || []).map(x => (typeof x === "string") ? x : x.situation)),
           ...((mn.success && mn.medNotes) || [])
         ],
-        instructionsLib: (instr.success && instr.instructions) || []
+        instructionsLib: (instr.success && instr.instructions) || [],
+        medNotesLib: (mn.success && (mn.medNotesLib || mn.medNotes)) || []
       });
     });
   }, [globalPat && globalPat.uhid]);
@@ -32243,9 +32380,31 @@ function Prescription({ globalPat }) {
         address: cl.address || "", phone: cl.phone || "" }, "*");
     }
   };
+  // With Hindi on, the lists handed over carry the Hindi text in place of
+  // the English, so the form inserts and prints Hindi with nothing inside
+  // it changed -- it is a base64 blob, and the less it has to know the
+  // better. An entry with no Hindi written yet keeps its English rather
+  // than going blank.
+  const hindiOf = (v) => {
+    if (!v) return v;
+    if (typeof v === "string") return v;
+    const h = String(v.hindi || "").trim();
+    return h ? { ...v, text: h, situation: v.situation } : v;
+  };
+  const outLists = () => {
+    if (!hindiOut) return medLists;
+    const pairs = medLists.medNotesLib || [];
+    const hindiNote = (t) => {
+      const hit = pairs.find(p => p && typeof p === "object" && p.text === t);
+      return (hit && String(hit.hindi || "").trim()) ? hit.hindi : t;
+    };
+    return { ...medLists,
+      instructionsLib: (medLists.instructionsLib || []).map(hindiOf),
+      medNotes: (medLists.medNotes || []).map(hindiNote) };
+  };
   const sendMedListsToForm = () => {
     if (iframeRef.current && iframeRef.current.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({ type: "KB_MED_LISTS", ...medLists }, "*");
+      iframeRef.current.contentWindow.postMessage({ type: "KB_MED_LISTS", ...outLists() }, "*");
     }
   };
 
@@ -32254,7 +32413,7 @@ function Prescription({ globalPat }) {
   // pattern used for the Clinical Records template dropdown race condition).
   React.useEffect(() => { sendTodaysProceduresToForm(); }, [todaysProcedures]);
   React.useEffect(() => { sendMedicinesToForm(); }, [medicines]);
-  React.useEffect(() => { sendMedListsToForm(); }, [medLists]);
+  React.useEffect(() => { sendMedListsToForm(); }, [medLists, hindiOut]);
   React.useEffect(() => { sendPadMarginsToForm(); }, [padMargins]);
   React.useEffect(() => { sendClinicNameToForm(); }, [clinicName]);
 
