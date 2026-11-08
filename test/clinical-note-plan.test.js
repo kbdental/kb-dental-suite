@@ -174,7 +174,11 @@ ok('and the plan carries no copy of the note text',
       templates: 'Flap Surgery' }
   ];
   eq('the library is accepted', ctx.saveLib({ rows: JSON.stringify(LIB) }), { success: true, saved: 3 });
-  eq('and comes back as it went in', ctx.getLib().rows, LIB);
+  // A template also carries the Hindi the toggle hands to the forms; a row
+  // saved without it comes back with an empty one rather than the field
+  // missing altogether.
+  eq('and comes back as it went in',
+     ctx.getLib().rows, LIB.map(r => ({ ...r, hindi: '' })));
   eq('the plan is accepted', ctx.savePlan({ rows: JSON.stringify(ROWS) }), { success: true, saved: 2 });
   // A plan treatment also carries the Hindi a patient reads; a row saved
   // without it comes back with an empty one rather than the field missing.
@@ -194,7 +198,7 @@ ok('and the plan carries no copy of the note text',
      JSON.stringify(sheets), before);
 
   eq('the library has its own headings', sheets['Clinical Templates (Type 1 & 2)']._rows[0],
-     ['Category', 'Template', 'Type 1 (Concise)', 'Type 2 (Comprehensive)', 'Updated At']);
+     ['Category', 'Template', 'Type 1 (Concise)', 'Type 2 (Comprehensive)', 'Updated At', 'Hindi']);
   eq('and the plan has its own', sheets['Clinical Note Plan']._rows[0],
      ['Plan', 'Plan Treatment', 'Category', 'Templates', 'Updated At', 'Hindi']);
   ok('each goes in one block, not one call per row',
@@ -382,8 +386,9 @@ ok('and the plan carries no copy of the note text',
       return { areas: [...box.querySelectorAll('textarea')].map(a => a.value),
                inputs: [...box.querySelectorAll('input')].map(i => i.value) };
     });
-    eq('the row itself opens with both lengths in it', card.areas,
-       ['WL recorded wrt {tooth}.', 'Working length recorded wrt {tooth} using {method}.']);
+    // Three boxes now: the two lengths and the Hindi the toggle uses.
+    eq('the row itself opens with both lengths in it, and the Hindi', card.areas,
+       ['WL recorded wrt {tooth}.', 'Working length recorded wrt {tooth} using {method}.', '']);
     eq('and the template name in the row', card.inputs, ['Working Length']);
   }
   // Two states, not one: sharing them meant pressing Edit quietly refilled

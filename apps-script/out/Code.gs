@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-08e";
+var BACKEND_BUILD = "2026-11-08f";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -5842,7 +5842,9 @@ function saveChairsList(p) {
 // answer to one name.
 var CLINICAL_TPL_LIB_SHEET = "Clinical Templates (Type 1 & 2)";
 var CLINICAL_TPL_LIB_HEADERS = ["Category", "Template", "Type 1 (Concise)",
-                                "Type 2 (Comprehensive)", "Updated At"];
+                                "Type 2 (Comprehensive)", "Updated At",
+                                // The note in Hindi, for the Hindi toggle.
+                                "Hindi"];
 var CLINICAL_PLAN_SHEET = "Clinical Note Plan";
 var CLINICAL_PLAN_HEADERS = ["Plan", "Plan Treatment", "Category", "Templates", "Updated At",
                              // The treatment as a patient reads it. A plan is
@@ -5862,7 +5864,8 @@ function getClinicalNoteTemplatesV3_() {
       category: String(data[i][0] || "").trim(),
       template: String(data[i][1] || "").trim(),
       type1: String(data[i][2] || ""),
-      type2: String(data[i][3] || "")
+      type2: String(data[i][3] || ""),
+      hindi: String(data[i][5] || "")
     });
   }
   return items;
@@ -5882,7 +5885,8 @@ function saveClinicalNoteTemplateLib(p) {
   var now = new Date().toISOString();
   // One block. 156 rows appended one at a time is 156 round trips.
   var block = arr.map(function (r) {
-    return [r.category || "", r.template || "", r.type1 || "", r.type2 || "", now];
+    return [r.category || "", r.template || "", r.type1 || "", r.type2 || "", now,
+            r.hindi || ""];
   });
   if (block.length) {
     sh.getRange(2, 1, block.length, CLINICAL_TPL_LIB_HEADERS.length).setValues(block);
@@ -5992,7 +5996,11 @@ function clinicalTemplatesFlat_() {
       text: full.trim() ? full : concise,
       category: r.category,
       concise: concise.trim() ? concise : full,
-      comprehensive: full.trim() ? full : concise
+      comprehensive: full.trim() ? full : concise,
+      // Carried so the Hindi toggle can hand the form the Hindi note
+      // instead. Empty where nobody has written one, and the toggle then
+      // leaves that template in English rather than blanking it.
+      hindi: String(r.hindi || "")
     });
   });
   return out;
