@@ -182,12 +182,131 @@ ok('the remembered setting is scoped to the instance',
 {
   const body = html.slice(html.indexOf('  const outLists = () => {'),
                           html.indexOf('  const sendMedListsToForm = () => {'));
-  ok('the swap touches only the two patient-facing lists',
+  // This swap is the medicine lists only; the work-done templates have
+  // their own, on the way into the form.
+  ok('this swap is the instruction lists, and nothing else',
      /instructionsLib:/.test(body) && /medNotes:/.test(body)
      && !/clinicalTemplates/.test(body), body);
 }
-ok('the work-done templates are sent without regard to the toggle',
-   /type: "KB_TEMPLATES",\s*templates: filtered/.test(html));
+// The clinical note templates DO follow the toggle now -- that is what was
+// asked for in the first place. What stays English regardless is what the
+// endorsement, the register and the progress note hold, because the
+// template's own English is what those were filled from.
+ok('the work-done templates follow the toggle',
+   /type: "KB_TEMPLATES",\s*templates: out/.test(html));
+
+// ── the clinical note templates take the toggle too ─────────────────────
+// Asked for in the first place -- "the clinical note template toggle in
+// Hindi" -- and I talked myself out of it on the strength of one
+// multiple-choice answer. Each template carries a Hindi note, and the
+// toggle hands the work-done forms that text instead.
+{
+  const libSrc = ['getClinicalNoteTemplatesV3_', 'saveClinicalNoteTemplateLib',
+                  'clinicalTemplatesFlat_'].map(fn).join('');
+  const c = {
+    getSheet: (n) => (sheets[n] = sheets[n] || makeSheet(n)),
+    ensureGridWidth_: () => {},
+    parseList_: (v) => { try { return JSON.parse(v); } catch (e) { return { __bad: 'bad' }; } },
+    CLINICAL_TPL_LIB_SHEET: "Clinical Templates (Type 1 & 2)",
+    CLINICAL_TPL_LIB_HEADERS: ["Category", "Template", "Type 1 (Concise)",
+                               "Type 2 (Comprehensive)", "Updated At", "Hindi"],
+    Date, String, JSON
+  };
+  vm.createContext(c);
+  vm.runInContext(libSrc + '\nthis.save = saveClinicalNoteTemplateLib; this.flat = clinicalTemplatesFlat_;', c);
+  c.save({ rows: JSON.stringify([
+    { category: 'RCT', template: 'Access Opening', type1: 'Access opening done wrt {tooth}.',
+      type2: 'Access opening done wrt {tooth} under {anaesthesia}.',
+      hindi: '{tooth} \u092a\u0930 \u0930\u0942\u091f \u0915\u0948\u0928\u093e\u0932 \u0916\u094b\u0932\u093e \u0917\u092f\u093e\u0964' },
+    { category: 'RCT', template: 'Working Length', type1: 'WL recorded.', type2: 'WL recorded fully.' }
+  ]) });
+  eq('Hindi is the last column of the template sheet',
+     sheets['Clinical Templates (Type 1 & 2)']._rows[0],
+     ['Category', 'Template', 'Type 1 (Concise)', 'Type 2 (Comprehensive)', 'Updated At', 'Hindi']);
+  const flat = c.flat();
+  eq('the Hindi rides on the record the forms are given',
+     flat[0].hindi, '{tooth} \u092a\u0930 \u0930\u0942\u091f \u0915\u0948\u0928\u093e\u0932 \u0916\u094b\u0932\u093e \u0917\u092f\u093e\u0964');
+  eq('and one with none written reads as empty', flat[1].hindi, '');
+  // What the form is actually handed.
+  const swap = (hindiOut, filtered) => filtered.map(t => {
+    if (!hindiOut) return t;
+    const h = String((t && t.hindi) || "").trim();
+    return h ? { ...t, text: h } : t;
+  });
+  const on = swap(true, flat);
+  eq('with the toggle on the form is handed the Hindi note',
+     on[0].text, '{tooth} \u092a\u0930 \u0930\u0942\u091f \u0915\u0948\u0928\u093e\u0932 \u0916\u094b\u0932\u093e \u0917\u092f\u093e\u0964');
+  eq('a template with no Hindi keeps its English rather than going blank',
+     on[1].text, 'WL recorded fully.');
+  eq('with the toggle off nothing changes at all',
+     JSON.stringify(swap(false, flat)), JSON.stringify(flat));
+  ok('the swap is in the page, on the way to the form',
+     /const out = hindiOut\s*\?\s*filtered\.map/.test(html));
+  ok('and flipping it re-sends the list, or the form keeps the old language',
+     /\}, \[clinicalTemplates, activeForm, hindiOut\]\);/.test(html));
+  ok('the template editor has a box for it',
+     /Hindi \\u2014 used when the Hindi toggle is on \(optional\)/.test(html));
+  ok('and the card shows it under the two lengths',
+     /\}, "HINDI"\) : null,/.test(html));
+}
+
+// ── the draft, and what pressing the button does ────────────────────────
+// Asked for: "yes draft the hindi for both lists". The post-op list was
+// empty in the clinic's own sheet, so there was nothing there to draft;
+// these are the seventeen patient instructions.
+{
+  const DRAFT = vm.runInNewContext(
+    html.slice(html.indexOf('const PATIENT_INSTRUCTION_HINDI = {'),
+               html.indexOf('\n};', html.indexOf('const PATIENT_INSTRUCTION_HINDI = {')) + 3)
+    + '\nPATIENT_INSTRUCTION_HINDI');
+  const names = Object.keys(DRAFT);
+  eq('there is a draft for every patient instruction the clinic has', names.length, 17);
+  ok('every one of them is Devanagari, not left in English',
+     names.every(k => /[ऀ-ॿ]/.test(DRAFT[k])),
+     JSON.stringify(names.filter(k => !/[ऀ-ॿ]/.test(DRAFT[k]))));
+  ok('and none is a stub', names.every(k => DRAFT[k].trim().length > 20),
+     JSON.stringify(names.filter(k => DRAFT[k].trim().length <= 20)));
+  // The numbers in these are instructions: half a teaspoon, 30-60 seconds,
+  // 10 ml, six months. A draft that drops them is worse than no draft.
+  ok('the saline instruction keeps its quantities',
+     /100/.test(DRAFT['Warm Saline Gargles']) && /30/.test(DRAFT['Warm Saline Gargles']),
+     DRAFT['Warm Saline Gargles']);
+  ok('the mouthwash keeps its dose and its wait',
+     /10/.test(DRAFT['Chlorhexidine Mouthwash']) && /30/.test(DRAFT['Chlorhexidine Mouthwash']),
+     DRAFT['Chlorhexidine Mouthwash']);
+  ok('and the recall keeps its interval', /6/.test(DRAFT['Six-Month Recall']),
+     DRAFT['Six-Month Recall']);
+
+  // Pressing the button fills the blanks and NOTHING else. Replacing Hindi
+  // the clinic has corrected itself would be the one unforgivable thing
+  // here, so it is checked rather than trusted.
+  const at = html.indexOf('  const draftable = (items || []).filter(it =>');
+  const body = html.slice(at, at + 2000);
+  ok('the fill was found', at > 0 && /onFillHindi\(/.test(body), at);
+  const fill = (items) => items.map(it =>
+    (!String(it.hindi || "").trim() && DRAFT[it.situation])
+      ? { ...it, hindi: DRAFT[it.situation] } : it);
+  const before = [
+    { situation: 'Avoid Smoking', text: 'Avoid smoking...', hindi: '' },
+    { situation: 'Avoid Tobacco', text: 'Avoid tobacco...', hindi: 'मेरा अपना' },
+    { situation: 'Something Of Their Own', text: 'Theirs.', hindi: '' }
+  ];
+  const after = fill(before);
+  ok('a blank one is filled from the draft',
+     after[0].hindi === DRAFT['Avoid Smoking'], after[0].hindi);
+  eq('Hindi the clinic wrote itself is left exactly alone',
+     after[1].hindi, 'मेरा अपना');
+  eq('and an instruction with no draft stays blank rather than being invented',
+     after[2].hindi, '');
+  eq('nothing else on any row moves', after.map(x => x.text),
+     ['Avoid smoking...', 'Avoid tobacco...', 'Theirs.']);
+  // Run twice: the second press has nothing left to do.
+  eq('pressing it again changes nothing', JSON.stringify(fill(after)), JSON.stringify(after));
+  ok('the screen says it is a draft to read, not a translation to trust',
+     /not a translation to trust/.test(html));
+  ok('and it is offered only while something is still blank',
+     /\(onFillHindi && draftable\.length\) \?/.test(html));
+}
 
 console.log('  ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
