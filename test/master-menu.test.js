@@ -43,7 +43,15 @@ ok('and nothing else is called Notes',
    JSON.stringify(MENU.map(t => t.label)));
 eq('Clinical Configuration holds the clinical lists, in order',
    subs("clinicalConfig"),
-   ["templates", "notePlan", "examination", "medInstructions", "medNotes", "implantBrands"]);
+   ["templates", "notePlan", "notePlanCghs", "examination",
+    "medInstructions", "medNotes", "implantBrands"]);
+// Two plans, two tabs. They are two different lists of treatments, and a
+// toggle inside one tab reads as a filter on a single list -- which is how
+// the CGHS plan came to look as though it had never been added at all.
+ok('the CGHS plan is a tab of its own, beside the normal one',
+   subs("clinicalConfig").indexOf("notePlanCghs")
+     === subs("clinicalConfig").indexOf("notePlan") + 1,
+   subs("clinicalConfig").join(','));
 // The plan sits next to the templates it points at, and the notes lists
 // that were folded in from Notes are still behind them.
 ok('the plan is its own tab, beside the templates',

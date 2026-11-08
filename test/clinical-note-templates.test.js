@@ -65,8 +65,9 @@ ok('the editor is back to one set of categories',
 // that this older sheet is still the last resort and still intact.
 ok('the templates screen is the library editor',
    /templates: \(\) => React\.createElement\(ClinicalTemplateLibEditor, \{\s*rows: noteTemplates,/.test(html));
-ok('and the plan has a screen of its own',
-   /notePlan: \(\) => React\.createElement\(ClinicalPlanEditor, \{\s*rows: notePlan, templates: noteTemplates,/.test(html));
+ok('and each plan has a screen of its own',
+   /notePlan: \(\) => React\.createElement\(ClinicalPlanEditor, \{\s*plan: "Normal", rows: notePlan, templates: noteTemplates,/.test(html) &&
+   /notePlanCghs: \(\) => React\.createElement\(ClinicalPlanEditor, \{\s*plan: "CGHS", rows: notePlan, templates: noteTemplates,/.test(html));
 {
   const master = html.slice(html.indexOf('apiBatch([\n      "getTreatmentsMaster"'));
   const asked = master.slice(0, master.indexOf(']'));
