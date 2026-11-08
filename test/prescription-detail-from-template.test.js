@@ -113,12 +113,14 @@ const cut = (a, b) => html.slice(html.indexOf(a), html.indexOf(b, html.indexOf(a
   ` });
   await page.addScriptTag({ content: cut('// ── Stage 2: the prescription ─', 'function CghsBill(') });
 
+  // Each line carries its position, the way an endorsed line really does:
+  // the detail boxes are keyed by it.
   const LINES = [
-    { code: 'DP007', qty: 2, amt: 0, priced: true, rate: 0,
+    { at: 0, code: 'DP007', qty: 2, amt: 0, priced: true, rate: 0,
       r: { procedure: 'Flap Surgery- Per Tooth', tooth: '16, 26' }, card: null },
-    { code: 'DP001', qty: 1, amt: 0, priced: true, rate: 0,
+    { at: 1, code: 'DP001', qty: 1, amt: 0, priced: true, rate: 0,
       r: { procedure: 'Scaling', tooth: 'Full Mouth' }, card: null },
-    { code: 'DX900', qty: 1, amt: 0, priced: true, rate: 0,
+    { at: 2, code: 'DX900', qty: 1, amt: 0, priced: true, rate: 0,
       r: { procedure: 'Orthodontic Retainer', tooth: '' }, card: null }
   ];
   const TPL = [

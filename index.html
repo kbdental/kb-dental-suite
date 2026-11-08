@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-02b";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-08g";
+const KB_APP_BUILD = "2026-11-08h";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -7373,8 +7373,44 @@ function CghsPrescription({ pat, lines }) {
     return () => { dropped = true; };
   }, []);
 
+  // What is typed over a line on this document. Held per line, applied to
+  // everything below -- what is shown, what is printed, and for the bill
+  // what is saved -- so the paper and the record cannot disagree with the
+  // screen. The endorsement itself is untouched: this is the document, not
+  // the plan.
+  const [lineEdits, setLineEdits] = React.useState({});
+  const editLine = (at, field, value) =>
+    setLineEdits(e => ({ ...e, [at]: { ...(e[at] || {}), [field]: value } }));
+  const num = (v, fallback) => {
+    if (v === undefined || v === null || String(v).trim() === "") return fallback;
+    const n = Number(String(v).replace(/[^0-9.]/g, ""));
+    return isNaN(n) ? fallback : n;
+  };
+  const rows = lines.map(x => {
+    const o = lineEdits[x.at] || {};
+    const qty = o.qty !== undefined ? num(o.qty, 0) : x.qty;
+    const rate = o.rate !== undefined ? num(o.rate, 0) : x.rate;
+    return { ...x,
+      code: o.code !== undefined ? o.code : x.code,
+      r: { ...x.r,
+           procedure: o.procedure !== undefined ? o.procedure
+                      : (x.r.procedure || (x.card && x.card.procedure) || ""),
+           tooth: o.tooth !== undefined ? o.tooth : x.r.tooth },
+      qty: qty, rate: rate, amt: rate * qty,
+      priced: o.rate !== undefined ? rate > 0 : x.priced };
+  });
+
   const nameOf = (x) => x.r.procedure || (x.card && x.card.procedure) || "";
-  const keyOf = (x) => [x.code || "", nameOf(x), x.r.tooth || ""].join("|");
+  // Keyed by the line, not by what is written on it: the code, treatment
+  // and tooth can all be typed over now, and detail written against a flap
+  // surgery must not come loose the moment its tooth number is corrected.
+  //
+  // A line with no position falls back to its content. Without that guard
+  // every such line keys to "undefined", they share one box, and typing in
+  // one rewrites them all.
+  const keyOf = (x) => (x.at === undefined || x.at === null)
+    ? [x.code || "", nameOf(x), x.r.tooth || ""].join("|")
+    : String(x.at);
   const suggested = (x) => {
     const t = cghsTemplateFor(nameOf(x), templates);
     if (!t) return "";
@@ -7397,11 +7433,11 @@ function CghsPrescription({ pat, lines }) {
     return edits[k] !== undefined ? edits[k] : suggested(x);
   };
   const setDetail = (x, v) => { const k = keyOf(x); setEdits(e => ({ ...e, [k]: v })); };
-  const matched = lines.filter(x => !!suggested(x)).length;
+  const matched = rows.filter(x => !!suggested(x)).length;
 
   const build = () => {
     const when = fmtDMY(date) || TODAY;
-    const trs = lines.map((x, i) => {
+    const trs = rows.map((x, i) => {
       const detail = cghsBlankTokens(detailOf(x)).trim();
       return `<tr><td class="c">${i + 1}</td>` +
         `<td class="c b">${cghsEsc(x.code) || "—"}</td>` +
@@ -7454,10 +7490,10 @@ function CghsPrescription({ pat, lines }) {
       React.createElement("div", { style:{ fontSize:12.5, color:"#5a5a5a", marginBottom:8, lineHeight:1.5 } },
         templates.length
           ? "Filled in from the clinical note template that matches each treatment" +
-            (matched === lines.length ? "" : " — " + matched + " of " + lines.length + " matched") +
+            (matched === rows.length ? "" : " — " + matched + " of " + rows.length + " matched") +
             ". Edit any of it before printing; anything still in braces prints as a blank to write on."
           : "Type what is to appear under each treatment."),
-      lines.map((x, i) => React.createElement("div", { key: keyOf(x) + "|" + i,
+      rows.map((x, i) => React.createElement("div", { key: keyOf(x) + "|" + i,
         style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8,
                 padding:"10px 12px", marginBottom:8 } },
         React.createElement("div", { style:{ display:"flex", gap:8, alignItems:"baseline",
@@ -7471,7 +7507,7 @@ function CghsPrescription({ pat, lines }) {
           onChange: e => setDetail(x, e.target.value),
           style:{ ...inp, width:"100%", minHeight:62, resize:"vertical", lineHeight:1.5 } })))),
 
-    React.createElement(CghsLines, { lines: lines, showAmount: false }));
+    React.createElement(CghsLines, { lines: rows, showAmount: false, onEdit: editLine }));
 }
 
 // ── Stage 3: the bill ───────────────────────────────────────────────────
@@ -7486,8 +7522,35 @@ function CghsBill({ pat, panel, card, holder, lines }) {
   const [billNo, setBillNo] = React.useState("");
   const [issuing, setIssuing] = React.useState(false);
   const [issued, setIssued] = React.useState(false);
+  // What is typed over a line on this document. Held per line, applied to
+  // everything below -- what is shown, what is printed, and for the bill
+  // what is saved -- so the paper and the record cannot disagree with the
+  // screen. The endorsement itself is untouched: this is the document, not
+  // the plan.
+  const [lineEdits, setLineEdits] = React.useState({});
+  const editLine = (at, field, value) =>
+    setLineEdits(e => ({ ...e, [at]: { ...(e[at] || {}), [field]: value } }));
+  const num = (v, fallback) => {
+    if (v === undefined || v === null || String(v).trim() === "") return fallback;
+    const n = Number(String(v).replace(/[^0-9.]/g, ""));
+    return isNaN(n) ? fallback : n;
+  };
+  const rows = lines.map(x => {
+    const o = lineEdits[x.at] || {};
+    const qty = o.qty !== undefined ? num(o.qty, 0) : x.qty;
+    const rate = o.rate !== undefined ? num(o.rate, 0) : x.rate;
+    return { ...x,
+      code: o.code !== undefined ? o.code : x.code,
+      r: { ...x.r,
+           procedure: o.procedure !== undefined ? o.procedure
+                      : (x.r.procedure || (x.card && x.card.procedure) || ""),
+           tooth: o.tooth !== undefined ? o.tooth : x.r.tooth },
+      qty: qty, rate: rate, amt: rate * qty,
+      priced: o.rate !== undefined ? rate > 0 : x.priced };
+  });
+
   const [issueErr, setIssueErr] = React.useState("");
-  const total = lines.reduce((t, x) => t + x.amt, 0);
+  const total = rows.reduce((t, x) => t + x.amt, 0);
   const issue = async () => {
     setIssuing(true); setIssueErr("");
     try {
@@ -7498,7 +7561,9 @@ function CghsBill({ pat, panel, card, holder, lines }) {
         // bill that has already gone to the panel.
         address: pat.address || pat.Address || "",
         amount: total,
-        lines: JSON.stringify(lines.map(x => ({
+        // The edited lines, so the bill in the register is the bill that
+        // was printed.
+        lines: JSON.stringify(rows.map(x => ({
           code: x.code, procedure: x.r.procedure || (x.card && x.card.procedure) || "",
           tooth: x.r.tooth || "", qty: x.qty, rate: x.rate, amount: x.amt
         })))
@@ -7513,7 +7578,7 @@ function CghsBill({ pat, panel, card, holder, lines }) {
   const build = () => {
     const when = fmtDMY(date) || TODAY;
     const money = (v) => Number(v || 0).toLocaleString("en-IN");
-    const trs = lines.map((x, i) => `<tr><td class="c">${i + 1}</td>` +
+    const trs = rows.map((x, i) => `<tr><td class="c">${i + 1}</td>` +
       `<td class="c b">${cghsEsc(x.r.tooth) || "—"}</td>` +
       `<td class="c b">${cghsEsc(x.code) || "—"}</td>` +
       `<td>${cghsEsc(x.r.procedure || (x.card && x.card.procedure))}</td>` +
@@ -7578,7 +7643,7 @@ function CghsBill({ pat, panel, card, holder, lines }) {
     issued ? React.createElement("div", { style:{ background:"#f0fdf6", border:"1px solid #059669",
       borderRadius:8, padding:"10px 13px", fontSize:13.5, color:"#065f46", marginBottom:12 } },
       "\u2713 Bill " + billNo + " issued and saved. It is in Finance \u2192 CGHS Bills.") : null,
-    React.createElement(CghsLines, { lines: lines, showAmount: true }),
+    React.createElement(CghsLines, { lines: rows, showAmount: true, onEdit: editLine }),
     React.createElement("div", { style:{ display:"flex", justifyContent:"flex-end", gap:14,
       alignItems:"baseline", marginTop:12, fontSize:15 } },
       React.createElement("span", { style:{ color:"#444444" } }, "Bill Amount"),
@@ -7589,10 +7654,19 @@ function CghsBill({ pat, panel, card, holder, lines }) {
 }
 
 // What is going onto the sheet, shown before it is printed.
-function CghsLines({ lines, showAmount }) {
+// One table, read-only on the endorsement and editable on the two
+// documents printed from it. Given an `onEdit`, every cell the document
+// actually prints becomes a field; Amount never is, because it is rate
+// times units and a figure somebody can type over a sum that does not add
+// up is worse than no figure at all.
+function CghsLines({ lines, showAmount, onEdit }) {
   const cell = { padding:"7px 10px", fontSize:13.5 };
   const th = (t, a) => React.createElement("th", { style:{ textAlign: a || "left",
     padding:"8px 10px", fontSize:12.5, fontWeight:700, color:"#444444" } }, t);
+  const fld = (x, field, value, extra) => React.createElement("input", {
+    value: value === undefined || value === null ? "" : String(value),
+    onChange: e => onEdit(x.at, field, e.target.value),
+    style:{ ...inp, width:"100%", fontSize:13.5, padding:"4px 7px", ...(extra || {}) } });
   return React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`,
     borderRadius:8, overflow:"hidden" } },
     React.createElement("table", { style:{ width:"100%", borderCollapse:"collapse" } },
@@ -7602,12 +7676,18 @@ function CghsLines({ lines, showAmount }) {
         showAmount ? th("Amount", "right") : null)),
       React.createElement("tbody", null, lines.map(x =>
         React.createElement("tr", { key:x.at, style:{ borderTop:`1px solid ${BORDER}` } },
-          React.createElement("td", { style:{ ...cell, fontWeight:700 } }, x.code || "—"),
-          React.createElement("td", { style:cell }, x.r.procedure || (x.card && x.card.procedure) || ""),
-          React.createElement("td", { style:{ ...cell, fontWeight:700 } }, x.r.tooth || "—"),
-          React.createElement("td", { style:{ ...cell, textAlign:"center" } }, x.qty),
+          React.createElement("td", { style:{ ...cell, fontWeight:700 } },
+            onEdit ? fld(x, "code", x.code, { fontWeight:700 }) : (x.code || "—")),
+          React.createElement("td", { style:cell },
+            onEdit ? fld(x, "procedure", x.r.procedure || (x.card && x.card.procedure) || "")
+                   : (x.r.procedure || (x.card && x.card.procedure) || "")),
+          React.createElement("td", { style:{ ...cell, fontWeight:700 } },
+            onEdit ? fld(x, "tooth", x.r.tooth, { fontWeight:700 }) : (x.r.tooth || "—")),
+          React.createElement("td", { style:{ ...cell, textAlign:"center" } },
+            onEdit ? fld(x, "qty", x.qty, { textAlign:"center" }) : x.qty),
           showAmount ? React.createElement("td", { style:{ ...cell, textAlign:"right" } },
-            x.priced ? Number(x.rate).toLocaleString("en-IN") : "—") : null,
+            onEdit ? fld(x, "rate", x.rate, { textAlign:"right" })
+                   : (x.priced ? Number(x.rate).toLocaleString("en-IN") : "—")) : null,
           showAmount ? React.createElement("td", { style:{ ...cell, textAlign:"right", fontWeight:700 } },
             x.priced ? Number(x.amt).toLocaleString("en-IN") : "—") : null)))));
 }
