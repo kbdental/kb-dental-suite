@@ -43,8 +43,14 @@ ok('and nothing else is called Notes',
    JSON.stringify(MENU.map(t => t.label)));
 eq('Clinical Configuration holds the clinical lists, in order',
    subs("clinicalConfig"),
-   ["templates", "notePlan", "notePlanCghs", "examination",
+   ["templates", "notePlan", "notePlanCghs", "departments", "examination",
     "medInstructions", "medNotes", "implantBrands"]);
+// The headings everything above is filed under. A list rather than a
+// constant in the page: a clinic that opens a new discipline should not
+// need a developer to say so.
+ok('the departments are a tab, after the lists that use them',
+   subs("clinicalConfig").indexOf("departments") > subs("clinicalConfig").indexOf("notePlanCghs"),
+   subs("clinicalConfig").join(','));
 // Two plans, two tabs. They are two different lists of treatments, and a
 // toggle inside one tab reads as a filter on a single list -- which is how
 // the CGHS plan came to look as though it had never been added at all.
