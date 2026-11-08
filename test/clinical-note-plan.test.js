@@ -419,14 +419,15 @@ ok('and the plan carries no copy of the note text',
      ['General / Consultation  ·  1', 'RCT  ·  1']);
   eq('every treatment has an Edit', await rowBtns('Edit'), 2);
   eq('and a Remove', await rowBtns('Remove'), 2);
-  // The point of handing it the library: you see what the treatment writes.
-  ok('each treatment shows the note it will write',
-     /Access Opening Access opening done wrt \{tooth\}\./.test(t)
-     && /Working Length WL recorded wrt \{tooth\}\./.test(t), t);
-  ok('a template name that matches nothing is called out',
-     /No template of that name in the library\./.test(t), t);
-  ok('and the screen says where the notes themselves live',
-     /The notes live under Clinical Note Templates/.test(t), t);
+  // "we just need only headings." The normal plan is a list of treatments;
+  // the notes have a screen of their own, and repeating them here was noise.
+  ok('the normal plan shows no note text',
+     !/Access opening done wrt \{tooth\}\./.test(t)
+     && !/WL recorded wrt \{tooth\}\./.test(t), t);
+  ok('nor the template names it points at',
+     !/Access Opening/.test(t) && !/Nothing By That Name/.test(t), t);
+  ok('and it says where the notes live instead',
+     /The notes live under Clinical Note Templates\./.test(t), t);
 
   // The CGHS plan is the same component with the other plan, which is what
   // makes it a tab rather than a filter.
@@ -435,7 +436,24 @@ ok('and the plan carries no copy of the note text',
   eq('Plan CGHS shows its own treatments, and only those', await names(),
      ['Flap Surgery- Per Tooth']);
   ok('named as Plan CGHS on the screen', /on Plan CGHS\./.test(t), t);
-  ok('and its templates resolve too', /Flap raised wrt \{tooth\}\./.test(t), t);
+  // Kept HERE, and only here: a CGHS prescription is written from these
+  // notes, so what each treatment produces is part of the job on this tab.
+  ok('the note each treatment writes is shown', /Flap raised wrt \{tooth\}\./.test(t), t);
+  ok('with the template it comes from', /Flap Surgery/.test(t), t);
+  ok('and the screen says what the note is for',
+     /what a CGHS prescription is written from/.test(t), t);
+
+  // The unresolved name must still be called out -- on the tab where the
+  // notes matter, a treatment that writes nothing is a prescription that
+  // comes up blank.
+  await mount('ClinicalPlanEditor', { plan: 'CGHS', templates: LIB, seed: PLAN,
+    rows: ROWS.concat([{ plan: 'CGHS', treatment: 'Scaling - CGHS',
+                         category: 'Periodontics', templates: 'Nothing By That Name' }]) });
+  ok('a template name that matches nothing is called out on Plan CGHS',
+     /No template of that name in the library\./.test(await text()), await text());
+
+  await mount('ClinicalPlanEditor', { plan: 'CGHS', rows: ROWS, templates: LIB, seed: PLAN });
+  t = await text();
 
   // An edit on one plan must not touch the other: both live in one store.
   await page.evaluate(() => {
