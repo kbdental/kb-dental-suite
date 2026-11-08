@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-02b";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-08f";
+const KB_APP_BUILD = "2026-11-08g";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -28960,21 +28960,31 @@ function ClinicalTemplateLibEditor({ rows, onSave, saving, seed, categories }) {
   const [editAt, setEditAt] = React.useState(null);
   const [form, setForm] = React.useState({ category: CATS[0],
                                            template: "", type1: "", type2: "" });
+  const [draft, setDraft] = React.useState(null);
   const all = rows || [];
   const txt = KB_CLIN_TXT;
 
-  const reset = () => { setEditAt(null);
-    setForm({ category: CATS[0], template: "", type1: "", type2: "" }); };
-  const startEdit = (at) => {
-    setEditAt(at);
-    setForm({ ...all[at] });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-  const save = () => {
+  const reset = () => { setEditAt(null); setDraft(null); };
+  // In place, where the row is.
+  //
+  // This used to load the row into the form at the top of the screen and
+  // scroll there. It worked, and it was reported as not working -- because
+  // with 156 templates the row you press Edit on can be ten thousand pixels
+  // down a twenty-six thousand pixel page, and the screen jumping to the top
+  // is indistinguishable from nothing happening. The form at the top adds;
+  // editing happens under your cursor.
+  const startEdit = (at) => { setEditAt(at); setDraft({ ...all[at] }); };
+  const add = () => {
     if (!txt(form.template).trim()) return;
-    const next = editAt === null ? [...all, form] : all.map((r, i) => i === editAt ? form : r);
+    const row = form;
+    setForm({ category: CATS[0], template: "", type1: "", type2: "" });
+    onSave([...all, row]);
+  };
+  const commitRow = () => {
+    if (!draft || !txt(draft.template).trim()) return;
+    const at = editAt, row = draft;
     reset();
-    onSave(next);
+    onSave(all.map((r, i) => i === at ? row : r));
   };
   const remove = (at) => {
     if (!window.confirm("Remove the template \"" + txt(all[at].template) + "\"?")) return;
@@ -28990,6 +29000,20 @@ function ClinicalTemplateLibEditor({ rows, onSave, saving, seed, categories }) {
   });
   const { groups, order } = kbClinGroup(shown, x => txt(x.r.category));
 
+  // The row, opened in place. Same fields as the form above, under the
+  // cursor instead of at the top of the page.
+  const rowEditor = (saveIt, fields) => React.createElement("div", {
+      style:{ borderTop:`1px solid ${BORDER}`, marginTop:8, paddingTop:10 } },
+    fields,
+    React.createElement("div", { style:{ display:"flex", gap:8, marginTop:10 } },
+      React.createElement("button", { onClick: saveIt, disabled: saving,
+        style:{ padding:"8px 18px", fontSize:13, fontWeight:700, border:"none", borderRadius:7,
+          cursor: saving ? "not-allowed" : "pointer", background:T, color:"#fff" } },
+        saving ? "Saving…" : "Save"),
+      React.createElement("button", { onClick: reset,
+        style:{ padding:"8px 15px", fontSize:13, fontWeight:700, border:`1px solid ${BORDER}`,
+          borderRadius:7, cursor:"pointer", background:"#fff", color:"#444444" } }, "Cancel")));
+
   if (!all.length) {
     return React.createElement(KbClinEmpty, {
       what: "No clinical note templates yet",
@@ -29003,11 +29027,7 @@ function ClinicalTemplateLibEditor({ rows, onSave, saving, seed, categories }) {
 
   return React.createElement("div", null,
     // ── the form, which is also the editor ──────────────────────────────
-    React.createElement("div", { style:{ marginBottom:16, background: editAt === null ? "transparent" : TL,
-      border: editAt === null ? "none" : `1px solid ${T}`, borderRadius:9,
-      padding: editAt === null ? 0 : "12px 14px" } },
-      editAt !== null ? React.createElement("div", { style:{ fontSize:12.5, fontWeight:700,
-        color:T, marginBottom:8 } }, "✏ Editing “" + txt(all[editAt].template) + "”") : null,
+    React.createElement("div", { style:{ marginBottom:16 } },
       React.createElement("div", { style:{ marginBottom:8, maxWidth:300 } },
         React.createElement(Lbl, { c:"Department" }),
         React.createElement("select", { style:inp, value: txt(form.category),
@@ -29029,15 +29049,12 @@ function ClinicalTemplateLibEditor({ rows, onSave, saving, seed, categories }) {
           placeholder:"The full record…",
           onChange: e => setForm({ ...form, type2: e.target.value }) })),
       React.createElement("div", { style:{ display:"flex", gap:8 } },
-        React.createElement("button", { onClick: save, disabled: saving || !txt(form.template).trim(),
+        React.createElement("button", { onClick: add, disabled: saving || !txt(form.template).trim(),
           style:{ padding:"9px 20px", fontSize:13, fontWeight:700, border:"none", borderRadius:7,
             cursor: txt(form.template).trim() ? "pointer" : "not-allowed",
             background: txt(form.template).trim() ? T : "#e3e3e3",
             color: txt(form.template).trim() ? "#fff" : "#444444" } },
-          saving ? "Saving…" : editAt === null ? "Add Template" : "Save Changes"),
-        editAt !== null ? React.createElement("button", { onClick: reset,
-          style:{ padding:"9px 16px", fontSize:13, fontWeight:700, border:`1px solid ${BORDER}`,
-            borderRadius:7, cursor:"pointer", background:"#fff", color:"#444444" } }, "Cancel") : null)),
+          saving ? "Saving…" : "Add Template"))),
 
     React.createElement("div", { style:{ marginBottom:10, maxWidth:360 } },
       React.createElement(Lbl, { c:"Search" }),
@@ -29060,14 +29077,37 @@ function ClinicalTemplateLibEditor({ rows, onSave, saving, seed, categories }) {
                 txt(x.r.template)),
               React.createElement(KbClinRowBtns, { onEdit: () => startEdit(x.at),
                 onRemove: () => remove(x.at) })),
-            React.createElement("div", { style:{ fontSize:12, fontWeight:700, color:"#444444",
-              marginBottom:2 } }, "TYPE 1"),
-            React.createElement("div", { style:{ fontSize:13.5, color:"#3d3d3d", lineHeight:1.5,
-              whiteSpace:"pre-wrap", marginBottom: txt(x.r.type2).trim() ? 6 : 0 } }, txt(x.r.type1)),
-            txt(x.r.type2).trim() ? React.createElement("div", { style:{ fontSize:12,
-              fontWeight:700, color:"#444444", marginBottom:2 } }, "TYPE 2") : null,
-            txt(x.r.type2).trim() ? React.createElement("div", { style:{ fontSize:13.5,
-              color:"#3d3d3d", lineHeight:1.5, whiteSpace:"pre-wrap" } }, txt(x.r.type2)) : null) })
+            (editAt === x.at && draft)
+              ? rowEditor(commitRow, React.createElement("div", null,
+                  React.createElement("div", { style:{ marginBottom:8, maxWidth:300 } },
+                    React.createElement(Lbl, { c:"Department" }),
+                    React.createElement("select", { style:inp, value: txt(draft.category),
+                      onChange: e => setDraft({ ...draft, category: e.target.value }) },
+                      CATS.map(c => React.createElement("option", { key:c, value:c }, c)))),
+                  React.createElement("div", { style:{ marginBottom:8 } },
+                    React.createElement(Lbl, { c:"Template" }),
+                    React.createElement("input", { style:inp, value: txt(draft.template),
+                      onChange: e => setDraft({ ...draft, template: e.target.value }) })),
+                  React.createElement("div", { style:{ marginBottom:8 } },
+                    React.createElement(Lbl, { c:"Type 1 \u2014 Concise" }),
+                    React.createElement("textarea", { style:{ ...ta, minHeight:56 },
+                      value: txt(draft.type1),
+                      onChange: e => setDraft({ ...draft, type1: e.target.value }) })),
+                  React.createElement("div", null,
+                    React.createElement(Lbl, { c:"Type 2 \u2014 Comprehensive" }),
+                    React.createElement("textarea", { style:{ ...ta, minHeight:110 },
+                      value: txt(draft.type2),
+                      onChange: e => setDraft({ ...draft, type2: e.target.value }) }))))
+              : React.createElement("div", null,
+                  React.createElement("div", { style:{ fontSize:12, fontWeight:700,
+                    color:"#444444", marginBottom:2 } }, "TYPE 1"),
+                  React.createElement("div", { style:{ fontSize:13.5, color:"#3d3d3d",
+                    lineHeight:1.5, whiteSpace:"pre-wrap",
+                    marginBottom: txt(x.r.type2).trim() ? 6 : 0 } }, txt(x.r.type1)),
+                  txt(x.r.type2).trim() ? React.createElement("div", { style:{ fontSize:12,
+                    fontWeight:700, color:"#444444", marginBottom:2 } }, "TYPE 2") : null,
+                  txt(x.r.type2).trim() ? React.createElement("div", { style:{ fontSize:13.5,
+                    color:"#3d3d3d", lineHeight:1.5, whiteSpace:"pre-wrap" } }, txt(x.r.type2)) : null)) })
       : React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:24,
           textAlign:"center", color:"#5a5a5a", fontSize:14, border:`1px dashed ${BORDER}` } },
           "Nothing matches that."));
@@ -29090,6 +29130,7 @@ function ClinicalPlanEditor({ plan, rows, templates, onSave, saving, seed, categ
   const blank = () => ({ plan: which, treatment: "",
                          category: CATS[0], templates: "" });
   const [form, setForm] = React.useState(blank);
+  const [draft, setDraft] = React.useState(null);
   const all = rows || [];
   const lib = templates || [];
   const txt = KB_CLIN_TXT;
@@ -29097,18 +29138,27 @@ function ClinicalPlanEditor({ plan, rows, templates, onSave, saving, seed, categ
   const byName = {};
   lib.forEach(t => { if (txt(t.template)) byName[txt(t.template).toLowerCase()] = t; });
 
-  const reset = () => { setEditAt(null); setForm(blank()); };
-  const startEdit = (at) => {
-    setEditAt(at);
-    setForm({ ...all[at] });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-  const save = () => {
+  const reset = () => { setEditAt(null); setDraft(null); };
+  // In place, where the row is.
+  //
+  // This used to load the row into the form at the top of the screen and
+  // scroll there. It worked, and it was reported as not working -- because
+  // with 156 templates the row you press Edit on can be ten thousand pixels
+  // down a twenty-six thousand pixel page, and the screen jumping to the top
+  // is indistinguishable from nothing happening. The form at the top adds;
+  // editing happens under your cursor.
+  const startEdit = (at) => { setEditAt(at); setDraft({ ...all[at] }); };
+  const add = () => {
     if (!txt(form.treatment).trim()) return;
     const row = { ...form, plan: which };
-    const next = editAt === null ? [...all, row] : all.map((r, i) => i === editAt ? row : r);
+    setForm(blank());
+    onSave([...all, row]);
+  };
+  const commitRow = () => {
+    if (!draft || !txt(draft.treatment).trim()) return;
+    const at = editAt, row = { ...draft, plan: which };
     reset();
-    onSave(next);
+    onSave(all.map((r, i) => i === at ? row : r));
   };
   const remove = (at) => {
     if (!window.confirm("Remove “" + txt(all[at].treatment) + "” from this plan?")) return;
@@ -29127,6 +29177,20 @@ function ClinicalPlanEditor({ plan, rows, templates, onSave, saving, seed, categ
   });
   const { groups, order } = kbClinGroup(shown, x => txt(x.r.category));
   const label = which === "CGHS" ? "Plan CGHS" : "the plan";
+
+  // The row, opened in place. Same fields as the form above, under the
+  // cursor instead of at the top of the page.
+  const rowEditor = (saveIt, fields) => React.createElement("div", {
+      style:{ borderTop:`1px solid ${BORDER}`, marginTop:8, paddingTop:10 } },
+    fields,
+    React.createElement("div", { style:{ display:"flex", gap:8, marginTop:10 } },
+      React.createElement("button", { onClick: saveIt, disabled: saving,
+        style:{ padding:"8px 18px", fontSize:13, fontWeight:700, border:"none", borderRadius:7,
+          cursor: saving ? "not-allowed" : "pointer", background:T, color:"#fff" } },
+        saving ? "Saving…" : "Save"),
+      React.createElement("button", { onClick: reset,
+        style:{ padding:"8px 15px", fontSize:13, fontWeight:700, border:`1px solid ${BORDER}`,
+          borderRadius:7, cursor:"pointer", background:"#fff", color:"#444444" } }, "Cancel")));
 
   if (!mine.length && !all.length) {
     const forMe = seed.filter(r => r[0] === which);
@@ -29172,11 +29236,7 @@ function ClinicalPlanEditor({ plan, rows, templates, onSave, saving, seed, categ
   };
 
   return React.createElement("div", null,
-    React.createElement("div", { style:{ marginBottom:16, background: editAt === null ? "transparent" : TL,
-      border: editAt === null ? "none" : `1px solid ${T}`, borderRadius:9,
-      padding: editAt === null ? 0 : "12px 14px" } },
-      editAt !== null ? React.createElement("div", { style:{ fontSize:12.5, fontWeight:700,
-        color:T, marginBottom:8 } }, "✏ Editing “" + txt(all[editAt].treatment) + "”") : null,
+    React.createElement("div", { style:{ marginBottom:16 } },
       React.createElement("div", { style:{ marginBottom:8, maxWidth:300 } },
         React.createElement(Lbl, { c:"Department" }),
         React.createElement("select", { style:inp, value: txt(form.category),
@@ -29193,15 +29253,12 @@ function ClinicalPlanEditor({ plan, rows, templates, onSave, saving, seed, categ
           placeholder:"e.g. Access Opening → Working Length",
           onChange: e => setForm({ ...form, templates: e.target.value }) })),
       React.createElement("div", { style:{ display:"flex", gap:8 } },
-        React.createElement("button", { onClick: save, disabled: saving || !txt(form.treatment).trim(),
+        React.createElement("button", { onClick: add, disabled: saving || !txt(form.treatment).trim(),
           style:{ padding:"9px 20px", fontSize:13, fontWeight:700, border:"none", borderRadius:7,
             cursor: txt(form.treatment).trim() ? "pointer" : "not-allowed",
             background: txt(form.treatment).trim() ? T : "#e3e3e3",
             color: txt(form.treatment).trim() ? "#fff" : "#444444" } },
-          saving ? "Saving…" : editAt === null ? "Add Treatment" : "Save Changes"),
-        editAt !== null ? React.createElement("button", { onClick: reset,
-          style:{ padding:"9px 16px", fontSize:13, fontWeight:700, border:`1px solid ${BORDER}`,
-            borderRadius:7, cursor:"pointer", background:"#fff", color:"#444444" } }, "Cancel") : null)),
+          saving ? "Saving…" : "Add Treatment"))),
 
     React.createElement("div", { style:{ marginBottom:10, maxWidth:360 } },
       React.createElement(Lbl, { c:"Search" }),
@@ -29230,9 +29287,25 @@ function ClinicalPlanEditor({ plan, rows, templates, onSave, saving, seed, categ
                 txt(x.r.treatment)),
               React.createElement(KbClinRowBtns, { onEdit: () => startEdit(x.at),
                 onRemove: () => remove(x.at) })),
-            withDetail ? React.createElement("div", { style:{ fontSize:12.5,
+            (editAt === x.at && draft)
+              ? rowEditor(commitRow, React.createElement("div", null,
+                  React.createElement("div", { style:{ marginBottom:8, maxWidth:300 } },
+                    React.createElement(Lbl, { c:"Department" }),
+                    React.createElement("select", { style:inp, value: txt(draft.category),
+                      onChange: e => setDraft({ ...draft, category: e.target.value }) },
+                      CATS.map(c => React.createElement("option", { key:c, value:c }, c)))),
+                  React.createElement("div", { style:{ marginBottom:8 } },
+                    React.createElement(Lbl, { c:"Plan treatment" }),
+                    React.createElement("input", { style:inp, value: txt(draft.treatment),
+                      onChange: e => setDraft({ ...draft, treatment: e.target.value }) })),
+                  React.createElement("div", null,
+                    React.createElement(Lbl, { c:"Templates it is made of" }),
+                    React.createElement("input", { style:inp, value: txt(draft.templates),
+                      onChange: e => setDraft({ ...draft, templates: e.target.value }) }))))
+              : null,
+            (!(editAt === x.at && draft) && withDetail) ? React.createElement("div", { style:{ fontSize:12.5,
               color:"#5a5a5a", marginBottom:6 } }, txt(x.r.templates) || "no template named") : null,
-            withDetail ? resolved(x) : null) })
+            (!(editAt === x.at && draft) && withDetail) ? resolved(x) : null) })
       : React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:24,
           textAlign:"center", color:"#5a5a5a", fontSize:14, border:`1px dashed ${BORDER}` } },
           "Nothing on this plan matches that."));

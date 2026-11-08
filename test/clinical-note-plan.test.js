@@ -367,13 +367,36 @@ ok('and the plan carries no copy of the note text',
     [...row.querySelectorAll('button')].find(b => b.textContent.trim() === 'Edit').click();
   });
   await page.waitForTimeout(110);
-  t = await text();
-  ok('the form says which template it is editing', /Editing .Working Length./.test(t), t);
-  const vals = await page.$$eval('textarea', els => els.map(e => e.value));
-  eq('with both lengths loaded into it', vals,
-     ['WL recorded wrt {tooth}.', 'Working length recorded wrt {tooth} using {method}.']);
-  await page.locator('textarea').nth(1).fill('Rewritten full record.');
-  await (await button('Save Changes')).asElement().click();
+  // In the ROW, not in the form at the top. It used to load the row into
+  // that form and scroll there, which with 156 templates jumps the page ten
+  // thousand pixels away from what you pressed -- reported, fairly, as the
+  // button not working.
+  {
+    const card = await page.evaluate(() => {
+      const sp = [...document.querySelectorAll('span')]
+        .find(s => s.textContent.trim() === 'Working Length');
+      const box = sp.closest('div[style*="border-radius"]');
+      return { areas: [...box.querySelectorAll('textarea')].map(a => a.value),
+               inputs: [...box.querySelectorAll('input')].map(i => i.value) };
+    });
+    eq('the row itself opens with both lengths in it', card.areas,
+       ['WL recorded wrt {tooth}.', 'Working length recorded wrt {tooth} using {method}.']);
+    eq('and the template name in the row', card.inputs, ['Working Length']);
+  }
+  // Two states, not one: sharing them meant pressing Edit quietly refilled
+  // the add form with the row being edited.
+  eq('the add form at the top is left alone',
+     await page.$eval('input[placeholder*="Access Opening"]', e => e.value), '');
+  await page.evaluate(() => {
+    const sp = [...document.querySelectorAll('span')]
+      .find(s => s.textContent.trim() === 'Working Length');
+    const a = sp.closest('div[style*="border-radius"]').querySelectorAll('textarea')[1];
+    const set = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+    set.call(a, 'Rewritten full record.');
+    a.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.waitForTimeout(80);
+  await (await button('^Save$')).asElement().click();
   await page.waitForTimeout(110);
   out = await saved();
   eq('the edit lands on the row it was opened from',
@@ -462,11 +485,19 @@ ok('and the plan carries no copy of the note text',
     [...row.querySelectorAll('button')].find(b => b.textContent.trim() === 'Edit').click();
   });
   await page.waitForTimeout(110);
-  await page.$$eval('input', els => {
-    const i = els.find(e => e.value === 'Flap Surgery');
-    return i ? true : false;
-  });
-  await (await button('Save Changes')).asElement().click();
+  {
+    const card = await page.evaluate(() => {
+      const sp = [...document.querySelectorAll('span')]
+        .find(s => s.textContent.trim() === 'Flap Surgery- Per Tooth');
+      const box = sp.closest('div[style*="border-radius"]');
+      return { inputs: [...box.querySelectorAll('input')].map(i => i.value),
+               areas: box.querySelectorAll('textarea').length };
+    });
+    eq('a plan row opens in place, with its own fields', card.inputs,
+       ['Flap Surgery- Per Tooth', 'Flap Surgery']);
+    eq('and no note boxes, because the notes are not kept here', card.areas, 0);
+  }
+  await (await button('^Save$')).asElement().click();
   await page.waitForTimeout(110);
   out = await saved();
   eq('the whole store comes back, both plans in it', out.length, 3);
