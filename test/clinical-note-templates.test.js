@@ -61,13 +61,12 @@ ok('the editor is back to one set of categories',
 // ── it still saves the way every other list does ────────────────────────
 // The screen behind it is the PLAN now: a note belongs to a treatment on
 // the plan, not to a situation somebody thinks of at the chair.
-ok('the screen is the plan editor',
-   /templates: \(\) => React\.createElement\(ClinicalNotePlanEditor, \{\s*rows: notePlan, onSave: saveNotePlan,/.test(html));
-ok('saved through persist, like every other list here',
-   /const saveNotePlan = \(arr\) => persist\("saveClinicalNotePlan", \{ rows: JSON\.stringify\(arr\) \}, arr, setNotePlan, notePlan\);/.test(html));
-ok('and the plan is read in the same one request',
-   /"getPatientTypesList", "getClinicalNotePlan"/.test(html) &&
-   /if \(np && np\.success\) setNotePlan\(np\.rows \|\| \[\]\);/.test(html));
+// clinical-note-plan.test.js covers the two screens; what matters here is
+// that this older sheet is still the last resort and still intact.
+ok('the templates screen is the library editor',
+   /templates: \(\) => React\.createElement\(ClinicalTemplateLibEditor, \{\s*rows: noteTemplates,/.test(html));
+ok('and the plan has a screen of its own',
+   /notePlan: \(\) => React\.createElement\(ClinicalPlanEditor, \{\s*rows: notePlan, templates: noteTemplates,/.test(html));
 {
   const master = html.slice(html.indexOf('apiBatch([\n      "getTreatmentsMaster"'));
   const asked = master.slice(0, master.indexOf(']'));
@@ -144,9 +143,9 @@ ok('a treatment may have several notes to choose from',
 }
 
 // ── the sheet, run ──────────────────────────────────────────────────────
-// From the plan store down, because the reader derives from the plan first
-// and falls back to the older sheet only when the plan is empty.
-const SRC = gs.slice(gs.indexOf('// ── The plan, and the notes that go with it ─'),
+// From the stores down, because the reader derives from the template
+// library first and falls back to this older sheet only when it is empty.
+const SRC = gs.slice(gs.indexOf('// ── Three things, kept apart ─'),
                      gs.indexOf('function getPatientOutstanding(p) {'));
 ok('the sheet code was found', /function clinicalTplSheet_/.test(SRC), SRC.length);
 

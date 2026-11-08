@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-08a";
+var BACKEND_BUILD = "2026-11-08b";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -1225,6 +1225,8 @@ function route(p) {
       case "saveClinicalNoteTemplates": return saveClinicalNoteTemplates(p);
       case "getClinicalNotePlan":        return getClinicalNotePlan();
       case "saveClinicalNotePlan":       return saveClinicalNotePlan(p);
+      case "getClinicalNoteTemplateLib":  return getClinicalNoteTemplateLib();
+      case "saveClinicalNoteTemplateLib": return saveClinicalNoteTemplateLib(p);
       case "getSettings":          return getSettings();
       case "saveSettings":         return saveSettings(p);
       case "saveFinancePassword":  return saveFinancePassword(p);
@@ -5801,25 +5803,76 @@ function saveChairsList(p) {
   return { success: true };
 }
 
-// ── The plan, and the notes that go with it ─────────────────────────────
-// A clinical note belongs to a TREATMENT ON THE PLAN, not to a situation
-// somebody thinks of at the chair. So the store is the plan: one row per
-// plan treatment, carrying the department it falls under, the procedure
-// templates it is made of, and the note itself in two lengths --
+// ── Three things, kept apart ────────────────────────────────────────────
 //
-//   Type 1 (Concise)        one or two lines, for a routine visit
-//   Type 2 (Comprehensive)  the full record, for a case that may be read
-//                           back by somebody else, or by a panel
+//   the TEMPLATES   156 of them, one per procedure, each written in two
+//                   lengths -- Type 1 (Concise) for a routine visit, Type 2
+//                   (Comprehensive) for a record somebody else, or a panel,
+//                   may read back
 //
-// Two plans, because the names differ: the clinic's own treatments, and the
-// CGHS rate card's. Only four names appear in both.
+//   the PLAN        277 treatments that can go on a plan -- 156 on the
+//                   clinic's own and 121 on the CGHS rate card -- each
+//                   naming the department it falls under and the templates
+//                   it is made of
 //
-// The seed lives in the page, not here. It is 186 KB of the clinic's own
-// writing, and a file that has to be pasted into two script editors by hand
-// should not carry it.
+// They were briefly one store, keyed by plan treatment. That duplicated
+// every note once per plan item that used it, and a template corrected in
+// one place stayed wrong in the others. A plan item REFERS to templates by
+// name; all 364 references resolve, which is what makes the split safe.
+//
+// Both seeds live in the page, not here: this file is pasted into two
+// script editors by hand.
+// A sheet of its OWN, not the name the older table already has. Written to
+// share it, the two migrations fought: each read found a heading row the
+// other had written, moved that sheet aside and made a fresh one, so two
+// tabs were shuffled on every single read. Two different tables must not
+// answer to one name.
+var CLINICAL_TPL_LIB_SHEET = "Clinical Templates (Type 1 & 2)";
+var CLINICAL_TPL_LIB_HEADERS = ["Category", "Template", "Type 1 (Concise)",
+                                "Type 2 (Comprehensive)", "Updated At"];
 var CLINICAL_PLAN_SHEET = "Clinical Note Plan";
-var CLINICAL_PLAN_HEADERS = ["Plan", "Plan Treatment", "Category", "Templates",
-                             "Type 1 (Concise)", "Type 2 (Comprehensive)", "Updated At"];
+var CLINICAL_PLAN_HEADERS = ["Plan", "Plan Treatment", "Category", "Templates", "Updated At"];
+
+var TYPE1_SUFFIX = " \u00b7 Type 1 (Concise)";
+var TYPE2_SUFFIX = " \u00b7 Type 2 (Comprehensive)";
+
+function getClinicalNoteTemplatesV3_() {
+  var sh = getSheet(CLINICAL_TPL_LIB_SHEET);
+  var data = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!String(data[i][1] || "").trim()) continue;
+    items.push({
+      category: String(data[i][0] || "").trim(),
+      template: String(data[i][1] || "").trim(),
+      type1: String(data[i][2] || ""),
+      type2: String(data[i][3] || "")
+    });
+  }
+  return items;
+}
+
+function getClinicalNoteTemplateLib() {
+  return { success: true, rows: getClinicalNoteTemplatesV3_() };
+}
+
+function saveClinicalNoteTemplateLib(p) {
+  var arr = parseList_(p.rows, "clinical note templates");
+  if (arr && arr.__bad) return { success: false, error: arr.__bad };
+  var sh = getSheet(CLINICAL_TPL_LIB_SHEET);
+  sh.clearContents();
+  ensureGridWidth_(sh, CLINICAL_TPL_LIB_HEADERS.length);
+  sh.appendRow(CLINICAL_TPL_LIB_HEADERS);
+  var now = new Date().toISOString();
+  // One block. 156 rows appended one at a time is 156 round trips.
+  var block = arr.map(function (r) {
+    return [r.category || "", r.template || "", r.type1 || "", r.type2 || "", now];
+  });
+  if (block.length) {
+    sh.getRange(2, 1, block.length, CLINICAL_TPL_LIB_HEADERS.length).setValues(block);
+  }
+  return { success: true, saved: block.length };
+}
 
 function getClinicalNotePlan() {
   var sh = getSheet(CLINICAL_PLAN_SHEET);
@@ -5831,9 +5884,7 @@ function getClinicalNotePlan() {
       plan: String(data[i][0] || "").trim(),
       treatment: String(data[i][1] || "").trim(),
       category: String(data[i][2] || "").trim(),
-      templates: String(data[i][3] || "").trim(),
-      type1: String(data[i][4] || ""),
-      type2: String(data[i][5] || "")
+      templates: String(data[i][3] || "").trim()
     });
   }
   return { success: true, rows: items };
@@ -5847,11 +5898,8 @@ function saveClinicalNotePlan(p) {
   ensureGridWidth_(sh, CLINICAL_PLAN_HEADERS.length);
   sh.appendRow(CLINICAL_PLAN_HEADERS);
   var now = new Date().toISOString();
-  // Written in one block. 277 rows appended one at a time is 277 round
-  // trips and times the request out.
   var block = arr.map(function (r) {
-    return [r.plan || "", r.treatment || "", r.category || "", r.templates || "",
-            r.type1 || "", r.type2 || "", now];
+    return [r.plan || "", r.treatment || "", r.category || "", r.templates || "", now];
   });
   if (block.length) {
     sh.getRange(2, 1, block.length, CLINICAL_PLAN_HEADERS.length).setValues(block);
@@ -5859,29 +5907,22 @@ function saveClinicalNotePlan(p) {
   return { success: true, saved: block.length };
 }
 
-// Everything that already asks for clinical note templates -- the eighteen
-// work-done forms, the CGHS prescription -- wants {situation, text,
-// category}. It keeps getting exactly that, derived from the plan: two
-// records per plan treatment, one per length, each saying which it is.
-//
-// Nothing in those eighteen forms had to change for this, which is the
-// point: they are base64 blobs, and a dropdown rebuilt eighteen times is
-// eighteen chances to break a form that was working.
-function clinicalTemplatesFromPlan_() {
-  var rows = getClinicalNotePlan().rows;
+// The eighteen work-done forms and the CGHS prescription ask for
+// {situation, text, category}, and keep getting exactly that: two records
+// per template, each named for the length it is. Nothing in those forms --
+// base64 blobs, every one -- had to change for any of this.
+function clinicalTemplatesFlat_() {
   var out = [];
-  rows.forEach(function (r) {
+  getClinicalNoteTemplatesV3_().forEach(function (r) {
     if (String(r.type1 || "").trim()) {
-      out.push({ situation: r.treatment + TYPE1_SUFFIX, text: r.type1, category: r.category });
+      out.push({ situation: r.template + TYPE1_SUFFIX, text: r.type1, category: r.category });
     }
     if (String(r.type2 || "").trim()) {
-      out.push({ situation: r.treatment + TYPE2_SUFFIX, text: r.type2, category: r.category });
+      out.push({ situation: r.template + TYPE2_SUFFIX, text: r.type2, category: r.category });
     }
   });
   return out;
 }
-var TYPE1_SUFFIX = " \u00b7 Type 1 (Concise)";
-var TYPE2_SUFFIX = " \u00b7 Type 2 (Comprehensive)";
 
 // ── Clinical note templates ─────────────────────────────────────────────
 // There is ONE list. It was briefly two -- the clinic's 188 notes went in
@@ -5895,6 +5936,8 @@ var TYPE2_SUFFIX = " \u00b7 Type 2 (Comprehensive)";
 // every time but the first.
 var CLINICAL_TPL_SHEET = "Clinical Note Templates";
 var CLINICAL_TPL_HEADERS = ["Situation", "Template Text", "Category", "Updated At", "v2"];
+// The v2 table, still read as a last resort when neither the library nor
+// the plan has anything in it.
 
 // Three departments were renamed to the names the rest of the clinic uses.
 // A sheet seeded before that still carries the old ones, and those headings
@@ -5961,8 +6004,8 @@ function getClinicalNoteTemplates() {
   // The plan is the store now. The older sheet is left exactly where it is
   // and simply stops being read -- it is the clinic's own writing, and the
   // plan can be emptied and refilled while they decide.
-  var fromPlan = clinicalTemplatesFromPlan_();
-  if (fromPlan.length) return { success: true, templates: fromPlan, source: "plan" };
+  var lib = clinicalTemplatesFlat_();
+  if (lib.length) return { success: true, templates: lib, source: "library" };
 
   var sh = clinicalTplSheet_();
   // Untouched, so the clinic's own list is put in. getLastRow() is 0 only
