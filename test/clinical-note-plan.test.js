@@ -2,10 +2,18 @@
 //  called a Type 1 (concise) and Type 2 (Comprehensive)"
 //  ... "They should be replaced with Templates according to Plan"
 //
-// So a clinical note belongs to a TREATMENT ON THE PLAN, not to a situation
-// somebody thinks of at the chair, and each treatment carries its note in
-// two lengths. Two plans, because the names differ: the clinic's own
-// treatments and the CGHS rate card's.
+// Then: "The Plan tab needs to be separate ... and push the plan from the
+//  sheet to plan and also Plan CGHS"
+//
+// So THREE things, kept apart:
+//   the TEMPLATES  156, one per procedure, each in two lengths
+//   the PLAN       277 treatments -- 156 the clinic's own, 121 CGHS -- each
+//                  naming the templates it is made of
+//
+// They were briefly one store keyed by plan treatment. That duplicated
+// every note once per plan item that used it, so a template corrected in
+// one place stayed wrong in the others. A plan item refers to templates BY
+// NAME, and all 364 references resolve, which is what makes the split safe.
 //
 // The thing that must not break: eighteen work-done forms and the CGHS
 // prescription already ask for {situation, text, category}. They are base64
@@ -25,63 +33,86 @@ const checks = [];
 const ok = (name, cond, detail) => checks.push({ name, ok: !!cond, got: detail });
 const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === JSON.stringify(want), got, want });
 
-// ── the clinic's own plan ───────────────────────────────────────────────
-const SEED = vm.runInNewContext(
-  html.slice(html.indexOf('const CLINICAL_NOTE_PLAN_SEED = ['),
-             html.indexOf('\n];', html.indexOf('const CLINICAL_NOTE_PLAN_SEED = [')) + 3)
-  + '\nCLINICAL_NOTE_PLAN_SEED');
+// ── the clinic's own templates and plan ─────────────────────────────────
+const read = (constName) => vm.runInNewContext(
+  html.slice(html.indexOf('const ' + constName + ' = ['),
+             html.indexOf('\n];', html.indexOf('const ' + constName + ' = [')) + 3)
+  + '\n' + constName);
+
+const TPL = read('CLINICAL_NOTE_TEMPLATE_SEED');
+const PLAN = read('CLINICAL_NOTE_PLAN_SEED');
 const CATS = vm.runInNewContext(
   html.slice(html.indexOf('const CLINICAL_TEMPLATE_CATEGORIES = ['),
              html.indexOf(';', html.indexOf('const CLINICAL_TEMPLATE_CATEGORIES = [')))
   + '\nCLINICAL_TEMPLATE_CATEGORIES');
 
-eq('every treatment the clinic sent is there', SEED.length, 277);
-eq('on the two plans', [SEED.filter(r => r[0] === 'Normal').length,
-                        SEED.filter(r => r[0] === 'CGHS').length], [156, 121]);
-ok('each row is plan, treatment, department, templates, Type 1, Type 2',
-   SEED.every(r => r.length === 6 && r.every(x => typeof x === 'string')),
-   JSON.stringify(SEED.find(r => r.length !== 6 || r.some(x => typeof x !== 'string'))));
-ok('no treatment is nameless', SEED.every(r => r[1].trim()),
-   JSON.stringify(SEED.find(r => !r[1].trim())));
-ok('and none is left without a concise note', SEED.every(r => r[4].trim()),
-   JSON.stringify((SEED.find(r => !r[4].trim()) || []).slice(0, 2)));
-ok('nor without the full one', SEED.every(r => r[5].trim()),
-   JSON.stringify((SEED.find(r => !r[5].trim()) || []).slice(0, 2)));
-// Type 2 is the longer one by definition; if a row had them the wrong way
-// round the printed record would be the short one.
-{
-  const inverted = SEED.filter(r => r[5].length < r[4].length);
-  eq('the comprehensive note is never shorter than the concise one',
-     inverted.map(r => r[1]), []);
-}
-// Every department must be one the editor offers, or a note is filed under
-// a heading nobody can pick again.
-ok('every treatment falls under a department the editor offers',
-   SEED.every(r => CATS.indexOf(r[2]) >= 0),
-   JSON.stringify([...new Set(SEED.filter(r => CATS.indexOf(r[2]) < 0).map(r => r[2]))]));
+eq('every template the clinic wrote is there', TPL.length, 156);
+ok('each is department, template, Type 1, Type 2',
+   TPL.every(r => r.length === 4 && r.every(x => typeof x === 'string' && x.trim())),
+   JSON.stringify((TPL.find(r => r.length !== 4 || r.some(x => typeof x !== 'string' || !x.trim())) || []).slice(0, 2)));
+eq('no two templates share a name', TPL.length, new Set(TPL.map(r => r[1])).size);
+// Type 2 is the longer one by definition. The wrong way round and the full
+// record would print as the short one.
+eq('the comprehensive note is never shorter than the concise one',
+   TPL.filter(r => r[3].length < r[2].length).map(r => r[1]), []);
+ok('every template falls under a department the editor offers',
+   TPL.every(r => CATS.indexOf(r[0]) >= 0),
+   JSON.stringify([...new Set(TPL.filter(r => CATS.indexOf(r[0]) < 0).map(r => r[0]))]));
 // The sheet said "Restorations"; the clinic standardised on "Restoration"
-// last week, and the Restoration form picks by that name.
+// last week and the Restoration form picks by that name.
 ok('the department the sheet spelled differently was brought into line',
-   SEED.some(r => r[2] === 'Restoration') && !SEED.some(r => r[2] === 'Restorations'));
+   TPL.some(r => r[0] === 'Restoration') && !TPL.some(r => r[0] === 'Restorations'));
+
+eq('every plan treatment is there', PLAN.length, 277);
+eq('on the two plans', [PLAN.filter(r => r[0] === 'Normal').length,
+                        PLAN.filter(r => r[0] === 'CGHS').length], [156, 121]);
+ok('each is plan, treatment, department, templates',
+   PLAN.every(r => r.length === 4 && r[1].trim() && r[2].trim() && r[3].trim()),
+   JSON.stringify((PLAN.find(r => r.length !== 4 || !(r[1].trim() && r[2].trim() && r[3].trim())) || []).slice(0, 3)));
+ok('and the plan carries no copy of the note text',
+   PLAN.every(r => r.length === 4), 'a plan row is wider than four columns');
+
+// ── the references, resolved the way the screen resolves them ───────────
 {
-  const forms = html.slice(html.indexOf('{ id:"rct",'), html.indexOf('{ id:"labLog",') + 500);
-  const used = [];
-  const re = /id:"(\w+)"[^\n]*?templateCategory:"([^"]*)"/g;
-  let m;
-  while ((m = re.exec(forms))) used.push({ form: m[1], cat: m[2] });
-  const empty = used.filter(x => x.cat !== '*' && !SEED.some(r => r[2] === x.cat));
-  eq('and every form has treatments to offer', empty.map(x => x.form + ':' + x.cat), []);
+  const ctx = { String };
+  vm.createContext(ctx);
+  vm.runInContext(html.slice(html.indexOf('function clinicalTemplateRefs(cell) {'),
+                             html.indexOf('const KB_CLIN_LBL'))
+    + '\nthis.refs = clinicalTemplateRefs;', ctx);
+  const refs = ctx.refs;
+
+  eq('one template is one reference', refs('Consultation'), ['Consultation']);
+  eq('an arrow means one after another',
+     refs('Access Opening → Working Length'), ['Access Opening', 'Working Length']);
+  eq('"or" means a choice',
+     refs('Composite – Posterior / or Composite – Anterior'),
+     ['Composite – Posterior', 'Composite – Anterior']);
+  // The one that must not be split: a bare slash is part of the NAME.
+  eq('a slash inside a name is left alone',
+     refs('Denture Addition (Tooth / Clasp)'), ['Denture Addition (Tooth / Clasp)']);
+  eq('nothing named is no references', refs(''), []);
+  eq('and neither is nothing at all', refs(undefined), []);
+
+  // Every reference in the clinic's plan must name a template that exists,
+  // or that plan treatment writes nothing and the screen is the only place
+  // it would ever show.
+  const names = new Set(TPL.map(r => r[1]));
+  const dangling = [];
+  PLAN.forEach(r => refs(r[3]).forEach(n => { if (!names.has(n)) dangling.push(r[1] + ' → ' + n); }));
+  eq('every reference in the plan resolves to a template', dangling, []);
+  eq('and there are plenty of them to get wrong',
+     PLAN.reduce((n, r) => n + refs(r[3]).length, 0), 364);
 }
 
-// ── the shape the eighteen forms already expect ─────────────────────────
+// ── two stores, run ─────────────────────────────────────────────────────
 {
-  const src = gs.slice(gs.indexOf('// ── The plan, and the notes that go with it ─'),
+  const src = gs.slice(gs.indexOf('// ── Three things, kept apart ─'),
                        gs.indexOf('function getPatientOutstanding(p) {'));
-  ok('the backend code was found', /function clinicalTemplatesFromPlan_/.test(src), src.length);
+  ok('the backend code was found', /function clinicalTemplatesFlat_/.test(src), src.length);
 
   const sheets = {};
-  const makeSheet = (name, rows) => ({
-    name: name, _rows: (rows || []).map(r => r.slice()), _max: 26,
+  const makeSheet = (name) => ({
+    name: name, _rows: [], _max: 26,
     getName() { return this.name; }, setName(n) { this.name = n; },
     getLastRow() { return this._rows.length; },
     getLastColumn() { return this._rows.reduce((m, r) => Math.max(m, r.length), 0); },
@@ -111,11 +142,8 @@ ok('the department the sheet spelled differently was brought into line',
     appendRow(r) { this._rows.push(r.slice()); },
     clearContents() { this._rows = []; }
   });
-  const ss = {
-    getSheetByName: (n) => sheets[n] || null,
-    insertSheet: (n) => (sheets[n] = makeSheet(n, [])),
-    _sheets: sheets
-  };
+  const ss = { getSheetByName: (n) => sheets[n] || null,
+               insertSheet: (n) => (sheets[n] = makeSheet(n)), _sheets: sheets };
   const ctx = {
     SpreadsheetApp: { getActiveSpreadsheet: () => ss },
     getSheet: (n) => sheets[n] || ss.insertSheet(n),
@@ -125,58 +153,80 @@ ok('the department the sheet spelled differently was brought into line',
     Date, String, JSON, Math
   };
   vm.createContext(ctx);
-  vm.runInContext(src + '\nthis.getPlan = getClinicalNotePlan; this.savePlan = saveClinicalNotePlan;'
+  vm.runInContext(src + '\nthis.getLib = getClinicalNoteTemplateLib; this.saveLib = saveClinicalNoteTemplateLib;'
+    + ' this.getPlan = getClinicalNotePlan; this.savePlan = saveClinicalNotePlan;'
     + ' this.getTpl = getClinicalNoteTemplates;', ctx);
 
+  eq('an empty library reads as empty', ctx.getLib(), { success: true, rows: [] });
   eq('an empty plan reads as empty', ctx.getPlan(), { success: true, rows: [] });
 
+  const LIB = [
+    { category: 'RCT', template: 'Access Opening', type1: 'Access opening done wrt {tooth}.',
+      type2: 'Access opening done wrt {tooth} under {anaesthesia}.' },
+    { category: 'RCT', template: 'Working Length', type1: 'WL recorded wrt {tooth}.', type2: '' },
+    { category: 'Periodontics', template: 'Flap Surgery', type1: 'Flap raised wrt {tooth}.',
+      type2: 'Flap raised wrt {tooth} under {anaesthesia}, sutured.' }
+  ];
   const ROWS = [
     { plan: 'Normal', treatment: 'RCT - Access Open', category: 'RCT',
-      templates: 'Access Opening → Working Length',
-      type1: 'Access opening done wrt {tooth}.', type2: 'Access opening done wrt {tooth} under {anaesthesia}, irrigated with {irrigants}.' },
-    { plan: 'CGHS', treatment: 'Root Canal Treatment - Anterior', category: 'RCT',
-      templates: 'Access Opening', type1: 'RCT started wrt {tooth}.', type2: 'RCT started wrt {tooth}, working length recorded.' },
-    { plan: 'Normal', treatment: 'Consultation', category: 'General / Consultation',
-      templates: 'Consultation', type1: 'Consultation for {complaint}.', type2: '' }
+      templates: 'Access Opening → Working Length' },
+    { plan: 'CGHS', treatment: 'Flap Surgery- Per Tooth', category: 'Periodontics',
+      templates: 'Flap Surgery' }
   ];
-  eq('a plan is accepted', ctx.savePlan({ rows: JSON.stringify(ROWS) }), { success: true, saved: 3 });
+  eq('the library is accepted', ctx.saveLib({ rows: JSON.stringify(LIB) }), { success: true, saved: 3 });
+  eq('and comes back as it went in', ctx.getLib().rows, LIB);
+  eq('the plan is accepted', ctx.savePlan({ rows: JSON.stringify(ROWS) }), { success: true, saved: 2 });
   eq('and comes back as it went in', ctx.getPlan().rows, ROWS);
-  eq('under its own headings', sheets['Clinical Note Plan']._rows[0],
-     ['Plan', 'Plan Treatment', 'Category', 'Templates', 'Type 1 (Concise)', 'Type 2 (Comprehensive)', 'Updated At']);
-  // Written in one block: 277 rows appended one at a time times the request out.
-  ok('the rows go in one block, not one call each',
+
+  // The thing that was actually broken: two tables answering to one name.
+  // Each read found the other's heading row, moved that sheet aside and made
+  // a fresh one, so two tabs were shuffled on every single read.
+  eq('they are separate sheets', Object.keys(sheets).sort(),
+     ['Clinical Note Plan', 'Clinical Templates (Type 1 & 2)']);
+  eq('and neither is the older table\'s name',
+     Object.keys(sheets).indexOf('Clinical Note Templates'), -1);
+  const before = JSON.stringify(sheets);
+  ctx.getTpl(); ctx.getTpl(); ctx.getTpl();
+  eq('reading three times renames nothing and writes nothing',
+     JSON.stringify(sheets), before);
+
+  eq('the library has its own headings', sheets['Clinical Templates (Type 1 & 2)']._rows[0],
+     ['Category', 'Template', 'Type 1 (Concise)', 'Type 2 (Comprehensive)', 'Updated At']);
+  eq('and the plan has its own', sheets['Clinical Note Plan']._rows[0],
+     ['Plan', 'Plan Treatment', 'Category', 'Templates', 'Updated At']);
+  ok('each goes in one block, not one call per row',
+     /sh\.getRange\(2, 1, block\.length, CLINICAL_TPL_LIB_HEADERS\.length\)\.setValues\(block\)/.test(src) &&
      /sh\.getRange\(2, 1, block\.length, CLINICAL_PLAN_HEADERS\.length\)\.setValues\(block\)/.test(src));
 
-  // The derived list: two records per treatment, each saying which it is.
-  const tpl = ctx.getTpl();
-  eq('the templates are derived from the plan', tpl.source, 'plan');
-  eq('two records per treatment, bar the one with no full note', tpl.templates.length, 5);
-  // Field by field: the order the keys land in is not the point.
+  // ── the shape the eighteen forms already expect ──────────────────────
+  const flat = ctx.getTpl();
+  eq('the templates come from the library', flat.source, 'library');
+  eq('two records per template, bar the one with no full note', flat.templates.length, 5);
   eq('the concise one comes first, and says so',
-     [tpl.templates[0].situation, tpl.templates[0].category, tpl.templates[0].text],
-     ['RCT - Access Open · Type 1 (Concise)', 'RCT', 'Access opening done wrt {tooth}.']);
-  eq('the full one follows it', tpl.templates[1].situation,
-     'RCT - Access Open · Type 2 (Comprehensive)');
+     [flat.templates[0].situation, flat.templates[0].category, flat.templates[0].text],
+     ['Access Opening · Type 1 (Concise)', 'RCT', 'Access opening done wrt {tooth}.']);
+  eq('the full one follows it', flat.templates[1].situation,
+     'Access Opening · Type 2 (Comprehensive)');
   eq('an empty Type 2 is not offered as a blank template',
-     tpl.templates.filter(t => t.situation.indexOf('Consultation') === 0).map(t => t.situation),
-     ['Consultation · Type 1 (Concise)']);
+     flat.templates.filter(t => t.situation.indexOf('Working Length') === 0).map(t => t.situation),
+     ['Working Length · Type 1 (Concise)']);
   eq('the department rides along, because the forms filter on it',
-     [...new Set(tpl.templates.map(t => t.category))].sort(),
-     ['General / Consultation', 'RCT']);
-  // Both plans' treatments are offered: a CGHS case is worked in the same forms.
-  ok('a CGHS plan treatment is offered too',
-     tpl.templates.some(t => t.situation.indexOf('Root Canal Treatment - Anterior') === 0));
+     [...new Set(flat.templates.map(t => t.category))].sort(), ['Periodontics', 'RCT']);
+  // The plan is NOT what the forms are fed: it carries no note text.
+  ok('the forms are fed the library, not the plan',
+     /function clinicalTemplatesFlat_[\s\S]{0,400}getClinicalNoteTemplatesV3_\(\)/.test(src));
 
-  // An emptied plan falls back rather than leaving the forms with nothing.
-  ctx.savePlan({ rows: JSON.stringify([]) });
-  eq('with the plan emptied it falls back to the older sheet', ctx.getTpl().source, undefined);
-  eq('rubbish is refused', ctx.savePlan({ rows: 'not json' }).success, false);
+  ctx.saveLib({ rows: JSON.stringify([]) });
+  eq('with the library emptied it falls back rather than leaving forms blank',
+     ctx.getTpl().source, undefined);
+  eq('rubbish is refused by both', [ctx.saveLib({ rows: 'x' }).success,
+                                    ctx.savePlan({ rows: 'x' }).success], [false, false]);
 
-  ok('both actions are routed',
-     /case "getClinicalNotePlan":\s+return getClinicalNotePlan\(\);/.test(gs) &&
-     /case "saveClinicalNotePlan":\s+return saveClinicalNotePlan\(p\);/.test(gs));
+  ok('all four actions are routed',
+     /case "getClinicalNotePlan":/.test(gs) && /case "saveClinicalNotePlan":/.test(gs) &&
+     /case "getClinicalNoteTemplateLib":/.test(gs) && /case "saveClinicalNoteTemplateLib":/.test(gs));
   ok('the backend that does this is there to deploy',
-     (/var BACKEND_BUILD = "([^"]+)"/.exec(gs) || [, ''])[1] >= '2026-11-08a',
+     (/var BACKEND_BUILD = "([^"]+)"/.exec(gs) || [, ''])[1] >= '2026-11-08b',
      (/var BACKEND_BUILD = "([^"]+)"/.exec(gs) || [])[1]);
 }
 
@@ -192,8 +242,6 @@ ok('the department the sheet spelled differently was brought into line',
     { situation: 'Scaling · Type 2 (Comprehensive)', text: 'Full mouth scaling and polishing done.' },
     { situation: 'Flap Surgery · Type 1 (Concise)', text: 'Flap raised.' }
   ];
-  // Left in, every name shares "type concise comprehensive" and the closest
-  // template becomes whichever happened to come first.
   eq('the type is ignored when matching',
      (ctx.pick('Scaling', T) || {}).situation, 'Scaling · Type 1 (Concise)');
   eq('a rate-card name still finds its treatment',
@@ -203,7 +251,7 @@ ok('the department the sheet spelled differently was brought into line',
   eq('something with no template still matches nothing', ctx.pick('Orthodontic Retainer', T), null);
 }
 
-// ── the screen ──────────────────────────────────────────────────────────
+// ── the two screens ─────────────────────────────────────────────────────
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH });
   const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
@@ -225,27 +273,35 @@ ok('the department the sheet spelled differently was brought into line',
     html.slice(html.indexOf('const CLINICAL_PLAN_NAMES = ['),
                html.indexOf('const CLINICAL_TEMPLATE_CATEGORIES = [')) });
 
-  const SMALL = [
-    { plan: 'Normal', treatment: 'RCT - Access Open', category: 'RCT', templates: 'Access Opening',
-      type1: 'Access opening done wrt {tooth}.', type2: 'Access opening done wrt {tooth} under {anaesthesia}.' },
-    { plan: 'Normal', treatment: 'Consultation', category: 'General / Consultation', templates: 'Consultation',
-      type1: 'Consultation for {complaint}.', type2: 'Patient reported with c/o {complaint}.' },
-    { plan: 'CGHS', treatment: 'Flap Surgery- Per Tooth', category: 'Periodontics', templates: 'Flap Surgery',
-      type1: 'Flap raised wrt {tooth}.', type2: 'Flap raised wrt {tooth} under {anaesthesia}.' }
+  const LIB = [
+    { category: 'RCT', template: 'Access Opening', type1: 'Access opening done wrt {tooth}.',
+      type2: 'Access opening done wrt {tooth} under {anaesthesia}.' },
+    { category: 'RCT', template: 'Working Length', type1: 'WL recorded wrt {tooth}.',
+      type2: 'Working length recorded wrt {tooth} using {method}.' },
+    { category: 'Periodontics', template: 'Flap Surgery', type1: 'Flap raised wrt {tooth}.',
+      type2: 'Flap raised wrt {tooth} under {anaesthesia}.' }
   ];
-  const mount = async (rows) => {
-    await page.evaluate((rows) => {
+  const ROWS = [
+    { plan: 'Normal', treatment: 'RCT - Access Open', category: 'RCT',
+      templates: 'Access Opening → Working Length' },
+    { plan: 'Normal', treatment: 'Consultation', category: 'General / Consultation',
+      templates: 'Nothing By That Name' },
+    { plan: 'CGHS', treatment: 'Flap Surgery- Per Tooth', category: 'Periodontics',
+      templates: 'Flap Surgery' }
+  ];
+
+  const mount = async (component, props) => {
+    await page.evaluate(({ component, props }) => {
       window.__saved = null;
       const root = document.getElementById('root');
       ReactDOM.render(null, root);
-      ReactDOM.render(React.createElement(ClinicalNotePlanEditor, {
-        key: String(Math.random()), rows: rows, saving: false,
-        seed: window.__seed, onSave: (next) => { window.__saved = next; }
+      ReactDOM.render(React.createElement(window[component] || eval(component), {
+        key: String(Math.random()), ...props, saving: false,
+        onSave: (next) => { window.__saved = next; }
       }), root);
-    }, rows);
+    }, { component, props });
     await page.waitForTimeout(110);
   };
-  await page.evaluate((seed) => { window.__seed = seed; }, SEED.slice(0, 20));
   const text = () => page.$eval('#root', el => el.innerText.replace(/\s+/g, ' ').trim());
   const saved = () => page.evaluate(() => window.__saved);
   const button = (re) => page.evaluateHandle((src) => {
@@ -253,73 +309,87 @@ ok('the department the sheet spelled differently was brought into line',
     return [...document.querySelectorAll('button')].find(b => rx.test(b.innerText)) || null;
   }, re);
 
-  // Nothing loaded: it offers the clinic's plan rather than an empty screen.
-  await mount([]);
+  // ── the template library ──────────────────────────────────────────────
+  await mount('ClinicalTemplateLibEditor', { rows: [], seed: TPL.slice(0, 12) });
   let t = await text();
-  ok('with nothing loaded it says so', /No clinical note plan yet/.test(t), t);
-  ok('and offers to put the clinic\'s plan in', /Load the clinic's plan \(20 treatments\)/.test(t), t);
-  await (await button("Load the clinic's plan")).asElement().click();
+  ok('an empty library offers the clinic\'s templates',
+     /No clinical note templates yet/.test(t) && /Load the clinic's templates \(12\)/.test(t), t);
+  await (await button("Load the clinic's templates")).asElement().click();
   await page.waitForTimeout(110);
   let out = await saved();
-  eq('the button loads it as rows, not as arrays', out.length, 20);
-  eq('with the fields the sheet expects', Object.keys(out[0]).sort(),
-     ['category', 'plan', 'templates', 'treatment', 'type1', 'type2']);
+  eq('loaded as rows, not arrays', Object.keys(out[0]).sort(),
+     ['category', 'template', 'type1', 'type2']);
+  eq('all of them', out.length, 12);
 
-  // The two plans, kept apart.
-  await mount(SMALL);
+  await mount('ClinicalTemplateLibEditor', { rows: LIB, seed: TPL });
   t = await text();
-  ok('both plans are offered with their counts', /Normal . 2/.test(t) && /CGHS . 1/.test(t), t);
-  ok('the normal plan is shown first', /RCT - Access Open/.test(t) && !/Flap Surgery/.test(t), t);
-  ok('and the concise note is on the row, so the list is readable at a glance',
-     /Access opening done wrt \{tooth\}\./.test(t), t);
-  await (await button('CGHS')).asElement().click();
-  await page.waitForTimeout(110);
-  t = await text();
-  ok('switching plan shows the other one', /Flap Surgery- Per Tooth/.test(t) && !/RCT - Access Open/.test(t), t);
-
-  // Searching, which is the only way through 156 of them.
-  await mount(SMALL);
-  await page.locator('input').first().fill('complaint');
-  await page.waitForTimeout(110);
-  t = await text();
-  ok('search looks inside the note, not just the name',
-     /Consultation/.test(t) && !/RCT - Access Open/.test(t), t);
-  ok('and says how many it is showing', /1 of 2 shown/.test(t), t);
-
-  // Editing: both lengths, and the edit lands on the right row.
-  await mount(SMALL);
-  // The clickable part is the header row, and the treatment name is a span
-  // inside it. Clicking the outermost div that merely CONTAINS the name
-  // picks up the whole list and opens nothing.
+  ok('it counts the templates', /3 templates\./.test(t), t);
+  ok('and shows the concise note on the row', /Access opening done wrt \{tooth\}\./.test(t), t);
   await page.evaluate(() => {
-    const name = [...document.querySelectorAll('span')]
-      .find(sp => sp.textContent.trim() === 'Consultation');
-    name.parentElement.click();
+    [...document.querySelectorAll('span')].find(sp => sp.textContent.trim() === 'Working Length')
+      .parentElement.click();
   });
   await page.waitForTimeout(110);
-  const areas = await page.locator('textarea').count();
-  eq('a row opens with a box for each length', areas, 2);
+  eq('a row opens with a box for each length', await page.locator('textarea').count(), 2);
   await page.locator('textarea').nth(1).fill('Rewritten full record.');
   await (await button('^Save$')).asElement().click();
   await page.waitForTimeout(110);
   out = await saved();
-  eq('the edit is saved on the row it was opened from',
+  eq('the edit lands on the row it was opened from',
      out.map(r => r.type2),
      ['Access opening done wrt {tooth} under {anaesthesia}.', 'Rewritten full record.',
       'Flap raised wrt {tooth} under {anaesthesia}.']);
-  eq('and nothing else about that row moved', out[1].treatment, 'Consultation');
-  eq('the other plan is untouched', out[2].plan, 'CGHS');
 
-  // The notation the clinic wrote the notes in.
-  await mount(SMALL);
-  await page.evaluate(() => {
-    [...document.querySelectorAll('span')]
-      .find(s => /What do the brackets mean/.test(s.innerText)).click();
-  });
+  // ── the plan ──────────────────────────────────────────────────────────
+  await mount('ClinicalPlanEditor', { rows: [], templates: LIB, seed: PLAN.slice(0, 9) });
+  t = await text();
+  ok('an empty plan offers the clinic\'s plan', /Load the clinic's plan \(9 treatments\)/.test(t), t);
+
+  await mount('ClinicalPlanEditor', { rows: ROWS, templates: LIB, seed: PLAN });
+  t = await text();
+  ok('both plans are offered, under the names the clinic uses',
+     /Plan . 2/.test(t) && /Plan CGHS . 1/.test(t), t);
+  ok('the normal plan is shown first',
+     /RCT - Access Open/.test(t) && !/Flap Surgery- Per Tooth/.test(t), t);
+  // The point of handing it the library: you see what the plan item writes.
+  ok('each plan treatment shows the note it will write',
+     /Access Opening Access opening done wrt \{tooth\}\./.test(t)
+     && /Working Length WL recorded wrt \{tooth\}\./.test(t), t);
+  // And the one that nothing else on the screen would reveal.
+  ok('a template name that matches nothing is called out',
+     /No template of that name in the library\./.test(t), t);
+  ok('the screen says where the notes themselves live',
+     /The notes live under Clinical Note Templates/.test(t), t);
+
+  await (await button('Plan CGHS')).asElement().click();
   await page.waitForTimeout(110);
   t = await text();
-  ok('the notation can be read on the screen',
-     /optional . dropped when its field is blank/.test(t), t);
+  ok('switching plan shows the other one',
+     /Flap Surgery- Per Tooth/.test(t) && !/RCT - Access Open/.test(t), t);
+  ok('and resolves its templates too', /Flap raised wrt \{tooth\}\./.test(t), t);
+
+  await mount('ClinicalPlanEditor', { rows: ROWS, templates: LIB, seed: PLAN });
+  await page.locator('input').first().fill('access');
+  await page.waitForTimeout(110);
+  t = await text();
+  // Counted by row, not by looking for the word: "General / Consultation"
+  // is an option in the department dropdown and is on the page either way.
+  const rowNames = await page.$$eval('span', els =>
+    els.filter(e => e.style && e.style.fontWeight === '700' && e.style.fontSize === '13.5px')
+       .map(e => e.textContent.trim()));
+  ok('search narrows the plan', /1 of 2 shown/.test(t), t);
+  eq('to the one row that matches', rowNames, ['RCT - Access Open']);
+
+  await mount('ClinicalPlanEditor', { rows: ROWS, templates: LIB, seed: PLAN });
+  await page.evaluate(() => {
+    [...document.querySelectorAll('span')].find(sp => sp.textContent.trim() === 'Consultation')
+      .parentElement.click();
+  });
+  await page.waitForTimeout(110);
+  const inputs = await page.locator('input').count();
+  ok('a plan row opens for editing', inputs >= 3, String(inputs));
+  eq('and it has no note boxes, because the notes are not kept here',
+     await page.locator('textarea').count(), 0);
 
   eq('nothing threw', errors, []);
   await browser.close();
