@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-02b";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-08c";
+const KB_APP_BUILD = "2026-11-08d";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -7378,7 +7378,13 @@ function CghsPrescription({ pat, lines }) {
   const suggested = (x) => {
     const t = cghsTemplateFor(nameOf(x), templates);
     if (!t) return "";
-    return cghsFillTokens(t.text, {
+    // The CONCISE length, deliberately. This sheet is printed on a pad,
+    // under a line per treatment; the comprehensive note is what gets
+    // saved into the register and the progress note, where it is read
+    // back. `t.text` is the comprehensive one, so it is not used here --
+    // and an older backend that sends neither field falls back to it
+    // rather than printing nothing.
+    return cghsFillTokens(t.concise || t.text, {
       tooth: x.r.tooth, teeth: x.r.tooth, toothNumber: x.r.tooth,
       code: x.code, units: x.qty, unit: x.qty, qty: x.qty,
       procedure: nameOf(x), treatment: nameOf(x),
