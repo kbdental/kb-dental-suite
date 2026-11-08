@@ -201,15 +201,18 @@ ok('and the plan carries no copy of the note text',
   // ── the shape the eighteen forms already expect ──────────────────────
   const flat = ctx.getTpl();
   eq('the templates come from the library', flat.source, 'library');
-  eq('two records per template, bar the one with no full note', flat.templates.length, 5);
-  eq('the concise one comes first, and says so',
-     [flat.templates[0].situation, flat.templates[0].category, flat.templates[0].text],
-     ['Access Opening · Type 1 (Concise)', 'RCT', 'Access opening done wrt {tooth}.']);
-  eq('the full one follows it', flat.templates[1].situation,
-     'Access Opening · Type 2 (Comprehensive)');
-  eq('an empty Type 2 is not offered as a blank template',
-     flat.templates.filter(t => t.situation.indexOf('Working Length') === 0).map(t => t.situation),
-     ['Working Length · Type 1 (Concise)']);
+  // One record per template now, carrying both lengths: which one is wanted
+  // follows from whether the text is being saved or printed, not from a
+  // second choice at the chair. which-length-goes-where.test.js has the rest.
+  eq('one record per template', flat.templates.length, 3);
+  eq('named for the procedure, with no length in the name',
+     flat.templates.map(t => t.situation),
+     ['Access Opening', 'Working Length', 'Flap Surgery']);
+  eq('and what the forms insert is the full record',
+     [flat.templates[0].category, flat.templates[0].text],
+     ['RCT', 'Access opening done wrt {tooth} under {anaesthesia}.']);
+  eq('with the concise one alongside for the printed sheet',
+     flat.templates[0].concise, 'Access opening done wrt {tooth}.');
   eq('the department rides along, because the forms filter on it',
      [...new Set(flat.templates.map(t => t.category))].sort(), ['Periodontics', 'RCT']);
   // The plan is NOT what the forms are fed: it carries no note text.

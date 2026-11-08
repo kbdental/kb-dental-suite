@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-08b";
+var BACKEND_BUILD = "2026-11-08c";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -5907,19 +5907,38 @@ function saveClinicalNotePlan(p) {
   return { success: true, saved: block.length };
 }
 
-// The eighteen work-done forms and the CGHS prescription ask for
-// {situation, text, category}, and keep getting exactly that: two records
-// per template, each named for the length it is. Nothing in those forms --
-// base64 blobs, every one -- had to change for any of this.
+// One record per template, not one per length.
+//
+// Which length is wanted is not the clinician's decision to make twice at
+// the chair -- it follows from what the text is FOR:
+//
+//   saved   the daily register, the progress note, the procedure-done
+//           sheet: the full record, because this is the one that has to
+//           stand on its own years later, read by somebody else
+//   printed the prescription: the concise line, because a paragraph under
+//           every item on a pad is unreadable
+//
+// So `text` -- the field the eighteen work-done forms insert, and
+// therefore the field that gets SAVED -- is the comprehensive one. Both
+// lengths ride along beside it, so the prescription can take the concise
+// one without a second lookup. Nothing in those forms, base64 blobs every
+// one, had to change for this either.
+//
+// Type 2 missing falls back to Type 1 rather than offering a blank: a
+// dropdown entry that inserts nothing is worse than a short note.
 function clinicalTemplatesFlat_() {
   var out = [];
   getClinicalNoteTemplatesV3_().forEach(function (r) {
-    if (String(r.type1 || "").trim()) {
-      out.push({ situation: r.template + TYPE1_SUFFIX, text: r.type1, category: r.category });
-    }
-    if (String(r.type2 || "").trim()) {
-      out.push({ situation: r.template + TYPE2_SUFFIX, text: r.type2, category: r.category });
-    }
+    var concise = String(r.type1 || "");
+    var full = String(r.type2 || "");
+    if (!concise.trim() && !full.trim()) return;
+    out.push({
+      situation: r.template,
+      text: full.trim() ? full : concise,
+      category: r.category,
+      concise: concise.trim() ? concise : full,
+      comprehensive: full.trim() ? full : concise
+    });
   });
   return out;
 }
