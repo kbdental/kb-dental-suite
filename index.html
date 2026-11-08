@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-02b";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-08b";
+const KB_APP_BUILD = "2026-11-08c";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -28881,17 +28881,11 @@ function clinicalTemplateRefs(cell) {
     .filter(Boolean);
 }
 
-const KB_CLIN_LBL = { fontSize:12, fontWeight:700, color:"#444444",
-  textTransform:"uppercase", letterSpacing:".04em", marginBottom:3 };
-
-function kbClinField(label, control) {
-  return React.createElement("div", null,
-    React.createElement("div", { style: KB_CLIN_LBL }, label), control);
-}
+const KB_CLIN_TXT = (v) => (v === undefined || v === null) ? "" : String(v);
 
 function KbClinNotation() {
   const [open, setOpen] = React.useState(false);
-  return React.createElement("div", { style:{ marginBottom:10 } },
+  return React.createElement("div", { style:{ marginBottom:12 } },
     React.createElement("span", { onClick: () => setOpen(!open),
       style:{ color:T, fontWeight:700, cursor:"pointer", fontSize:12.5 } },
       open ? "Hide the notation" : "What do the brackets mean?"),
@@ -28915,38 +28909,78 @@ function KbClinEmpty({ what, detail, label, onLoad, saving }) {
       saving ? "Saving…" : label));
 }
 
+// The row buttons, the way the clinic is used to them: Edit and Remove on
+// the right of every card, as plain words rather than a row you have to
+// discover is clickable.
+function KbClinRowBtns({ onEdit, onRemove }) {
+  return React.createElement("div", { style:{ display:"flex", gap:12, marginLeft:"auto" } },
+    React.createElement("button", { onClick: onEdit,
+      style:{ border:"none", background:"none", color:T, cursor:"pointer",
+        fontSize:12.5, fontWeight:700, padding:0 } }, "Edit"),
+    React.createElement("button", { onClick: onRemove,
+      style:{ border:"none", background:"none", color:"#c0392b", cursor:"pointer",
+        fontSize:12.5, fontWeight:700, padding:0 } }, "Remove"));
+}
+
+// One department heading with its rows under it. Grouping beats a filter
+// dropdown here: 156 templates read as a list of departments you can scan,
+// and as a wall of 156 names you cannot.
+function KbClinGroups({ groups, order, render }) {
+  return order.map(cat => React.createElement("div", { key:cat, style:{ marginBottom:18 } },
+    React.createElement("div", { style:{ fontSize:12, fontWeight:700, color:"#444444",
+      textTransform:"uppercase", letterSpacing:"0.04em", marginBottom:8 } },
+      cat + "  ·  " + groups[cat].length),
+    React.createElement("div", { style:{ display:"flex", flexDirection:"column", gap:8 } },
+      groups[cat].map(render))));
+}
+
+function kbClinGroup(list, keyOf) {
+  const groups = {};
+  list.forEach(x => {
+    const k = keyOf(x) || "Uncategorized";
+    (groups[k] = groups[k] || []).push(x);
+  });
+  return { groups: groups, order: Object.keys(groups).sort() };
+}
+
 // ── Master → Clinical Configuration → Clinical Note Templates ───────────
-// The 156 templates themselves: one per procedure, each in two lengths.
-// A plan item refers to these by name, so a correction made here reaches
-// every plan item that uses it -- which is the whole reason the two are
-// separate stores.
+// The 156 templates themselves: one per procedure, each in two lengths. A
+// plan treatment refers to these by name, so a correction here reaches
+// every plan treatment that uses it.
 function ClinicalTemplateLibEditor({ rows, onSave, saving, seed }) {
   const [q, setQ] = React.useState("");
-  const [cat, setCat] = React.useState("");
-  const [openAt, setOpenAt] = React.useState(null);
-  const [draft, setDraft] = React.useState(null);
-  const [adding, setAdding] = React.useState(false);
-  const blank = () => ({ category: CLINICAL_TEMPLATE_CATEGORIES[0], template: "", type1: "", type2: "" });
-  const [fresh, setFresh] = React.useState(blank);
-
+  const [editAt, setEditAt] = React.useState(null);
+  const [form, setForm] = React.useState({ category: CLINICAL_TEMPLATE_CATEGORIES[0],
+                                           template: "", type1: "", type2: "" });
   const all = rows || [];
-  const txt = (v) => (v === undefined || v === null) ? "" : String(v);
-  const shown = all.map((r, at) => ({ r, at }))
-    .filter(x => !cat || txt(x.r.category) === cat)
-    .filter(x => {
-      const n = q.trim().toLowerCase();
-      if (!n) return true;
-      return [x.r.template, x.r.category, x.r.type1, x.r.type2]
-        .some(v => txt(v).toLowerCase().indexOf(n) >= 0);
-    });
-  const cats = [];
-  all.forEach(r => { if (txt(r.category) && cats.indexOf(txt(r.category)) < 0) cats.push(txt(r.category)); });
-  cats.sort();
+  const txt = KB_CLIN_TXT;
 
-  const close = () => { setOpenAt(null); setDraft(null); };
-  const area = (value, onChange, rowsN) => React.createElement("textarea", {
-    value: value, rows: rowsN, onChange: e => onChange(e.target.value),
-    style:{ ...inp, width:"100%", resize:"vertical", lineHeight:1.5, fontSize:13 } });
+  const reset = () => { setEditAt(null);
+    setForm({ category: CLINICAL_TEMPLATE_CATEGORIES[0], template: "", type1: "", type2: "" }); };
+  const startEdit = (at) => {
+    setEditAt(at);
+    setForm({ ...all[at] });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const save = () => {
+    if (!txt(form.template).trim()) return;
+    const next = editAt === null ? [...all, form] : all.map((r, i) => i === editAt ? form : r);
+    reset();
+    onSave(next);
+  };
+  const remove = (at) => {
+    if (!window.confirm("Remove the template \"" + txt(all[at].template) + "\"?")) return;
+    if (editAt === at) reset();
+    onSave(all.filter((_, i) => i !== at));
+  };
+
+  const shown = all.map((r, at) => ({ r, at })).filter(x => {
+    const n = q.trim().toLowerCase();
+    if (!n) return true;
+    return [x.r.template, x.r.category, x.r.type1, x.r.type2]
+      .some(v => txt(v).toLowerCase().indexOf(n) >= 0);
+  });
+  const { groups, order } = kbClinGroup(shown, x => txt(x.r.category));
 
   if (!all.length) {
     return React.createElement(KbClinEmpty, {
@@ -28959,295 +28993,227 @@ function ClinicalTemplateLibEditor({ rows, onSave, saving, seed }) {
     });
   }
 
-  const editor = (x) => React.createElement("div", { style:{ padding:"12px 14px",
-      background:"#fbfbf8", borderTop:`1px solid ${BORDER}` } },
-    React.createElement("div", { style:{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:10 } },
-      React.createElement("div", { style:{ flex:"1 1 280px" } },
-        kbClinField("Template", React.createElement("input", { value: txt(draft.template),
-          onChange: e => setDraft({ ...draft, template: e.target.value }),
-          style:{ ...inp, width:"100%" } }))),
-      React.createElement("div", { style:{ flex:"0 0 230px" } },
-        kbClinField("Department", React.createElement("select", { value: txt(draft.category),
-          onChange: e => setDraft({ ...draft, category: e.target.value }),
-          style:{ ...inp, width:"100%" } },
-          CLINICAL_TEMPLATE_CATEGORIES.map(c => React.createElement("option", { key:c, value:c }, c)))))),
-    React.createElement("div", { style:{ marginBottom:10 } },
-      kbClinField("Type 1 — Concise", area(txt(draft.type1), v => setDraft({ ...draft, type1: v }), 3))),
-    React.createElement("div", { style:{ marginBottom:12 } },
-      kbClinField("Type 2 — Comprehensive", area(txt(draft.type2), v => setDraft({ ...draft, type2: v }), 7))),
-    React.createElement("div", { style:{ display:"flex", gap:8, flexWrap:"wrap" } },
-      React.createElement("button", { onClick: () => {
-          if (!txt(draft.template).trim()) return;
-          const next = all.map((r, i) => i === openAt ? draft : r);
-          close(); onSave(next);
-        }, disabled: saving || !txt(draft.template).trim(),
-        style:{ padding:"8px 15px", fontSize:13, fontWeight:700, borderRadius:7, border:"none",
-          cursor: saving ? "not-allowed" : "pointer", background:T, color:"#fff" } },
-        saving ? "Saving…" : "Save"),
-      React.createElement("button", { onClick: close,
-        style:{ padding:"8px 15px", fontSize:13, fontWeight:700, borderRadius:7,
-          border:`1px solid ${BORDER}`, background:"#fff", color:"#444444", cursor:"pointer" } }, "Cancel"),
-      React.createElement("button", { onClick: () => {
-          if (!window.confirm("Remove the template \"" + txt(x.r.template) + "\"?")) return;
-          close(); onSave(all.filter((_, i) => i !== x.at));
-        },
-        style:{ padding:"8px 15px", fontSize:13, fontWeight:700, borderRadius:7,
-          border:"1px solid #b45454", background:"#fff", color:"#7a2f2f", cursor:"pointer",
-          marginLeft:"auto" } }, "Remove")));
+  return React.createElement("div", null,
+    // ── the form, which is also the editor ──────────────────────────────
+    React.createElement("div", { style:{ marginBottom:16, background: editAt === null ? "transparent" : TL,
+      border: editAt === null ? "none" : `1px solid ${T}`, borderRadius:9,
+      padding: editAt === null ? 0 : "12px 14px" } },
+      editAt !== null ? React.createElement("div", { style:{ fontSize:12.5, fontWeight:700,
+        color:T, marginBottom:8 } }, "✏ Editing “" + txt(all[editAt].template) + "”") : null,
+      React.createElement("div", { style:{ marginBottom:8, maxWidth:300 } },
+        React.createElement(Lbl, { c:"Department" }),
+        React.createElement("select", { style:inp, value: txt(form.category),
+          onChange: e => setForm({ ...form, category: e.target.value }) },
+          CLINICAL_TEMPLATE_CATEGORIES.map(c => React.createElement("option", { key:c, value:c }, c)))),
+      React.createElement("div", { style:{ marginBottom:8 } },
+        React.createElement(Lbl, { c:"Template" }),
+        React.createElement("input", { style:inp, value: txt(form.template),
+          placeholder:"e.g. Access Opening",
+          onChange: e => setForm({ ...form, template: e.target.value }) })),
+      React.createElement("div", { style:{ marginBottom:8 } },
+        React.createElement(Lbl, { c:"Type 1 — Concise" }),
+        React.createElement("textarea", { style:{ ...ta, minHeight:56 }, value: txt(form.type1),
+          placeholder:"One or two lines, for a routine visit…",
+          onChange: e => setForm({ ...form, type1: e.target.value }) })),
+      React.createElement("div", { style:{ marginBottom:10 } },
+        React.createElement(Lbl, { c:"Type 2 — Comprehensive" }),
+        React.createElement("textarea", { style:{ ...ta, minHeight:110 }, value: txt(form.type2),
+          placeholder:"The full record…",
+          onChange: e => setForm({ ...form, type2: e.target.value }) })),
+      React.createElement("div", { style:{ display:"flex", gap:8 } },
+        React.createElement("button", { onClick: save, disabled: saving || !txt(form.template).trim(),
+          style:{ padding:"9px 20px", fontSize:13, fontWeight:700, border:"none", borderRadius:7,
+            cursor: txt(form.template).trim() ? "pointer" : "not-allowed",
+            background: txt(form.template).trim() ? T : "#e3e3e3",
+            color: txt(form.template).trim() ? "#fff" : "#444444" } },
+          saving ? "Saving…" : editAt === null ? "Add Template" : "Save Changes"),
+        editAt !== null ? React.createElement("button", { onClick: reset,
+          style:{ padding:"9px 16px", fontSize:13, fontWeight:700, border:`1px solid ${BORDER}`,
+            borderRadius:7, cursor:"pointer", background:"#fff", color:"#444444" } }, "Cancel") : null)),
 
-  return React.createElement("div", { style:{ maxWidth:880 } },
-    React.createElement("div", { style:{ display:"flex", gap:10, flexWrap:"wrap",
-      alignItems:"flex-end", marginBottom:10 } },
-      React.createElement("div", { style:{ flex:"1 1 260px" } },
-        kbClinField("Search", React.createElement("input", { value:q,
-          placeholder:"template, department, or any word in the note…",
-          onChange: e => setQ(e.target.value), style:{ ...inp, width:"100%" } }))),
-      React.createElement("div", { style:{ flex:"0 0 230px" } },
-        kbClinField("Department", React.createElement("select", { value:cat,
-          onChange: e => setCat(e.target.value), style:{ ...inp, width:"100%" } },
-          [React.createElement("option", { key:"", value:"" }, "All departments")].concat(
-            cats.map(c => React.createElement("option", { key:c, value:c }, c)))))),
-      React.createElement("button", { onClick: () => { setAdding(!adding); close(); },
-        style:{ padding:"9px 15px", fontSize:13, fontWeight:700, borderRadius:7, border:"none",
-          background: adding ? "#444444" : T, color:"#fff", cursor:"pointer" } },
-        adding ? "Cancel" : "+ Add a template")),
+    React.createElement("div", { style:{ marginBottom:10, maxWidth:360 } },
+      React.createElement(Lbl, { c:"Search" }),
+      React.createElement("input", { style:inp, value:q,
+        placeholder:"template, department, or any word in the note…",
+        onChange: e => setQ(e.target.value) })),
     React.createElement("div", { style:{ fontSize:12.5, color:"#5a5a5a", marginBottom:4 } },
-      shown.length === all.length ? all.length + " templates."
+      shown.length === all.length ? all.length + " templates in " + order.length + " departments."
                                   : shown.length + " of " + all.length + " shown."),
     React.createElement(KbClinNotation, null),
 
-    adding ? React.createElement("div", { style:{ background:"#fff", border:`1px solid ${T}`,
-      borderRadius:9, marginBottom:12, padding:"12px 14px" } },
-      React.createElement("div", { style:{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:10 } },
-        React.createElement("div", { style:{ flex:"1 1 280px" } },
-          kbClinField("Template", React.createElement("input", { value: txt(fresh.template),
-            onChange: e => setFresh({ ...fresh, template: e.target.value }),
-            style:{ ...inp, width:"100%" } }))),
-        React.createElement("div", { style:{ flex:"0 0 230px" } },
-          kbClinField("Department", React.createElement("select", { value: txt(fresh.category),
-            onChange: e => setFresh({ ...fresh, category: e.target.value }),
-            style:{ ...inp, width:"100%" } },
-            CLINICAL_TEMPLATE_CATEGORIES.map(c => React.createElement("option", { key:c, value:c }, c)))))),
-      React.createElement("div", { style:{ marginBottom:10 } },
-        kbClinField("Type 1 — Concise", area(txt(fresh.type1), v => setFresh({ ...fresh, type1: v }), 3))),
-      React.createElement("div", { style:{ marginBottom:12 } },
-        kbClinField("Type 2 — Comprehensive", area(txt(fresh.type2), v => setFresh({ ...fresh, type2: v }), 6))),
-      React.createElement("button", { onClick: () => {
-          if (!txt(fresh.template).trim()) return;
-          onSave([...all, fresh]); setFresh(blank()); setAdding(false);
-        }, disabled: saving || !txt(fresh.template).trim(),
-        style:{ padding:"8px 15px", fontSize:13, fontWeight:700, borderRadius:7, border:"none",
-          cursor: txt(fresh.template).trim() ? "pointer" : "not-allowed",
-          background: txt(fresh.template).trim() ? T : "#e3e3e3",
-          color: txt(fresh.template).trim() ? "#fff" : "#444444" } }, "Add")) : null,
-
-    shown.length ? shown.map(x => React.createElement("div", { key:x.at,
-      style:{ background:"#fff", border:`1px solid ${openAt === x.at ? T : BORDER}`,
-        borderRadius:9, marginBottom:8, overflow:"hidden" } },
-      React.createElement("div", { onClick: () => openAt === x.at ? close()
-                                                 : (setOpenAt(x.at), setDraft({ ...x.r }), setAdding(false)),
-        style:{ padding:"10px 14px", cursor:"pointer", display:"flex", gap:10,
-          alignItems:"baseline", flexWrap:"wrap" } },
-        React.createElement("span", { style:{ fontSize:13.5, fontWeight:700 } }, txt(x.r.template)),
-        React.createElement("span", { style:{ fontSize:12.5, color:T, fontWeight:700 } }, txt(x.r.category)),
-        React.createElement("span", { style:{ marginLeft:"auto", fontSize:12.5, color:"#5a5a5a" } },
-          (txt(x.r.type1).trim() ? "Type 1" : "—") + " · " + (txt(x.r.type2).trim() ? "Type 2" : "—"))),
-      openAt === x.at && draft ? editor(x)
-        : React.createElement("div", { style:{ padding:"0 14px 10px", fontSize:12.5,
-            color:"#3d3d3d", lineHeight:1.5, whiteSpace:"pre-wrap" } }, txt(x.r.type1))))
-      : React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`,
-          borderRadius:9, padding:20, fontSize:13, color:"#444444" } }, "Nothing matches that."));
+    shown.length
+      ? React.createElement(KbClinGroups, { groups: groups, order: order,
+          render: (x) => React.createElement("div", { key:x.at,
+            style:{ background: editAt === x.at ? TL : "#fff",
+              border:`1px solid ${editAt === x.at ? T : BORDER}`, borderRadius:8, padding:"10px 14px" } },
+            React.createElement("div", { style:{ display:"flex", alignItems:"center",
+              gap:10, marginBottom:4 } },
+              React.createElement("span", { style:{ fontSize:14, fontWeight:700, color:T } },
+                txt(x.r.template)),
+              React.createElement(KbClinRowBtns, { onEdit: () => startEdit(x.at),
+                onRemove: () => remove(x.at) })),
+            React.createElement("div", { style:{ fontSize:12, fontWeight:700, color:"#444444",
+              marginBottom:2 } }, "TYPE 1"),
+            React.createElement("div", { style:{ fontSize:13.5, color:"#3d3d3d", lineHeight:1.5,
+              whiteSpace:"pre-wrap", marginBottom: txt(x.r.type2).trim() ? 6 : 0 } }, txt(x.r.type1)),
+            txt(x.r.type2).trim() ? React.createElement("div", { style:{ fontSize:12,
+              fontWeight:700, color:"#444444", marginBottom:2 } }, "TYPE 2") : null,
+            txt(x.r.type2).trim() ? React.createElement("div", { style:{ fontSize:13.5,
+              color:"#3d3d3d", lineHeight:1.5, whiteSpace:"pre-wrap" } }, txt(x.r.type2)) : null) })
+      : React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:24,
+          textAlign:"center", color:"#5a5a5a", fontSize:14, border:`1px dashed ${BORDER}` } },
+          "Nothing matches that."));
 }
 
-// ── Master → Clinical Configuration → Plan ──────────────────────────────
-// Every treatment that can go on a plan, on either plan, and the templates
-// it is made of. The notes themselves are NOT here: they are in the
-// template library, and a plan item points at them by name so that one
-// correction serves every plan item that uses it.
-function ClinicalPlanEditor({ rows, templates, onSave, saving, seed }) {
-  const [plan, setPlan] = React.useState("Normal");
+// ── Master → Clinical Configuration → Plan / Plan CGHS ──────────────────
+// Every treatment that can go on that plan, and the templates it is made
+// of. The notes themselves are NOT here: they are in the template library,
+// and a plan treatment points at them by name so that one correction
+// serves every plan treatment that uses it.
+//
+// One component, one plan each: the two are separate tabs, because they are
+// two different lists of treatments and a toggle inside one tab reads as a
+// filter on a single list.
+function ClinicalPlanEditor({ plan, rows, templates, onSave, saving, seed }) {
+  const which = plan || "Normal";
   const [q, setQ] = React.useState("");
-  const [cat, setCat] = React.useState("");
-  const [openAt, setOpenAt] = React.useState(null);
-  const [draft, setDraft] = React.useState(null);
-  const [adding, setAdding] = React.useState(false);
-  const blank = () => ({ plan: "Normal", treatment: "", category: CLINICAL_TEMPLATE_CATEGORIES[0], templates: "" });
-  const [fresh, setFresh] = React.useState(blank);
-
+  const [editAt, setEditAt] = React.useState(null);
+  const blank = () => ({ plan: which, treatment: "",
+                         category: CLINICAL_TEMPLATE_CATEGORIES[0], templates: "" });
+  const [form, setForm] = React.useState(blank);
   const all = rows || [];
   const lib = templates || [];
-  const txt = (v) => (v === undefined || v === null) ? "" : String(v);
+  const txt = KB_CLIN_TXT;
+
   const byName = {};
   lib.forEach(t => { if (txt(t.template)) byName[txt(t.template).toLowerCase()] = t; });
 
-  // Kept with its position in the WHOLE list: the screen shows one plan at
-  // a time and a filtered slice of it, and an edit has to land on the row it
-  // was opened from, not on the nth row of the view.
-  const shown = all.map((r, at) => ({ r, at }))
-    .filter(x => txt(x.r.plan) === plan)
-    .filter(x => !cat || txt(x.r.category) === cat)
-    .filter(x => {
-      const n = q.trim().toLowerCase();
-      if (!n) return true;
-      return [x.r.treatment, x.r.category, x.r.templates]
-        .some(v => txt(v).toLowerCase().indexOf(n) >= 0);
-    });
-  const cats = [];
-  all.forEach(r => {
-    if (txt(r.plan) === plan && txt(r.category) && cats.indexOf(txt(r.category)) < 0) cats.push(txt(r.category));
+  const reset = () => { setEditAt(null); setForm(blank()); };
+  const startEdit = (at) => {
+    setEditAt(at);
+    setForm({ ...all[at] });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const save = () => {
+    if (!txt(form.treatment).trim()) return;
+    const row = { ...form, plan: which };
+    const next = editAt === null ? [...all, row] : all.map((r, i) => i === editAt ? row : r);
+    reset();
+    onSave(next);
+  };
+  const remove = (at) => {
+    if (!window.confirm("Remove “" + txt(all[at].treatment) + "” from this plan?")) return;
+    if (editAt === at) reset();
+    onSave(all.filter((_, i) => i !== at));
+  };
+
+  // Positions are into the WHOLE list, which holds both plans: an edit has
+  // to land on the row it was opened from, not on the nth row of the view.
+  const mine = all.map((r, at) => ({ r, at })).filter(x => txt(x.r.plan) === which);
+  const shown = mine.filter(x => {
+    const n = q.trim().toLowerCase();
+    if (!n) return true;
+    return [x.r.treatment, x.r.category, x.r.templates]
+      .some(v => txt(v).toLowerCase().indexOf(n) >= 0);
   });
-  cats.sort();
-  const counts = {};
-  CLINICAL_PLAN_NAMES.forEach(p => { counts[p] = all.filter(r => txt(r.plan) === p).length; });
+  const { groups, order } = kbClinGroup(shown, x => txt(x.r.category));
+  const label = which === "CGHS" ? "Plan CGHS" : "the plan";
 
-  const close = () => { setOpenAt(null); setDraft(null); };
-
-  if (!all.length) {
+  if (!mine.length && !all.length) {
+    const forMe = seed.filter(r => r[0] === which);
     return React.createElement(KbClinEmpty, {
-      what: "No plan yet",
-      detail: "The clinic's plan holds " + seed.length + " treatments — "
-            + seed.filter(r => r[0] === "Normal").length + " on the normal plan and "
-            + seed.filter(r => r[0] === "CGHS").length + " on the CGHS plan — each naming the "
-            + "templates it is made of.",
-      label: "Load the clinic's plan (" + seed.length + " treatments)",
+      what: "Nothing on " + label + " yet",
+      detail: "The clinic's " + (which === "CGHS" ? "CGHS plan" : "normal plan") + " holds "
+            + forMe.length + " treatments, each naming the templates it is made of. Both plans "
+            + "are loaded together — " + seed.length + " treatments in all.",
+      label: "Load the clinic's plans (" + seed.length + " treatments)",
       saving: saving,
       onLoad: () => onSave(seed.map(r => ({ plan:r[0], treatment:r[1], category:r[2], templates:r[3] })))
     });
   }
 
-  // What the plan item will actually write, resolved from the library. A
-  // name that matches nothing is said so plainly: the plan item would
+  // What the plan treatment will actually write, resolved from the library.
+  // A name that matches nothing is said so plainly: that treatment would
   // produce no note at all, and nothing else on the screen would show it.
   const resolved = (x) => {
     const refs = clinicalTemplateRefs(x.r.templates);
-    if (!refs.length) return React.createElement("div", { style:{ padding:"0 14px 10px",
-      fontSize:12.5, color:"#7a2f2f" } }, "No template named — this plan item writes nothing.");
-    return React.createElement("div", { style:{ padding:"0 14px 10px" } },
-      refs.map((name, i) => {
-        const hit = byName[name.toLowerCase()];
-        return React.createElement("div", { key:i, style:{ marginTop: i ? 6 : 0 } },
-          React.createElement("span", { style:{ fontSize:12.5, fontWeight:700,
-            color: hit ? "#2e2e2e" : "#7a2f2f" } }, name),
-          hit ? React.createElement("div", { style:{ fontSize:12.5, color:"#3d3d3d",
-            lineHeight:1.5, whiteSpace:"pre-wrap" } }, txt(hit.type1))
-              : React.createElement("div", { style:{ fontSize:12.5, color:"#7a2f2f" } },
-                  "No template of that name in the library."));
-      }));
+    if (!refs.length) {
+      return React.createElement("div", { style:{ fontSize:12.5, color:"#c0392b" } },
+        "No template named — this treatment writes nothing.");
+    }
+    return refs.map((name, i) => {
+      const hit = byName[name.toLowerCase()];
+      return React.createElement("div", { key:i, style:{ marginTop: i ? 6 : 0 } },
+        React.createElement("span", { style:{ fontSize:12.5, fontWeight:700,
+          color: hit ? "#2e2e2e" : "#c0392b" } }, name),
+        hit ? React.createElement("div", { style:{ fontSize:13, color:"#3d3d3d",
+          lineHeight:1.5, whiteSpace:"pre-wrap" } }, txt(hit.type1))
+            : React.createElement("div", { style:{ fontSize:12.5, color:"#c0392b" } },
+                "No template of that name in the library."));
+    });
   };
 
-  const editor = (x) => React.createElement("div", { style:{ padding:"12px 14px",
-      background:"#fbfbf8", borderTop:`1px solid ${BORDER}` } },
-    React.createElement("div", { style:{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:10 } },
-      React.createElement("div", { style:{ flex:"1 1 260px" } },
-        kbClinField("Plan treatment", React.createElement("input", { value: txt(draft.treatment),
-          onChange: e => setDraft({ ...draft, treatment: e.target.value }),
-          style:{ ...inp, width:"100%" } }))),
-      React.createElement("div", { style:{ flex:"0 0 210px" } },
-        kbClinField("Department", React.createElement("select", { value: txt(draft.category),
-          onChange: e => setDraft({ ...draft, category: e.target.value }),
-          style:{ ...inp, width:"100%" } },
-          CLINICAL_TEMPLATE_CATEGORIES.map(c => React.createElement("option", { key:c, value:c }, c))))),
-      React.createElement("div", { style:{ flex:"0 0 170px" } },
-        kbClinField("Plan", React.createElement("select", { value: txt(draft.plan),
-          onChange: e => setDraft({ ...draft, plan: e.target.value }),
-          style:{ ...inp, width:"100%" } },
-          CLINICAL_PLAN_NAMES.map(p => React.createElement("option", { key:p, value:p }, p)))))),
-    React.createElement("div", { style:{ marginBottom:12 } },
-      kbClinField("Templates it is made of", React.createElement("input", {
-        value: txt(draft.templates), placeholder:"e.g. Access Opening → Working Length",
-        onChange: e => setDraft({ ...draft, templates: e.target.value }),
-        style:{ ...inp, width:"100%" } }))),
-    React.createElement("div", { style:{ display:"flex", gap:8, flexWrap:"wrap" } },
-      React.createElement("button", { onClick: () => {
-          if (!txt(draft.treatment).trim()) return;
-          const next = all.map((r, i) => i === openAt ? draft : r);
-          close(); onSave(next);
-        }, disabled: saving || !txt(draft.treatment).trim(),
-        style:{ padding:"8px 15px", fontSize:13, fontWeight:700, borderRadius:7, border:"none",
-          cursor: saving ? "not-allowed" : "pointer", background:T, color:"#fff" } },
-        saving ? "Saving…" : "Save"),
-      React.createElement("button", { onClick: close,
-        style:{ padding:"8px 15px", fontSize:13, fontWeight:700, borderRadius:7,
-          border:`1px solid ${BORDER}`, background:"#fff", color:"#444444", cursor:"pointer" } }, "Cancel"),
-      React.createElement("button", { onClick: () => {
-          if (!window.confirm("Remove \"" + txt(x.r.treatment) + "\" from the " + plan + " plan?")) return;
-          close(); onSave(all.filter((_, i) => i !== x.at));
-        },
-        style:{ padding:"8px 15px", fontSize:13, fontWeight:700, borderRadius:7,
-          border:"1px solid #b45454", background:"#fff", color:"#7a2f2f", cursor:"pointer",
-          marginLeft:"auto" } }, "Remove")));
+  return React.createElement("div", null,
+    React.createElement("div", { style:{ marginBottom:16, background: editAt === null ? "transparent" : TL,
+      border: editAt === null ? "none" : `1px solid ${T}`, borderRadius:9,
+      padding: editAt === null ? 0 : "12px 14px" } },
+      editAt !== null ? React.createElement("div", { style:{ fontSize:12.5, fontWeight:700,
+        color:T, marginBottom:8 } }, "✏ Editing “" + txt(all[editAt].treatment) + "”") : null,
+      React.createElement("div", { style:{ marginBottom:8, maxWidth:300 } },
+        React.createElement(Lbl, { c:"Department" }),
+        React.createElement("select", { style:inp, value: txt(form.category),
+          onChange: e => setForm({ ...form, category: e.target.value }) },
+          CLINICAL_TEMPLATE_CATEGORIES.map(c => React.createElement("option", { key:c, value:c }, c)))),
+      React.createElement("div", { style:{ marginBottom:8 } },
+        React.createElement(Lbl, { c:"Plan treatment" }),
+        React.createElement("input", { style:inp, value: txt(form.treatment),
+          placeholder:"e.g. RCT - Access Open",
+          onChange: e => setForm({ ...form, treatment: e.target.value }) })),
+      React.createElement("div", { style:{ marginBottom:10 } },
+        React.createElement(Lbl, { c:"Templates it is made of" }),
+        React.createElement("input", { style:inp, value: txt(form.templates),
+          placeholder:"e.g. Access Opening → Working Length",
+          onChange: e => setForm({ ...form, templates: e.target.value }) })),
+      React.createElement("div", { style:{ display:"flex", gap:8 } },
+        React.createElement("button", { onClick: save, disabled: saving || !txt(form.treatment).trim(),
+          style:{ padding:"9px 20px", fontSize:13, fontWeight:700, border:"none", borderRadius:7,
+            cursor: txt(form.treatment).trim() ? "pointer" : "not-allowed",
+            background: txt(form.treatment).trim() ? T : "#e3e3e3",
+            color: txt(form.treatment).trim() ? "#fff" : "#444444" } },
+          saving ? "Saving…" : editAt === null ? "Add Treatment" : "Save Changes"),
+        editAt !== null ? React.createElement("button", { onClick: reset,
+          style:{ padding:"9px 16px", fontSize:13, fontWeight:700, border:`1px solid ${BORDER}`,
+            borderRadius:7, cursor:"pointer", background:"#fff", color:"#444444" } }, "Cancel") : null)),
 
-  return React.createElement("div", { style:{ maxWidth:880 } },
-    React.createElement("div", { style:{ display:"flex", gap:4, background:BGS, borderRadius:8,
-      padding:4, marginBottom:12, width:"fit-content" } },
-      CLINICAL_PLAN_NAMES.map(p => React.createElement("button", {
-        key:p, onClick: () => { setPlan(p); close(); setCat(""); },
-        style:{ padding:"7px 18px", fontSize:13.5, fontWeight: plan === p ? 700 : 400,
-          border:"none", borderRadius:6, cursor:"pointer",
-          background: plan === p ? T : "transparent", color: plan === p ? "#fff" : "#444444" } },
-        (p === "CGHS" ? "Plan CGHS" : "Plan") + " · " + counts[p]))),
-
-    React.createElement("div", { style:{ display:"flex", gap:10, flexWrap:"wrap",
-      alignItems:"flex-end", marginBottom:10 } },
-      React.createElement("div", { style:{ flex:"1 1 260px" } },
-        kbClinField("Search", React.createElement("input", { value:q,
-          placeholder:"treatment, department or template…",
-          onChange: e => setQ(e.target.value), style:{ ...inp, width:"100%" } }))),
-      React.createElement("div", { style:{ flex:"0 0 230px" } },
-        kbClinField("Department", React.createElement("select", { value:cat,
-          onChange: e => setCat(e.target.value), style:{ ...inp, width:"100%" } },
-          [React.createElement("option", { key:"", value:"" }, "All departments")].concat(
-            cats.map(c => React.createElement("option", { key:c, value:c }, c)))))),
-      React.createElement("button", { onClick: () => { setAdding(!adding); close(); },
-        style:{ padding:"9px 15px", fontSize:13, fontWeight:700, borderRadius:7, border:"none",
-          background: adding ? "#444444" : T, color:"#fff", cursor:"pointer" } },
-        adding ? "Cancel" : "+ Add a treatment")),
-
-    React.createElement("div", { style:{ fontSize:12.5, color:"#5a5a5a", marginBottom:10, lineHeight:1.5 } },
-      (shown.length === counts[plan] ? counts[plan] + " treatments"
-                                     : shown.length + " of " + counts[plan] + " shown")
-      + " on " + (plan === "CGHS" ? "Plan CGHS" : "the normal plan")
+    React.createElement("div", { style:{ marginBottom:10, maxWidth:360 } },
+      React.createElement(Lbl, { c:"Search" }),
+      React.createElement("input", { style:inp, value:q,
+        placeholder:"treatment, department or template…",
+        onChange: e => setQ(e.target.value) })),
+    React.createElement("div", { style:{ fontSize:12.5, color:"#5a5a5a", marginBottom:12,
+      lineHeight:1.5 } },
+      (shown.length === mine.length
+        ? mine.length + " treatments in " + order.length + " departments"
+        : shown.length + " of " + mine.length + " shown")
+      + " on " + (which === "CGHS" ? "Plan CGHS" : "the normal plan")
       + ". The notes live under Clinical Note Templates; a plan treatment points at them by name."),
 
-    adding ? React.createElement("div", { style:{ background:"#fff", border:`1px solid ${T}`,
-      borderRadius:9, marginBottom:12, padding:"12px 14px" } },
-      React.createElement("div", { style:{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:10 } },
-        React.createElement("div", { style:{ flex:"1 1 260px" } },
-          kbClinField("Plan treatment", React.createElement("input", { value: txt(fresh.treatment),
-            onChange: e => setFresh({ ...fresh, treatment: e.target.value }),
-            style:{ ...inp, width:"100%" } }))),
-        React.createElement("div", { style:{ flex:"0 0 210px" } },
-          kbClinField("Department", React.createElement("select", { value: txt(fresh.category),
-            onChange: e => setFresh({ ...fresh, category: e.target.value }),
-            style:{ ...inp, width:"100%" } },
-            CLINICAL_TEMPLATE_CATEGORIES.map(c => React.createElement("option", { key:c, value:c }, c)))))),
-      React.createElement("div", { style:{ marginBottom:12 } },
-        kbClinField("Templates it is made of", React.createElement("input", { value: txt(fresh.templates),
-          onChange: e => setFresh({ ...fresh, templates: e.target.value }),
-          style:{ ...inp, width:"100%" } }))),
-      React.createElement("button", { onClick: () => {
-          if (!txt(fresh.treatment).trim()) return;
-          onSave([...all, { ...fresh, plan: plan }]); setFresh(blank()); setAdding(false);
-        }, disabled: saving || !txt(fresh.treatment).trim(),
-        style:{ padding:"8px 15px", fontSize:13, fontWeight:700, borderRadius:7, border:"none",
-          cursor: txt(fresh.treatment).trim() ? "pointer" : "not-allowed",
-          background: txt(fresh.treatment).trim() ? T : "#e3e3e3",
-          color: txt(fresh.treatment).trim() ? "#fff" : "#444444" } }, "Add")) : null,
-
-    shown.length ? shown.map(x => React.createElement("div", { key:x.at,
-      style:{ background:"#fff", border:`1px solid ${openAt === x.at ? T : BORDER}`,
-        borderRadius:9, marginBottom:8, overflow:"hidden" } },
-      React.createElement("div", { onClick: () => openAt === x.at ? close()
-                                                 : (setOpenAt(x.at), setDraft({ ...x.r }), setAdding(false)),
-        style:{ padding:"10px 14px", cursor:"pointer", display:"flex", gap:10,
-          alignItems:"baseline", flexWrap:"wrap" } },
-        React.createElement("span", { style:{ fontSize:13.5, fontWeight:700 } }, txt(x.r.treatment)),
-        React.createElement("span", { style:{ fontSize:12.5, color:T, fontWeight:700 } }, txt(x.r.category)),
-        React.createElement("span", { style:{ marginLeft:"auto", fontSize:12.5, color:"#5a5a5a" } },
-          txt(x.r.templates) || "no template")),
-      openAt === x.at && draft ? editor(x) : resolved(x)))
-      : React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`,
-          borderRadius:9, padding:20, fontSize:13, color:"#444444" } },
+    shown.length
+      ? React.createElement(KbClinGroups, { groups: groups, order: order,
+          render: (x) => React.createElement("div", { key:x.at,
+            style:{ background: editAt === x.at ? TL : "#fff",
+              border:`1px solid ${editAt === x.at ? T : BORDER}`, borderRadius:8, padding:"10px 14px" } },
+            React.createElement("div", { style:{ display:"flex", alignItems:"center",
+              gap:10, marginBottom:4 } },
+              React.createElement("span", { style:{ fontSize:14, fontWeight:700, color:T } },
+                txt(x.r.treatment)),
+              React.createElement(KbClinRowBtns, { onEdit: () => startEdit(x.at),
+                onRemove: () => remove(x.at) })),
+            React.createElement("div", { style:{ fontSize:12.5, color:"#5a5a5a", marginBottom:6 } },
+              txt(x.r.templates) || "no template named"),
+            resolved(x)) })
+      : React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:24,
+          textAlign:"center", color:"#5a5a5a", fontSize:14, border:`1px dashed ${BORDER}` } },
           "Nothing on this plan matches that."));
 }
 
@@ -29642,9 +29608,12 @@ const MASTER_STRUCTURE = [
   // does not, so it says Patient Instructions.
   { id:"clinicalConfig", label:"Clinical Configuration", subtabs:[
     { id:"templates",       label:"Clinical Note Templates" },
-    // The plan is its own list: it names treatments and points at the
-    // templates above by name, rather than carrying copies of the notes.
+    // Two plans, two tabs. They are two different lists of treatments --
+    // only four names appear in both -- and a toggle inside one tab reads
+    // as a filter on a single list, which is how the CGHS plan came to
+    // look as though it had never been added.
     { id:"notePlan",        label:"Plan" },
+    { id:"notePlanCghs",    label:"Plan CGHS" },
     // Held open, with nothing under it yet. A subtab marked this way says
     // so on its own page instead of opening blank.
     { id:"examination",     label:"Examination", placeholder:true },
@@ -31078,11 +31047,15 @@ function Master() {
       rows: noteTemplates, onSave: saveNoteTemplates, saving: loading,
       seed: CLINICAL_NOTE_TEMPLATE_SEED
     }),
-    // The plan, and Plan CGHS beside it. It is given the templates so it
-    // can show what each plan treatment will actually write -- and say so
-    // when a name matches nothing, which nothing else on the screen would.
+    // One store, one tab each. Both are given the templates so every plan
+    // treatment shows what it will actually write -- and says so when a
+    // name matches nothing, which nothing else on the screen would.
     notePlan: () => React.createElement(ClinicalPlanEditor, {
-      rows: notePlan, templates: noteTemplates, onSave: saveNotePlan,
+      plan: "Normal", rows: notePlan, templates: noteTemplates, onSave: saveNotePlan,
+      saving: loading, seed: CLINICAL_NOTE_PLAN_SEED
+    }),
+    notePlanCghs: () => React.createElement(ClinicalPlanEditor, {
+      plan: "CGHS", rows: notePlan, templates: noteTemplates, onSave: saveNotePlan,
       saving: loading, seed: CLINICAL_NOTE_PLAN_SEED
     }),
     implantBrands: () => React.createElement(ImplantBrandListEditor, {

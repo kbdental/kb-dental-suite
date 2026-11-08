@@ -77,7 +77,7 @@ ok('and the plan carries no copy of the note text',
   const ctx = { String };
   vm.createContext(ctx);
   vm.runInContext(html.slice(html.indexOf('function clinicalTemplateRefs(cell) {'),
-                             html.indexOf('const KB_CLIN_LBL'))
+                             html.indexOf('const KB_CLIN_TXT'))
     + '\nthis.refs = clinicalTemplateRefs;', ctx);
   const refs = ctx.refs;
 
@@ -266,6 +266,12 @@ ok('and the plan carries no copy of the note text',
     const inp={padding:"6px 10px",fontSize:14,border:"1px solid #e5e5e0",borderRadius:6,
                background:"#fff",color:"#1a1a1a",boxSizing:"border-box",fontFamily:"inherit"};
     const CLINICAL_TEMPLATE_CATEGORIES = ${JSON.stringify(CATS)};
+    // The editors share Master's own small pieces: the uppercase label and
+    // the textarea style every list on that page already uses.
+    const TL = "#DCF4FB";
+    const ta = { ...inp, resize:"vertical", minHeight:52 };
+    const Lbl = ({ c }) => React.createElement("div", { style:{ fontSize:10, fontWeight:700,
+      color:"#2e2e2e", textTransform:"uppercase", letterSpacing:"0.04em", marginBottom:3 } }, c);
     window.__saved = null;
     window.confirm = () => true;
   ` });
@@ -309,6 +315,23 @@ ok('and the plan carries no copy of the note text',
     return [...document.querySelectorAll('button')].find(b => rx.test(b.innerText)) || null;
   }, re);
 
+  // ── the pattern the clinic asked for back ─────────────────────────────
+  // "the earlier pattern was much better which showed the categories and
+  //  under that the matter ... add edit and remove / delete button for each"
+  //
+  // So: a form at the top that doubles as the editor, and cards grouped
+  // under a department heading, each with Edit and Remove on it. A row you
+  // have to discover is clickable is not a button.
+  const names = () => page.$$eval('span', els =>
+    els.filter(e => e.style && e.style.fontSize === '14px' && e.style.fontWeight === '700')
+       .map(e => e.textContent.trim()));
+  const headings = () => page.$$eval('div', els =>
+    els.filter(e => e.style && e.style.textTransform === 'uppercase'
+                 && e.style.fontSize === '12px' && e.style.letterSpacing === '0.04em')
+       .map(e => e.textContent.trim()));
+  const rowBtns = (label) => page.$$eval('button', (els, label) =>
+    els.filter(e => e.textContent.trim() === label).length, label);
+
   // ── the template library ──────────────────────────────────────────────
   await mount('ClinicalTemplateLibEditor', { rows: [], seed: TPL.slice(0, 12) });
   let t = await text();
@@ -323,73 +346,130 @@ ok('and the plan carries no copy of the note text',
 
   await mount('ClinicalTemplateLibEditor', { rows: LIB, seed: TPL });
   t = await text();
-  ok('it counts the templates', /3 templates\./.test(t), t);
-  ok('and shows the concise note on the row', /Access opening done wrt \{tooth\}\./.test(t), t);
+  ok('it says how many, and in how many departments',
+     /3 templates in 2 departments\./.test(t), t);
+  eq('the departments are headings, with their counts',
+     await headings(), ['Periodontics  ·  1', 'RCT  ·  2']);
+  eq('and the templates sit under them', await names(),
+     ['Flap Surgery', 'Access Opening', 'Working Length']);
+  ok('both lengths are on the card, labelled',
+     /TYPE 1 Access opening done wrt \{tooth\}\. TYPE 2 Access opening done wrt \{tooth\} under \{anaesthesia\}\./.test(t), t);
+  eq('every row has an Edit', await rowBtns('Edit'), 3);
+  eq('and a Remove', await rowBtns('Remove'), 3);
+
+  // Edit puts the row in the form at the top, and says which row it is.
   await page.evaluate(() => {
-    [...document.querySelectorAll('span')].find(sp => sp.textContent.trim() === 'Working Length')
-      .parentElement.click();
+    const row = [...document.querySelectorAll('span')]
+      .find(sp => sp.textContent.trim() === 'Working Length').parentElement;
+    [...row.querySelectorAll('button')].find(b => b.textContent.trim() === 'Edit').click();
   });
   await page.waitForTimeout(110);
-  eq('a row opens with a box for each length', await page.locator('textarea').count(), 2);
+  t = await text();
+  ok('the form says which template it is editing', /Editing .Working Length./.test(t), t);
+  const vals = await page.$$eval('textarea', els => els.map(e => e.value));
+  eq('with both lengths loaded into it', vals,
+     ['WL recorded wrt {tooth}.', 'Working length recorded wrt {tooth} using {method}.']);
   await page.locator('textarea').nth(1).fill('Rewritten full record.');
-  await (await button('^Save$')).asElement().click();
+  await (await button('Save Changes')).asElement().click();
   await page.waitForTimeout(110);
   out = await saved();
   eq('the edit lands on the row it was opened from',
      out.map(r => r.type2),
      ['Access opening done wrt {tooth} under {anaesthesia}.', 'Rewritten full record.',
       'Flap raised wrt {tooth} under {anaesthesia}.']);
+  eq('and nothing else about it moved', out[1].template, 'Working Length');
 
-  // ── the plan ──────────────────────────────────────────────────────────
-  await mount('ClinicalPlanEditor', { rows: [], templates: LIB, seed: PLAN.slice(0, 9) });
-  t = await text();
-  ok('an empty plan offers the clinic\'s plan', /Load the clinic's plan \(9 treatments\)/.test(t), t);
-
-  await mount('ClinicalPlanEditor', { rows: ROWS, templates: LIB, seed: PLAN });
-  t = await text();
-  ok('both plans are offered, under the names the clinic uses',
-     /Plan . 2/.test(t) && /Plan CGHS . 1/.test(t), t);
-  ok('the normal plan is shown first',
-     /RCT - Access Open/.test(t) && !/Flap Surgery- Per Tooth/.test(t), t);
-  // The point of handing it the library: you see what the plan item writes.
-  ok('each plan treatment shows the note it will write',
-     /Access Opening Access opening done wrt \{tooth\}\./.test(t)
-     && /Working Length WL recorded wrt \{tooth\}\./.test(t), t);
-  // And the one that nothing else on the screen would reveal.
-  ok('a template name that matches nothing is called out',
-     /No template of that name in the library\./.test(t), t);
-  ok('the screen says where the notes themselves live',
-     /The notes live under Clinical Note Templates/.test(t), t);
-
-  await (await button('Plan CGHS')).asElement().click();
+  // Adding, through the same form.
+  await mount('ClinicalTemplateLibEditor', { rows: LIB, seed: TPL });
+  await page.locator('input[placeholder*="Access Opening"]').fill('Pulp Capping');
+  await page.locator('textarea').first().fill('Pulp capping done wrt {tooth}.');
+  await (await button('Add Template')).asElement().click();
   await page.waitForTimeout(110);
-  t = await text();
-  ok('switching plan shows the other one',
-     /Flap Surgery- Per Tooth/.test(t) && !/RCT - Access Open/.test(t), t);
-  ok('and resolves its templates too', /Flap raised wrt \{tooth\}\./.test(t), t);
+  out = await saved();
+  eq('a new template is appended', out.length, 4);
+  eq('with what was typed', [out[3].template, out[3].type1],
+     ['Pulp Capping', 'Pulp capping done wrt {tooth}.']);
 
-  await mount('ClinicalPlanEditor', { rows: ROWS, templates: LIB, seed: PLAN });
-  await page.locator('input').first().fill('access');
-  await page.waitForTimeout(110);
-  t = await text();
-  // Counted by row, not by looking for the word: "General / Consultation"
-  // is an option in the department dropdown and is on the page either way.
-  const rowNames = await page.$$eval('span', els =>
-    els.filter(e => e.style && e.style.fontWeight === '700' && e.style.fontSize === '13.5px')
-       .map(e => e.textContent.trim()));
-  ok('search narrows the plan', /1 of 2 shown/.test(t), t);
-  eq('to the one row that matches', rowNames, ['RCT - Access Open']);
-
-  await mount('ClinicalPlanEditor', { rows: ROWS, templates: LIB, seed: PLAN });
+  // Removing, with a question first.
+  await mount('ClinicalTemplateLibEditor', { rows: LIB, seed: TPL });
   await page.evaluate(() => {
-    [...document.querySelectorAll('span')].find(sp => sp.textContent.trim() === 'Consultation')
-      .parentElement.click();
+    const row = [...document.querySelectorAll('span')]
+      .find(sp => sp.textContent.trim() === 'Flap Surgery').parentElement;
+    [...row.querySelectorAll('button')].find(b => b.textContent.trim() === 'Remove').click();
   });
   await page.waitForTimeout(110);
-  const inputs = await page.locator('input').count();
-  ok('a plan row opens for editing', inputs >= 3, String(inputs));
-  eq('and it has no note boxes, because the notes are not kept here',
-     await page.locator('textarea').count(), 0);
+  out = await saved();
+  eq('Remove takes out that one and leaves the rest',
+     out.map(r => r.template), ['Access Opening', 'Working Length']);
+
+  // ── the plan, and Plan CGHS ───────────────────────────────────────────
+  await mount('ClinicalPlanEditor', { plan: 'Normal', rows: [], templates: LIB, seed: PLAN.slice(0, 9) });
+  t = await text();
+  ok('an empty plan offers the clinic\'s plans',
+     /Nothing on the plan yet/.test(t) && /Load the clinic's plans \(9 treatments\)/.test(t), t);
+
+  await mount('ClinicalPlanEditor', { plan: 'Normal', rows: ROWS, templates: LIB, seed: PLAN });
+  t = await text();
+  eq('the normal plan shows only its own treatments', await names(),
+     ['Consultation', 'RCT - Access Open']);
+  eq('grouped by department, as the templates are', await headings(),
+     ['General / Consultation  ·  1', 'RCT  ·  1']);
+  eq('every treatment has an Edit', await rowBtns('Edit'), 2);
+  eq('and a Remove', await rowBtns('Remove'), 2);
+  // The point of handing it the library: you see what the treatment writes.
+  ok('each treatment shows the note it will write',
+     /Access Opening Access opening done wrt \{tooth\}\./.test(t)
+     && /Working Length WL recorded wrt \{tooth\}\./.test(t), t);
+  ok('a template name that matches nothing is called out',
+     /No template of that name in the library\./.test(t), t);
+  ok('and the screen says where the notes themselves live',
+     /The notes live under Clinical Note Templates/.test(t), t);
+
+  // The CGHS plan is the same component with the other plan, which is what
+  // makes it a tab rather than a filter.
+  await mount('ClinicalPlanEditor', { plan: 'CGHS', rows: ROWS, templates: LIB, seed: PLAN });
+  t = await text();
+  eq('Plan CGHS shows its own treatments, and only those', await names(),
+     ['Flap Surgery- Per Tooth']);
+  ok('named as Plan CGHS on the screen', /on Plan CGHS\./.test(t), t);
+  ok('and its templates resolve too', /Flap raised wrt \{tooth\}\./.test(t), t);
+
+  // An edit on one plan must not touch the other: both live in one store.
+  await page.evaluate(() => {
+    const row = [...document.querySelectorAll('span')]
+      .find(sp => sp.textContent.trim() === 'Flap Surgery- Per Tooth').parentElement;
+    [...row.querySelectorAll('button')].find(b => b.textContent.trim() === 'Edit').click();
+  });
+  await page.waitForTimeout(110);
+  await page.$$eval('input', els => {
+    const i = els.find(e => e.value === 'Flap Surgery');
+    return i ? true : false;
+  });
+  await (await button('Save Changes')).asElement().click();
+  await page.waitForTimeout(110);
+  out = await saved();
+  eq('the whole store comes back, both plans in it', out.length, 3);
+  eq('with each row still on its own plan', out.map(r => r.plan),
+     ['Normal', 'Normal', 'CGHS']);
+
+  // A treatment added on Plan CGHS lands on Plan CGHS.
+  await mount('ClinicalPlanEditor', { plan: 'CGHS', rows: ROWS, templates: LIB, seed: PLAN });
+  await page.locator('input[placeholder*="RCT - Access Open"]').fill('Scaling - Full Mouth');
+  await (await button('Add Treatment')).asElement().click();
+  await page.waitForTimeout(110);
+  out = await saved();
+  eq('appended to the store', out.length, 4);
+  eq('on the CGHS plan, not the normal one',
+     [out[3].treatment, out[3].plan], ['Scaling - Full Mouth', 'CGHS']);
+
+  await mount('ClinicalPlanEditor', { plan: 'Normal', rows: ROWS, templates: LIB, seed: PLAN });
+  // By its placeholder, not its position: the form above it owns the first
+  // two inputs, and counting them is how this broke.
+  await page.locator('input[placeholder*="department or template"]').fill('access');
+  await page.waitForTimeout(110);
+  t = await text();
+  ok('search narrows the plan', /1 of 2 shown/.test(t), t);
+  eq('to the one treatment that matches', await names(), ['RCT - Access Open']);
 
   eq('nothing threw', errors, []);
   await browser.close();
