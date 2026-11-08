@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-02b";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-08e";
+const KB_APP_BUILD = "2026-11-08f";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -29141,6 +29141,15 @@ function ClinicalPlanEditor({ plan, rows, templates, onSave, saving, seed, categ
     });
   }
 
+  // Shown on Plan CGHS only.
+  //
+  // A CGHS prescription is written FROM these notes, so seeing what each
+  // treatment will produce -- and whether it resolves at all -- is part of
+  // the job there. On the normal plan it is noise: the plan is a list of
+  // treatments, and the notes have a screen of their own. "we just need
+  // only headings."
+  const withDetail = which === "CGHS";
+
   // What the plan treatment will actually write, resolved from the library.
   // A name that matches nothing is said so plainly: that treatment would
   // produce no note at all, and nothing else on the screen would show it.
@@ -29204,8 +29213,11 @@ function ClinicalPlanEditor({ plan, rows, templates, onSave, saving, seed, categ
       (shown.length === mine.length
         ? mine.length + " treatments in " + order.length + " departments"
         : shown.length + " of " + mine.length + " shown")
-      + " on " + (which === "CGHS" ? "Plan CGHS" : "the normal plan")
-      + ". The notes live under Clinical Note Templates; a plan treatment points at them by name."),
+      + " on " + (which === "CGHS" ? "Plan CGHS" : "the normal plan") + "."
+      + (withDetail
+          ? " The note under each is what a CGHS prescription is written from; it comes from"
+            + " Clinical Note Templates, where a plan treatment points at it by name."
+          : " The notes live under Clinical Note Templates.")),
 
     shown.length
       ? React.createElement(KbClinGroups, { groups: groups, order: order,
@@ -29218,9 +29230,9 @@ function ClinicalPlanEditor({ plan, rows, templates, onSave, saving, seed, categ
                 txt(x.r.treatment)),
               React.createElement(KbClinRowBtns, { onEdit: () => startEdit(x.at),
                 onRemove: () => remove(x.at) })),
-            React.createElement("div", { style:{ fontSize:12.5, color:"#5a5a5a", marginBottom:6 } },
-              txt(x.r.templates) || "no template named"),
-            resolved(x)) })
+            withDetail ? React.createElement("div", { style:{ fontSize:12.5,
+              color:"#5a5a5a", marginBottom:6 } }, txt(x.r.templates) || "no template named") : null,
+            withDetail ? resolved(x) : null) })
       : React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:24,
           textAlign:"center", color:"#5a5a5a", fontSize:14, border:`1px dashed ${BORDER}` } },
           "Nothing on this plan matches that."));
