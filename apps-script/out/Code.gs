@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-08c";
+var BACKEND_BUILD = "2026-11-08d";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -1225,6 +1225,8 @@ function route(p) {
       case "saveClinicalNoteTemplates": return saveClinicalNoteTemplates(p);
       case "getClinicalNotePlan":        return getClinicalNotePlan();
       case "saveClinicalNotePlan":       return saveClinicalNotePlan(p);
+      case "getClinicalDepartmentsList":  return getClinicalDepartmentsList();
+      case "saveClinicalDepartmentsList": return saveClinicalDepartmentsList(p);
       case "getClinicalNoteTemplateLib":  return getClinicalNoteTemplateLib();
       case "saveClinicalNoteTemplateLib": return saveClinicalNoteTemplateLib(p);
       case "getSettings":          return getSettings();
@@ -5871,6 +5873,43 @@ function saveClinicalNoteTemplateLib(p) {
   if (block.length) {
     sh.getRange(2, 1, block.length, CLINICAL_TPL_LIB_HEADERS.length).setValues(block);
   }
+  return { success: true, saved: block.length };
+}
+
+// The departments a template or a plan treatment can be filed under. They
+// were a list in the page, so adding one meant editing code -- which is no
+// way to run a clinic that opens a new discipline.
+//
+// A plain list of names, because the NAME is the key: the template library
+// and both plans record it, and each work-done form is pinned to one. That
+// is why renaming one has to cascade, and why the page does the cascade
+// rather than this -- it holds all three lists already.
+var CLINICAL_DEPT_SHEET = "Clinical Departments";
+
+function getClinicalDepartmentsList() {
+  var sh = getSheet(CLINICAL_DEPT_SHEET);
+  var data = sh.getDataRange().getValues();
+  var out = [];
+  for (var i = 1; i < data.length; i++) {
+    var v = String(data[i][0] || "").trim();
+    if (v && out.indexOf(v) < 0) out.push(v);
+  }
+  return { success: true, departments: out };
+}
+
+function saveClinicalDepartmentsList(p) {
+  var arr = parseList_(p.departments, "clinical departments");
+  if (arr && arr.__bad) return { success: false, error: arr.__bad };
+  var sh = getSheet(CLINICAL_DEPT_SHEET);
+  sh.clearContents();
+  sh.appendRow(["Department", "Updated At"]);
+  var now = new Date().toISOString();
+  var block = [];
+  arr.forEach(function (v) {
+    var name = String(v || "").trim();
+    if (name) block.push([name, now]);
+  });
+  if (block.length) sh.getRange(2, 1, block.length, 2).setValues(block);
   return { success: true, saved: block.length };
 }
 
