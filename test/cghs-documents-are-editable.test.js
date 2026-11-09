@@ -56,6 +56,12 @@ ok('Amount is left computed, not typed over',
       return Promise.resolve({ success:false });
     };
   ` });
+  // The prescription offers what Plan CGHS lists per treatment, splitting
+  // the plan's cell with the plan's own splitter.
+  await page.addScriptTag({ content: (() => {
+    const a = html.indexOf('function clinicalTemplateRefs(');
+    return html.slice(a, html.indexOf('\n}', a) + 2);
+  })() });
   await page.addScriptTag({ content:
     html.slice(html.indexOf('// ── Stage 2: the prescription ─'),
                html.indexOf('function EndorsementView(')) });

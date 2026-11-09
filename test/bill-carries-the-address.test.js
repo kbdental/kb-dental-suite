@@ -39,7 +39,8 @@ ok('and the bill is saved with it',
 ok('the CGHS screens top the patient up from the register',
    /api\("getPatient", \{ uhid \}\)\.then\(res => \{\s*if \(!dropped && res && res\.success && res\.patient\) setFull\(res\.patient\);/.test(html));
 ok('the bill is given that record', /CghsBill, \{ pat: pat,/.test(html));
-ok('and so is the prescription', /CghsPrescription, \{ pat: pat, lines: e\.approved \}/.test(html));
+ok('and so is the prescription',
+   /CghsPrescription, \{ pat: pat, lines: e\.approved, plan: notePlan \}/.test(html));
 ok('neither is handed the raw selection any more',
    !/CghsBill, \{ pat: globalPat/.test(html) && !/CghsPrescription, \{ pat: globalPat/.test(html));
 

@@ -286,7 +286,9 @@ ok('and the plan carries no copy of the note text',
     window.confirm = () => true;
   ` });
   await page.addScriptTag({ content:
-    html.slice(html.indexOf('const CLINICAL_PLAN_NAMES = ['),
+    // From the Hindi drafts, not from CLINICAL_PLAN_NAMES: the library
+    // editor offers to fill its blank Hindi cells from them.
+    html.slice(html.indexOf('const CLINICAL_TEMPLATE_HINDI = {'),
                html.indexOf('const CLINICAL_TEMPLATE_CATEGORIES = [')) });
 
   const LIB = [
