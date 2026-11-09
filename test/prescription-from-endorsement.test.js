@@ -20,7 +20,7 @@ const checks = [];
 const ok = (name, cond, detail) => checks.push({ name, ok: !!cond, got: detail });
 const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === JSON.stringify(want), got, want });
 
-const RX = html.slice(html.indexOf('function CghsPrescription({ pat, lines }) {'),
+const RX = html.slice(html.indexOf('function CghsPrescription({ pat, lines, plan }) {'),
                       html.indexOf('function CghsBill('));
 ok('the prescription stage was found', RX.length > 400, RX.length);
 ok('the date is the clinic’s to set', /onChange: e => setDate\(e\.target\.value\)/.test(RX));
@@ -55,6 +55,10 @@ ok('it does not go through the medicines form’s procedures box',
     cut('function fmtDMY(input) {', 'const UPPER_T = [') });
   await page.addScriptTag({ content: cut('function calcAge(dob, today) {', 'function togArr(') });
   await page.addScriptTag({ content: cut('function toISODate(d) {', '\nfunction ') });
+  await page.addScriptTag({ content: (() => {
+    const a = html.indexOf('function clinicalTemplateRefs(');
+    return html.slice(a, html.indexOf('\n}', a) + 2);
+  })() });
   await page.addScriptTag({ content:
     cut('// The pad is pre-printed stationery, so both sheets below', 'function EndorsementView(') });
 

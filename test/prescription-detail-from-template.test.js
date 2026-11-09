@@ -23,6 +23,10 @@ const ok = (name, cond, detail) => checks.push({ name, ok: !!cond, got: detail }
 const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === JSON.stringify(want), got, want });
 
 const cut = (a, b) => html.slice(html.indexOf(a), html.indexOf(b, html.indexOf(a)));
+const fnOf = (name) => {
+  const a = html.indexOf('function ' + name + '(');
+  return html.slice(a, html.indexOf('\n}', a) + 2) + '\n';
+};
 
 // ── the matcher ─────────────────────────────────────────────────────────
 {
@@ -111,6 +115,9 @@ const cut = (a, b) => html.slice(html.indexOf(a), html.indexOf(b, html.indexOf(a
     const api = (action) => Promise.resolve(action === "getClinicalNoteTemplates"
       ? { success: true, templates: window.__templates } : { success: false });
   ` });
+  // The prescription offers what Plan CGHS lists for each treatment, and
+  // reads the plan cell with the plan's own splitter.
+  await page.addScriptTag({ content: fnOf('clinicalTemplateRefs') });
   await page.addScriptTag({ content: cut('// ── Stage 2: the prescription ─', 'function CghsBill(') });
 
   // Each line carries its position, the way an endorsed line really does:
