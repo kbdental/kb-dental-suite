@@ -156,7 +156,11 @@ return embed(h).replace(/<head>/i, '<head><script nonce="${nonce}">parent.KB_PIN
         html = html.replace("_chatbotBlobUrl = URL.createObjectURL(blob);", '_chatbotBlobUrl = location.origin + "/chatbot.html";');
       }
       html = html
-        .replace(/<script(?=[\s>])/gi, `<script nonce="${nonce}"`)
+        // Match whole HTML script elements. An opening-tag-only replacement
+        // also edits literal "<script>" strings inside JavaScript and can
+        // break otherwise valid code by inserting unescaped nonce quotes.
+        .replace(/(<script(?=[\s>])[^>]*>)([\s\S]*?)(<\/script\s*>)/gi,
+          (_match,open:string,body:string,close:string)=>open.replace(/<script/i,`<script nonce="${nonce}"`)+body+close)
         .replace(/<head>/i, `<head>\n${head.replaceAll("<script>", `<script nonce="${nonce}">`)}`);
       const framedBySelf = file === "chatbot.html" || file === "roles.html";
       reply.header("Content-Security-Policy", csp(nonce, file === "chatbot.html", framedBySelf));

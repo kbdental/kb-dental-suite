@@ -56,6 +56,7 @@ const VALUE_LISTS: [string, string, string, string[]][] = [
   ["MedicineFrequenciesList", "medicine_frequency", "frequencies", []],
   ["MedicineDurationsList", "medicine_duration", "durations", []],
   ["MedicineNotesList", "medicine_note", "medNotes", []],
+  ["ClinicalDepartmentsList", "clinical_department", "departments", []],
   ["PaymentModesList", "payment_mode", "modes", []],
   ["PatientTypesList", "patient_type", "types", ["Normal","Panel"]],
   ["OccupationsList", "occupation", "occupations", ["Business","Government Service","Private Service","Self Employed","Professional","Homemaker","Student","Retired","Unemployed","Other"]],
@@ -136,6 +137,11 @@ for (const [suffix, list, key, defaults] of VALUE_LISTS) {
 for (const [suffix, list, key, label] of SITUATION_LISTS) {
   masters[`get${suffix}`] = read(async (_p, { tx }) => {
     if(list==='clinical_note_template'){
+      const library=await getSetting<ClinicalLibraryRow[]>(tx,'clinical_note_template_library');
+      if(library!==null)return {success:true,templates:library.filter(row=>row.type1.trim()||row.type2.trim()).map(row=>({
+        situation:row.template,category:row.category,text:row.type2.trim()?row.type2:row.type1,
+        concise:row.type1.trim()?row.type1:row.type2,comprehensive:row.type2.trim()?row.type2:row.type1,hindi:row.hindi
+      }))};
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(app_clinic_id()::text||':clinical-templates',0))`.execute(tx);
       const initialized=await getSetting<boolean>(tx,'clinical_note_templates_initialized');
       if(!initialized){
@@ -167,6 +173,47 @@ for (const [suffix, list, key, label] of SITUATION_LISTS) {
     return { success: true };
   });
 }
+
+interface ClinicalLibraryRow {category:string;template:string;type1:string;type2:string;hindi:string}
+function clinicalRows(value:unknown,label:string,fields:string[],required:string[]):Record<string,string>[] {
+  const rows=parseList(value,label);
+  if(rows.length>2000)throw new DeskError(`${label} has too many rows`);
+  return rows.map(value=>{
+    if(!value||typeof value!=='object'||Array.isArray(value))throw new DeskError(`Invalid ${label} row`);
+    const row=value as Params,result:Record<string,string>={};
+    for(const field of fields){
+      if(row[field]!==undefined&&typeof row[field]!=='string')throw new DeskError(`Invalid ${label} ${field}`);
+      result[field]=String(row[field]??'');
+      if(result[field]!.length>100000)throw new DeskError(`${label} ${field} is too long`);
+    }
+    if(required.some(field=>!result[field]?.trim()))throw new DeskError(`${label} requires ${required.join(' and ')}`);
+    return result;
+  });
+}
+
+Object.assign(masters,{
+  getClinicalNoteTemplateLib:read(async(p,ctx)=>{
+    const {tx}=ctx;
+    const saved=await getSetting<ClinicalLibraryRow[]>(tx,'clinical_note_template_library');
+    if(saved!==null)return {success:true,rows:saved};
+    // Expose existing curated notes at both lengths; never replace them with a
+    // newly shipped seed merely because the editor contract changed.
+    const legacy=await masters.getClinicalNoteTemplates!.run(p,ctx);
+    if(!legacy.success)return legacy;
+    const templates=legacy.templates as {situation:string;text:string;category:string;hindi?:string}[];
+    return {success:true,rows:templates.map(row=>({category:row.category,template:row.situation,type1:row.text,type2:row.text,hindi:row.hindi??''}))};
+  }),
+  saveClinicalNoteTemplateLib:write('masters:write',async(p,{tx})=>{
+    const rows=clinicalRows(p.rows,'clinical note library',['category','template','type1','type2','hindi'],['template']);
+    await putSetting(tx,'clinical_note_template_library',rows);return {success:true,saved:rows.length};
+  }),
+  getClinicalNotePlan:read(async(_p,{tx})=>({success:true,rows:await getSetting(tx,'clinical_note_plan')??[]})),
+  saveClinicalNotePlan:write('masters:write',async(p,{tx})=>{
+    const rows=clinicalRows(p.rows,'clinical note plan',['plan','treatment','category','templates','hindi'],['plan','treatment']);
+    if(rows.some(row=>!['Normal','CGHS'].includes(row.plan!)))throw new DeskError('Invalid clinical note plan');
+    await putSetting(tx,'clinical_note_plan',rows);return {success:true,saved:rows.length};
+  })
+});
 
 Object.assign(masters, {
   getDoctorDetailsList: read(async (_p, { tx }) => {

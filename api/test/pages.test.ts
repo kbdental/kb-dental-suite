@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
+import { Script } from "node:vm";
 import { makeWorld, PASSWORD, type World } from "./setup.js";
 
 let w: World;
@@ -27,9 +28,11 @@ describe("page security", () => {
   it("sends a CSP whose nonce matches every script tag, with a new nonce each time", async () => {
     const a = await page("/");
     const nonce = /'nonce-([^']+)'/.exec(String(a.headers["content-security-policy"]))![1];
-    const tags = a.body.match(/<script(?=[\s>])[^>]*>/gi)!;
+    const blocks = [...a.body.matchAll(/(<script(?=[\s>])[^>]*>)([\s\S]*?)<\/script\s*>/gi)];
+    const tags = blocks.map(block=>block[1]!);
     expect(tags.length).toBeGreaterThan(3);
     expect(tags.every((t) => t.includes(`nonce="${nonce}"`))).toBe(true);
+    for(const block of blocks)if(!/\bsrc\s*=/.test(block[1]!))expect(()=>new Script(block[2]!)).not.toThrow();
     const b = await page("/");
     expect(String(b.headers["content-security-policy"])).not.toContain(nonce);
   });
