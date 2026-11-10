@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-02b";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-10";
+const KB_APP_BUILD = "2026-11-10a";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -27364,6 +27364,12 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
   const [sheetCols, setSheetCols] = React.useState([]);
   const [sheetRowsErr, setSheetRowsErr] = React.useState("");
 
+  // Four forms keep a structured JSON record as well as their flat tab; the
+  // other fourteen keep only the tab. Both end up on the same work done
+  // sheet, because the sheet is built from the tab's own column headers --
+  // so a form without a structured record is not a form without a sheet.
+  const hasStructured = !!sheetType;
+
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true); setErr(""); setData(null); setSheetRowsErr("");
@@ -27373,7 +27379,7 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
     // record at all, with the data plainly sitting in the sheet. Ask again
     // without the filter: if the patient has a row under another label, show
     // it and say which, rather than denying the record exists.
-    api("getClinicalSheets", { uhid, sheetType }).then(async res => {
+    if (hasStructured) api("getClinicalSheets", { uhid, sheetType }).then(async res => {
       if (cancelled) return;
       if (!res.success) { setLoading(false); setErr(res.error || "Failed to load records"); return; }
       if (res.allTeeth) { setLoading(false); setData(res.allTeeth); return; }
@@ -27390,11 +27396,16 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
         setNote("");
       }
     }).catch(e => { if (!cancelled) { setLoading(false); setErr(String(e)); } });
-    // Historical rows live in a separate flat tab, keyed by the same UHID.
+    // The rows in the form's own tab, keyed by the same UHID. For a form with
+    // no structured record these ARE the record, so this fetch is the one
+    // that decides whether the screen is still loading -- clearing it on the
+    // structured fetch that never ran would flash "nothing recorded yet" over
+    // a patient who has a sheet full of visits.
     const tabCfg = CS_RECORD_TAB[formId];
     if (tabCfg) {
       api("getClinicalRecords", { tabName: tabCfg.tab, uhid }).then(res => {
         if (cancelled) return;
+        if (!hasStructured) setLoading(false);
         if (!res || !res.success) {
           // This used to fail silently — an auth rejection, a network hiccup,
           // or a backend error looked exactly like "no historical rows",
@@ -27404,10 +27415,15 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
         }
         setSheetRows(res.records || []);
         setSheetCols(res.headers || []);
-      }).catch(e => { if (!cancelled) setSheetRowsErr(String((e && e.message) || e)); });
+      }).catch(e => { if (!cancelled) { if (!hasStructured) setLoading(false);
+        setSheetRowsErr(String((e && e.message) || e)); } });
+    } else if (!hasStructured) {
+      // No tab and no structured record: nothing to read. Say so rather than
+      // spinning for ever.
+      setLoading(false);
     }
     return () => { cancelled = true; };
-  }, [uhid, sheetType, formId]);
+  }, [uhid, sheetType, formId, hasStructured]);
 
   const cfg = CS_FORM_CONFIG[formId] || {};
   const tabCfg = CS_RECORD_TAB[formId] || {};
@@ -27463,9 +27479,12 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
   if (err) return React.createElement("div", { style:{ padding:40, textAlign:"center", color:"#e24b4a", fontSize:14 } }, "⚠️ " + err);
   // An empty record is the normal state for a patient who has not had this
   // treatment yet, so say what to do rather than only what is missing.
+  // Named for the clinic, not for the code: the tab is what the dentist sees
+  // in the spreadsheet, and formId ("orthoProgress") means nothing to anyone.
+  const what = tabCfg.tab || sheetType || formId;
   const sheetErrBanner = sheetRowsErr && React.createElement("div", { style:{ background:"#fff2f0", border:"1px solid #e24b4a",
     borderRadius:8, padding:"9px 14px", marginBottom:12, fontSize:13.5, color:"#a12e2e" } },
-    "Could not load this patient's historical " + (sheetType || formId) + " rows from the sheet: " + sheetRowsErr);
+    "Could not load this patient's " + what + " rows from the sheet: " + sheetRowsErr);
   if (!data && sheetRows.length) return React.createElement("div", { style:{ padding:"20px 28px" } },
     sheetErrBanner,
     React.createElement("div", { className:"kb-noprint", style:{ display:"flex", justifyContent:"flex-end", marginBottom:12 } },
@@ -27479,7 +27498,7 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
     React.createElement("div", { style:{ fontSize:15, fontWeight:700, color:"#444", marginBottom:6 } },
       "Nothing recorded yet for this patient"),
     React.createElement("div", { style:{ fontSize:14, color:"#444444", marginBottom:4 } },
-      "No ", React.createElement("b", null, sheetType || formId), " record is on file for UHID ",
+      "No ", React.createElement("b", null, what), " record is on file for UHID ",
       React.createElement("b", null, uhid), "."),
     React.createElement("div", { style:{ fontSize:13.5, color:"#444444", maxWidth:560, margin:"0 auto 18px" } },
       "To start one: open ", React.createElement("b", null, "New Entry"), ", fill the form and press ",
@@ -27777,53 +27796,6 @@ function printClinicalRecord(cfg, data, items, sheetType) {
 
 
 // ── Read-only saved-record viewer for standalone iframe forms that save via saveXXX()/getClinicalRecords (tabName-based) ──
-function GenericRecordsView({ tabName, uhid }) {
-  const [loading, setLoading] = React.useState(true);
-  const [records, setRecords] = React.useState([]);
-  const [err, setErr] = React.useState("");
-
-  React.useEffect(() => {
-    let cancelled = false;
-    setLoading(true); setErr(""); setRecords([]);
-    api("getClinicalRecords", { tabName, uhid }).then(res => {
-      if (cancelled) return;
-      setLoading(false);
-      if (res.success) setRecords(res.records || []);
-      else setErr(res.error || "Failed to load records");
-    }).catch(e => { if (!cancelled) { setLoading(false); setErr(String(e)); } });
-    return () => { cancelled = true; };
-  }, [tabName, uhid]);
-
-  const fmtV = (v) => {
-    if (!v || v === "") return "—";
-    if (/^\d{4}-\d{2}-\d{2}T/.test(v)) {
-      try { return fmtDMY(v); } catch(e) { return v; }
-    }
-    return v;
-  };
-
-  if (loading) return React.createElement("div", { style:{ padding:40, textAlign:"center", color:"#444444", fontSize:14 } }, "Loading saved record...");
-  if (err) return React.createElement("div", { style:{ padding:40, textAlign:"center", color:"#e24b4a", fontSize:14 } }, "⚠️ " + err);
-  if (!records.length) return React.createElement("div", { style:{ padding:40, textAlign:"center", color:"#444444", fontSize:14 } },
-    "No saved record found for this patient in " + tabName + " yet.");
-
-  return React.createElement("div", { style:{ padding:"20px 28px" } },
-    records.map((rec, ri) =>
-      React.createElement("div", { key:ri, style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8, padding:"12px 14px", marginBottom:10 } },
-        React.createElement("div", { style:{ fontSize:12, fontWeight:700, color:T, marginBottom:8 } }, "Record #"+(ri+1)+" · "+fmtV(rec["Timestamp"]||"")),
-        React.createElement("div", { style:{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 16px" } },
-          Object.entries(rec).filter(([k])=>k!=="Timestamp"&&k!=="_rowIndex").map(([k,v])=>
-            React.createElement("div", { key:k, style:{ borderBottom:`0.5px solid ${BORDER}`, padding:"4px 0" } },
-              React.createElement("span", { style:{ fontSize:10, fontWeight:700, color:"#444444", marginRight:6 } }, k+":"),
-              React.createElement("span", { style:{ fontSize:13 } }, fmtV(v))
-            )
-          )
-        )
-      )
-    )
-  );
-}
-
 // ════════════════════════════════════════════════════════
 // MASTER — Treatments/Fees, Doctor Details, Employees,
 // Expense Categories, Payment Modes
@@ -32574,19 +32546,17 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
         style:{ display:"flex", flexDirection:"column", height:"100%", margin:"-28px -32px", overflow:"hidden" }
       },
         backBtn,
-        viewMode === "records" && globalPat && globalPat.uhid && form.sheetType
+        // Every form, not only the four that keep a structured record. The
+        // work done sheet is built from the form's own tab headers, so the
+        // other fourteen were always one routing line away from having the
+        // same A4 sheet and the same Print button -- and until this line
+        // they got a plain dump of key-and-value with nothing to print.
+        viewMode === "records" && globalPat && globalPat.uhid
           ? React.createElement("div", { style:{ flex:1, overflowY:"auto", background:BGS } },
               React.createElement(ClinicalSheetRecordView, {
                 key: form.id + "_" + globalPat.uhid,
                 formId: form.id, sheetType: form.sheetType, uhid: globalPat.uhid,
                 onNewEntry: () => setViewMode("form")
-              })
-            )
-          : viewMode === "records" && globalPat && globalPat.uhid && form.tabName
-          ? React.createElement("div", { style:{ flex:1, overflowY:"auto", background:BGS } },
-              React.createElement(GenericRecordsView, {
-                key: form.id + "_" + globalPat.uhid,
-                tabName: form.tabName, uhid: globalPat.uhid
               })
             )
           : React.createElement("iframe", {
