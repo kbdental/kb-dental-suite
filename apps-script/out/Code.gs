@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-06g";
+var BACKEND_BUILD = "2026-11-08f";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -1223,6 +1223,12 @@ function route(p) {
       case "saveChairsList":           return saveChairsList(p);
       case "getClinicalNoteTemplates":  return getClinicalNoteTemplates();
       case "saveClinicalNoteTemplates": return saveClinicalNoteTemplates(p);
+      case "getClinicalNotePlan":        return getClinicalNotePlan();
+      case "saveClinicalNotePlan":       return saveClinicalNotePlan(p);
+      case "getClinicalDepartmentsList":  return getClinicalDepartmentsList();
+      case "saveClinicalDepartmentsList": return saveClinicalDepartmentsList(p);
+      case "getClinicalNoteTemplateLib":  return getClinicalNoteTemplateLib();
+      case "saveClinicalNoteTemplateLib": return saveClinicalNoteTemplateLib(p);
       case "getSettings":          return getSettings();
       case "saveSettings":         return saveSettings(p);
       case "saveFinancePassword":  return saveFinancePassword(p);
@@ -5151,7 +5157,8 @@ function getMedicineInstructionsList() {
   var data = sh.getDataRange().getValues();
   var items = [];
   for (var i = 1; i < data.length; i++) {
-    if (data[i][0]) items.push({ situation: data[i][0], text: data[i][1] || data[i][0], category: data[i][2] || "" });
+    if (data[i][0]) items.push({ situation: data[i][0], text: data[i][1] || data[i][0],
+                                 category: data[i][2] || "", hindi: data[i][4] || "" });
   }
   return { success: true, instructions: items };
 }
@@ -5160,11 +5167,11 @@ function saveMedicineInstructionsList(p) {
   if (arr && arr.__bad) return { success: false, error: arr.__bad };
   var sh = getSheet("Medicine Instructions");
   sh.clearContents();
-  sh.appendRow(["Situation", "Instruction", "Category", "Updated At"]);
+  sh.appendRow(["Situation", "Instruction", "Category", "Updated At", "Hindi"]);
   var now = new Date().toISOString();
   arr.forEach(function(v) {
-    if (typeof v === "string") sh.appendRow([v, v, "", now]);
-    else sh.appendRow([v.situation, v.text, v.category || "", now]);
+    if (typeof v === "string") sh.appendRow([v, v, "", now, ""]);
+    else sh.appendRow([v.situation, v.text, v.category || "", now, v.hindi || ""]);
   });
   return { success: true };
 }
@@ -5173,17 +5180,27 @@ function getMedicineNotesList() {
   var sh = getSheet("Medicine Notes");
   var data = sh.getDataRange().getValues();
   var items = [];
-  for (var i = 1; i < data.length; i++) { if (data[i][0]) items.push(data[i][0]); }
-  return { success: true, medNotes: items };
+  var pairs = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    items.push(data[i][0]);
+    pairs.push({ text: String(data[i][0]), hindi: String(data[i][2] || "") });
+  }
+  // medNotes stays a list of plain strings: the prescription form reads it
+  // that way, and it is a base64 blob. The Hindi rides alongside.
+  return { success: true, medNotes: items, medNotesLib: pairs };
 }
 function saveMedicineNotesList(p) {
   var arr = parseList_(p.medNotes, "medicine notes");
   if (arr && arr.__bad) return { success: false, error: arr.__bad };
   var sh = getSheet("Medicine Notes");
   sh.clearContents();
-  sh.appendRow(["Note", "Updated At"]);
+  sh.appendRow(["Note", "Updated At", "Hindi"]);
   var now = new Date().toISOString();
-  arr.forEach(function(v) { sh.appendRow([v, now]); });
+  arr.forEach(function(v) {
+    if (typeof v === "string") sh.appendRow([v, now, ""]);
+    else sh.appendRow([v.text || "", now, v.hindi || ""]);
+  });
   return { success: true };
 }
 
@@ -5799,6 +5816,196 @@ function saveChairsList(p) {
   return { success: true };
 }
 
+// ── Three things, kept apart ────────────────────────────────────────────
+//
+//   the TEMPLATES   156 of them, one per procedure, each written in two
+//                   lengths -- Type 1 (Concise) for a routine visit, Type 2
+//                   (Comprehensive) for a record somebody else, or a panel,
+//                   may read back
+//
+//   the PLAN        277 treatments that can go on a plan -- 156 on the
+//                   clinic's own and 121 on the CGHS rate card -- each
+//                   naming the department it falls under and the templates
+//                   it is made of
+//
+// They were briefly one store, keyed by plan treatment. That duplicated
+// every note once per plan item that used it, and a template corrected in
+// one place stayed wrong in the others. A plan item REFERS to templates by
+// name; all 364 references resolve, which is what makes the split safe.
+//
+// Both seeds live in the page, not here: this file is pasted into two
+// script editors by hand.
+// A sheet of its OWN, not the name the older table already has. Written to
+// share it, the two migrations fought: each read found a heading row the
+// other had written, moved that sheet aside and made a fresh one, so two
+// tabs were shuffled on every single read. Two different tables must not
+// answer to one name.
+var CLINICAL_TPL_LIB_SHEET = "Clinical Templates (Type 1 & 2)";
+var CLINICAL_TPL_LIB_HEADERS = ["Category", "Template", "Type 1 (Concise)",
+                                "Type 2 (Comprehensive)", "Updated At",
+                                // The note in Hindi, for the Hindi toggle.
+                                "Hindi"];
+var CLINICAL_PLAN_SHEET = "Clinical Note Plan";
+var CLINICAL_PLAN_HEADERS = ["Plan", "Plan Treatment", "Category", "Templates", "Updated At",
+                             // The treatment as a patient reads it. A plan is
+                             // handed to the patient, so this one is theirs.
+                             "Hindi"];
+
+var TYPE1_SUFFIX = " \u00b7 Type 1 (Concise)";
+var TYPE2_SUFFIX = " \u00b7 Type 2 (Comprehensive)";
+
+function getClinicalNoteTemplatesV3_() {
+  var sh = getSheet(CLINICAL_TPL_LIB_SHEET);
+  var data = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!String(data[i][1] || "").trim()) continue;
+    items.push({
+      category: String(data[i][0] || "").trim(),
+      template: String(data[i][1] || "").trim(),
+      type1: String(data[i][2] || ""),
+      type2: String(data[i][3] || ""),
+      hindi: String(data[i][5] || "")
+    });
+  }
+  return items;
+}
+
+function getClinicalNoteTemplateLib() {
+  return { success: true, rows: getClinicalNoteTemplatesV3_() };
+}
+
+function saveClinicalNoteTemplateLib(p) {
+  var arr = parseList_(p.rows, "clinical note templates");
+  if (arr && arr.__bad) return { success: false, error: arr.__bad };
+  var sh = getSheet(CLINICAL_TPL_LIB_SHEET);
+  sh.clearContents();
+  ensureGridWidth_(sh, CLINICAL_TPL_LIB_HEADERS.length);
+  sh.appendRow(CLINICAL_TPL_LIB_HEADERS);
+  var now = new Date().toISOString();
+  // One block. 156 rows appended one at a time is 156 round trips.
+  var block = arr.map(function (r) {
+    return [r.category || "", r.template || "", r.type1 || "", r.type2 || "", now,
+            r.hindi || ""];
+  });
+  if (block.length) {
+    sh.getRange(2, 1, block.length, CLINICAL_TPL_LIB_HEADERS.length).setValues(block);
+  }
+  return { success: true, saved: block.length };
+}
+
+// The departments a template or a plan treatment can be filed under. They
+// were a list in the page, so adding one meant editing code -- which is no
+// way to run a clinic that opens a new discipline.
+//
+// A plain list of names, because the NAME is the key: the template library
+// and both plans record it, and each work-done form is pinned to one. That
+// is why renaming one has to cascade, and why the page does the cascade
+// rather than this -- it holds all three lists already.
+var CLINICAL_DEPT_SHEET = "Clinical Departments";
+
+function getClinicalDepartmentsList() {
+  var sh = getSheet(CLINICAL_DEPT_SHEET);
+  var data = sh.getDataRange().getValues();
+  var out = [];
+  for (var i = 1; i < data.length; i++) {
+    var v = String(data[i][0] || "").trim();
+    if (v && out.indexOf(v) < 0) out.push(v);
+  }
+  return { success: true, departments: out };
+}
+
+function saveClinicalDepartmentsList(p) {
+  var arr = parseList_(p.departments, "clinical departments");
+  if (arr && arr.__bad) return { success: false, error: arr.__bad };
+  var sh = getSheet(CLINICAL_DEPT_SHEET);
+  sh.clearContents();
+  sh.appendRow(["Department", "Updated At"]);
+  var now = new Date().toISOString();
+  var block = [];
+  arr.forEach(function (v) {
+    var name = String(v || "").trim();
+    if (name) block.push([name, now]);
+  });
+  if (block.length) sh.getRange(2, 1, block.length, 2).setValues(block);
+  return { success: true, saved: block.length };
+}
+
+function getClinicalNotePlan() {
+  var sh = getSheet(CLINICAL_PLAN_SHEET);
+  var data = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!String(data[i][1] || "").trim()) continue;
+    items.push({
+      plan: String(data[i][0] || "").trim(),
+      treatment: String(data[i][1] || "").trim(),
+      category: String(data[i][2] || "").trim(),
+      templates: String(data[i][3] || "").trim(),
+      hindi: String(data[i][5] || "").trim()
+    });
+  }
+  return { success: true, rows: items };
+}
+
+function saveClinicalNotePlan(p) {
+  var arr = parseList_(p.rows, "clinical note plan");
+  if (arr && arr.__bad) return { success: false, error: arr.__bad };
+  var sh = getSheet(CLINICAL_PLAN_SHEET);
+  sh.clearContents();
+  ensureGridWidth_(sh, CLINICAL_PLAN_HEADERS.length);
+  sh.appendRow(CLINICAL_PLAN_HEADERS);
+  var now = new Date().toISOString();
+  var block = arr.map(function (r) {
+    return [r.plan || "", r.treatment || "", r.category || "", r.templates || "", now,
+            r.hindi || ""];
+  });
+  if (block.length) {
+    sh.getRange(2, 1, block.length, CLINICAL_PLAN_HEADERS.length).setValues(block);
+  }
+  return { success: true, saved: block.length };
+}
+
+// One record per template, not one per length.
+//
+// Which length is wanted is not the clinician's decision to make twice at
+// the chair -- it follows from what the text is FOR:
+//
+//   saved   the daily register, the progress note, the procedure-done
+//           sheet: the full record, because this is the one that has to
+//           stand on its own years later, read by somebody else
+//   printed the prescription: the concise line, because a paragraph under
+//           every item on a pad is unreadable
+//
+// So `text` -- the field the eighteen work-done forms insert, and
+// therefore the field that gets SAVED -- is the comprehensive one. Both
+// lengths ride along beside it, so the prescription can take the concise
+// one without a second lookup. Nothing in those forms, base64 blobs every
+// one, had to change for this either.
+//
+// Type 2 missing falls back to Type 1 rather than offering a blank: a
+// dropdown entry that inserts nothing is worse than a short note.
+function clinicalTemplatesFlat_() {
+  var out = [];
+  getClinicalNoteTemplatesV3_().forEach(function (r) {
+    var concise = String(r.type1 || "");
+    var full = String(r.type2 || "");
+    if (!concise.trim() && !full.trim()) return;
+    out.push({
+      situation: r.template,
+      text: full.trim() ? full : concise,
+      category: r.category,
+      concise: concise.trim() ? concise : full,
+      comprehensive: full.trim() ? full : concise,
+      // Carried so the Hindi toggle can hand the form the Hindi note
+      // instead. Empty where nobody has written one, and the toggle then
+      // leaves that template in English rather than blanking it.
+      hindi: String(r.hindi || "")
+    });
+  });
+  return out;
+}
+
 // ── Clinical note templates ─────────────────────────────────────────────
 // There is ONE list. It was briefly two -- the clinic's 188 notes went in
 // beside the older set while they were looked over -- and the older set is
@@ -5811,6 +6018,8 @@ function saveChairsList(p) {
 // every time but the first.
 var CLINICAL_TPL_SHEET = "Clinical Note Templates";
 var CLINICAL_TPL_HEADERS = ["Situation", "Template Text", "Category", "Updated At", "v2"];
+// The v2 table, still read as a last resort when neither the library nor
+// the plan has anything in it.
 
 // Three departments were renamed to the names the rest of the clinic uses.
 // A sheet seeded before that still carries the old ones, and those headings
@@ -5874,6 +6083,12 @@ function clinicalTplSheet_() {
 }
 
 function getClinicalNoteTemplates() {
+  // The plan is the store now. The older sheet is left exactly where it is
+  // and simply stops being read -- it is the clinic's own writing, and the
+  // plan can be emptied and refilled while they decide.
+  var lib = clinicalTemplatesFlat_();
+  if (lib.length) return { success: true, templates: lib, source: "library" };
+
   var sh = clinicalTplSheet_();
   // Untouched, so the clinic's own list is put in. getLastRow() is 0 only
   // before anything has ever been written: once saved, even an emptied list

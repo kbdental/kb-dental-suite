@@ -41,8 +41,30 @@ eq('there is no Notes category any more', group("notes"), undefined);
 ok('and nothing else is called Notes',
    !MENU.some(t => String(t.label).toLowerCase() === "notes"),
    JSON.stringify(MENU.map(t => t.label)));
-eq('the three lists are under Clinical Configuration, in order, with the brands',
-   subs("clinicalConfig"), ["templates", "medInstructions", "medNotes", "implantBrands"]);
+eq('Clinical Configuration holds the clinical lists, in order',
+   subs("clinicalConfig"),
+   ["templates", "notePlan", "notePlanCghs", "departments", "examination",
+    "medInstructions", "medNotes", "implantBrands"]);
+// The headings everything above is filed under. A list rather than a
+// constant in the page: a clinic that opens a new discipline should not
+// need a developer to say so.
+ok('the departments are a tab, after the lists that use them',
+   subs("clinicalConfig").indexOf("departments") > subs("clinicalConfig").indexOf("notePlanCghs"),
+   subs("clinicalConfig").join(','));
+// Two plans, two tabs. They are two different lists of treatments, and a
+// toggle inside one tab reads as a filter on a single list -- which is how
+// the CGHS plan came to look as though it had never been added at all.
+ok('the CGHS plan is a tab of its own, beside the normal one',
+   subs("clinicalConfig").indexOf("notePlanCghs")
+     === subs("clinicalConfig").indexOf("notePlan") + 1,
+   subs("clinicalConfig").join(','));
+// The plan sits next to the templates it points at, and the notes lists
+// that were folded in from Notes are still behind them.
+ok('the plan is its own tab, beside the templates',
+   subs("clinicalConfig").indexOf("notePlan") === subs("clinicalConfig").indexOf("templates") + 1,
+   subs("clinicalConfig").join(','));
+ok('and Examination is a tab of its own',
+   subs("clinicalConfig").indexOf("examination") >= 0, subs("clinicalConfig").join(','));
 // The category opens on its first subtab, so what comes first is a choice.
 eq('it opens on the clinical note templates, not the implant brands',
    group("clinicalConfig").subtabs[0].id, "templates");
@@ -63,7 +85,7 @@ ok('and it really is patient advice, which is why it sits here',
 // ── nothing was displaced on the way ────────────────────────────────────
 eq('the other categories are where they were',
    MENU.map(t => t.id),
-   ["organization", "clinic", "schedule", "patient", "clinicalConfig", "prescriptions",
+   ["clinic", "schedule", "patient", "clinicalConfig", "prescriptions",
     "accounts", "security", "sales"]);
 eq('the prescription lists are untouched',
    subs("prescriptions"), ["drugCategories", "medicines", "medDosages",
@@ -92,9 +114,12 @@ const orphaned = rendered.filter(id => wanted.indexOf(id) < 0);
 eq('and no screen is left with nothing to open it', orphaned, []);
 
 // A placeholder is deliberate: it says it is coming rather than opening blank.
-eq('the two placeholders are still marked as such',
+// Examination is held open with nothing under it yet, so it is marked --
+// a placeholder says so on its own page instead of opening blank, and the
+// check below for orphaned screens knows to skip it.
+eq('the placeholders are marked as such',
    MENU.flatMap(t => (t.subtabs || []).filter(s => s.placeholder).map(s => s.id)),
-   ["drugCategories", "accountHeads"]);
+   ["examination", "drugCategories", "accountHeads"]);
 
 // ── and nothing still sends staff to the old place ──────────────────────
 // A message naming a path is a path that has to exist. This one is on the

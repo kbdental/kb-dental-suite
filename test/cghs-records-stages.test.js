@@ -39,7 +39,7 @@ ok('there are three stages, numbered in the order they happen',
 // `pat` rather than `globalPat`: the bill prints the beneficiary's address,
 // which only the registration holds, so the record is topped up first.
 ok('the prescription is handed only the endorsed lines',
-   /CghsPrescription, \{ pat: pat, lines: e\.approved \}/.test(html));
+   /CghsPrescription, \{ pat: pat, lines: e\.approved, plan: notePlan \}/.test(html));
 ok('and so is the bill',
    /CghsBill, \{ pat: pat, panel: e\.panel, card: e\.card,\s*holder: e\.holder, lines: e\.approved \}/.test(html));
 ok('with nothing ticked, neither stage is drawn at all',

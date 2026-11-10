@@ -59,12 +59,17 @@ ok('the editor is back to one set of categories',
                                   html.indexOf('templates: () => React.createElement(TemplateListEditor') + 400)));
 
 // ── it still saves the way every other list does ────────────────────────
-ok('the screen writes the clinical list',
-   /templates: \(\) => React\.createElement\(TemplateListEditor, \{\s*items:clinicalTemplates,[\s\S]{0,400}?saveTemplates\(/.test(html));
-ok('through persist, not by hand',
-   /const saveTemplates = \(arr\) => persist\("saveClinicalNoteTemplates", \{ templates: JSON\.stringify\(arr\) \}, arr, setClinicalTemplates, clinicalTemplates\);/.test(html));
+// The screen behind it is the PLAN now: a note belongs to a treatment on
+// the plan, not to a situation somebody thinks of at the chair.
+// clinical-note-plan.test.js covers the two screens; what matters here is
+// that this older sheet is still the last resort and still intact.
+ok('the templates screen is the library editor',
+   /templates: \(\) => React\.createElement\(ClinicalTemplateLibEditor, \{\s*rows: noteTemplates,/.test(html));
+ok('and each plan has a screen of its own',
+   /notePlan: \(\) => React\.createElement\(ClinicalPlanEditor, \{\s*plan: "Normal", rows: notePlan, templates: noteTemplates,/.test(html) &&
+   /notePlanCghs: \(\) => React\.createElement\(ClinicalPlanEditor, \{\s*plan: "CGHS", rows: notePlan, templates: noteTemplates,/.test(html));
 {
-  const master = html.slice(html.indexOf('apiBatch([',html.indexOf('function Master(')));
+  const master = html.slice(html.indexOf('apiBatch([\n      "getTreatmentsMaster"'));
   const asked = master.slice(0, master.indexOf(']'));
   ok('it is read in the batch', /"getClinicalNoteTemplates"/.test(asked), asked);
   const names = (asked.match(/"([^"]+)"/g) || []).length;
@@ -139,7 +144,9 @@ ok('a treatment may have several notes to choose from',
 }
 
 // ── the sheet, run ──────────────────────────────────────────────────────
-const SRC = gs.slice(gs.indexOf('// ── Clinical note templates ─'),
+// From the stores down, because the reader derives from the template
+// library first and falls back to this older sheet only when it is empty.
+const SRC = gs.slice(gs.indexOf('// ── Three things, kept apart ─'),
                      gs.indexOf('function getPatientOutstanding(p) {'));
 ok('the sheet code was found', /function clinicalTplSheet_/.test(SRC), SRC.length);
 
@@ -209,18 +216,19 @@ const carried = () => makeSheet('Treatment Note Templates',
   const { ctx, ss } = book([oldSet(), carried()]);
   const got = ctx.get();
   eq('the clinic\'s list is what comes back', got.templates.length, 188);
-  eq('and it is now the clinical note templates',
-     ss._sheets.map(x => x.name).sort(),
+  const tplSheets = () => ss._sheets.map(x => x.name)
+    .filter(n => n.indexOf('Clinical Note Templates') === 0).sort();
+  eq('and it is now the clinical note templates', tplSheets(),
      ['Clinical Note Templates', 'Clinical Note Templates (replaced)']);
   // The one that must not go wrong.
   const kept = ss.getSheetByName('Clinical Note Templates (replaced)');
   eq('the older set is kept, not deleted', kept._rows.length, 3);
   eq('exactly as it was', kept._rows[1][0], 'RCT Access');
   eq('the heading row is marked, so this only happens once',
-     ss.getSheetByName('Clinical Note Templates')._rows[0],
+     ss.getSheetByName('Clinical Note Templates')._rows[0], 
      ['Situation', 'Template Text', 'Category', 'Updated At', 'v2']);
   eq('read again nothing moves', ctx.get().templates.length, 188);
-  eq('and nothing is renamed a second time', ss._sheets.length, 2);
+  eq('and nothing is renamed a second time', tplSheets().length, 2);
 }
 
 // A book where the page was never opened, so only the older set exists.
@@ -228,7 +236,7 @@ const carried = () => makeSheet('Treatment Note Templates',
   const { ctx, ss } = book([oldSet()]);
   const got = ctx.get();
   eq('the older set is still moved aside',
-     ss._sheets.map(x => x.name).sort(),
+     ss._sheets.map(x => x.name).filter(n => n.indexOf('Clinical Note Templates') === 0).sort(),
      ['Clinical Note Templates', 'Clinical Note Templates (replaced)']);
   eq('and the clinic\'s list is seeded in its place', got.templates.length, 188);
   eq('the older set is intact',
@@ -245,7 +253,8 @@ const carried = () => makeSheet('Treatment Note Templates',
   const { ctx, ss } = book([current, makeSheet('Clinical Note Templates (replaced)', [OLD_HEAD])]);
   eq('a list already in place is left exactly alone', ctx.get().templates.length, 1);
   eq('and is not reseeded', ctx.get().templates[0].situation, 'Mine');
-  eq('nothing is renamed', ss._sheets.map(x => x.name).sort(),
+  eq('nothing is renamed',
+     ss._sheets.map(x => x.name).filter(n => n.indexOf('Clinical Note Templates') === 0).sort(),
      ['Clinical Note Templates', 'Clinical Note Templates (replaced)']);
 }
 
