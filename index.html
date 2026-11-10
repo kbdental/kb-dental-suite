@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-02b";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-09";
+const KB_APP_BUILD = "2026-11-10";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -32220,6 +32220,32 @@ function Master() {
 // ════════════════════════════════════════════════════════
 // CLINICAL RECORDS HUB — Forms + Sheets
 // ════════════════════════════════════════════════════════
+// Hindi for the patient-facing text, shared by every screen that offers the
+// toggle. It changes what the forms are GIVEN, so what they insert and print
+// is Hindi -- rather than being a reading aid on one screen that the paper
+// never sees. The clinical record stays English: that is the medico-legal
+// document, and it is not what this toggle is for.
+//
+// One hook rather than a copy per screen. Two copies drifted once already:
+// the clinical note templates read a setting that was declared inside
+// Prescription, which left Clinical Records throwing on every render and
+// showing nothing at all. One definition cannot do that, and it also means
+// the two screens can never disagree about which language is on.
+//
+// Remembered per browser, because a clinic that works in Hindi works in
+// Hindi every day and should not have to say so at every patient.
+function useHindiOut() {
+  const [on, setOn] = React.useState(() => {
+    // Scoped: the two instances share one browser origin, and an unscoped
+    // key would set the empanelled clinic's language from the main one.
+    try { return window.localStorage.getItem(lsKey("kbHindiOut")) === "1"; } catch (e) { return false; }
+  });
+  React.useEffect(() => {
+    try { window.localStorage.setItem(lsKey("kbHindiOut"), on ? "1" : "0"); } catch (e) {}
+  }, [on]);
+  return [on, setOn];
+}
+
 function ClinicalRecords({ globalPat, setGlobalPat }) {
   const [section, setSection] = React.useState("forms");
   const [activeForm, setActiveForm] = React.useState(null);
@@ -32229,6 +32255,7 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
   const [loading, setLoading] = React.useState(false);
   const iframeRef = React.useRef(null);
   const [clinicalTemplates, setClinicalTemplates] = React.useState([]);
+  const [hindiOut, setHindiOut] = useHindiOut();
   React.useEffect(() => {
     api("getClinicalNoteTemplates").then(res => { if (res.success && res.templates) setClinicalTemplates(res.templates); });
   }, []);
@@ -32759,22 +32786,7 @@ function Prescription({ globalPat }) {
   const [todaysProcedures, setTodaysProcedures] = React.useState([]);
   const [medicines, setMedicines] = React.useState([]);
   const [medLists, setMedLists] = React.useState({ dosages: [], frequencies: [], durations: [], instructions: [], medNotes: [], instructionsLib: [], medNotesLib: [] });
-  // Hindi for the patient-facing text. It changes what the prescription form
-  // is GIVEN, so what it inserts and prints is Hindi -- rather than being a
-  // reading aid on this screen that the paper never sees. The clinical
-  // record stays English: that is the medico-legal document, and it is not
-  // what this toggle is for.
-  //
-  // Remembered per browser, because a clinic that works in Hindi works in
-  // Hindi every day and should not have to say so at every patient.
-  const [hindiOut, setHindiOut] = React.useState(() => {
-    // Scoped: the two instances share one browser origin, and an unscoped
-    // key would set the empanelled clinic's language from the main one.
-    try { return window.localStorage.getItem(lsKey("kbHindiOut")) === "1"; } catch (e) { return false; }
-  });
-  React.useEffect(() => {
-    try { window.localStorage.setItem(lsKey("kbHindiOut"), hindiOut ? "1" : "0"); } catch (e) {}
-  }, [hindiOut]);
+  const [hindiOut, setHindiOut] = useHindiOut();
   // Filled from the clinic profile below, which is where the margins are set
   // and always has been. A second fetch of its own here would race that one,
   // and whichever answered last would decide what the pad looks like.
@@ -35868,6 +35880,11 @@ function App() {
       color: "#5a5a5a"
     }
   }, /*#__PURE__*/React.createElement(BackendBuildLine, null)))), /*#__PURE__*/React.createElement("div", {
+    // Says which page is open, and wraps whatever that page drew. A render
+    // that throws empties this element while the sidebar stays, which is
+    // what "not functioning" looks like from the front desk: a blank area
+    // and nothing to read. Named so a test can see it.
+    "data-kb-page": page,
     style: {
       flex: 1,
       overflowY: page === "crm" || page === "chatbot" ? "hidden" : "auto",
