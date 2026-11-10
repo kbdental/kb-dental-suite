@@ -54,15 +54,25 @@ for (const [key, col] of [['patientType', 'Patient Type'], ['panel', 'Panel'],
   ok('getPatient returns ' + key,
      new RegExp(key + ':\\s*get\\("' + col + '"\\)').test(gp), gp.slice(-400));
 
-// The app must NOT demand this build. The panel is read from getAllPatients
-// when getPatient is too old to hand it over, so the endorsement works on
-// the backend the clinic already has; demanding a redeploy for something
-// that is merely nicer puts a red warning across a working screen.
+// THE PANEL must not demand a redeploy. It is read from getAllPatients when
+// getPatient is too old to hand it over, so the endorsement works on the
+// backend the clinic already has; demanding one for something that is merely
+// nicer puts a red warning across a working screen.
+//
+// This used to be policed by requiring KB_BACKEND_BUILD_REQUIRED to sit below
+// BACKEND_BUILD, which says nothing about the panel and forbids every later
+// feature from ever having a real backend dependency -- including the one
+// that writes a wizard form's work into the tab the clinic reads, which
+// cannot fall back to anything because the action does not exist on an older
+// backend. So the guard now checks the fallback itself, which is what the
+// rule was always about.
 const required = (/const KB_BACKEND_BUILD_REQUIRED = "([^"]+)"/.exec(html) || [])[1];
 const backend = (/var BACKEND_BUILD = "([^"]+)"/.exec(gs) || [])[1];
 ok('the new backend is there to deploy', backend >= '2026-11-03', backend);
-ok('but the app does not demand it, because it does not need it',
-   required < backend, required + ' vs ' + backend);
+ok('and the app never asks for one newer than exists',
+   required <= backend, required + ' vs ' + backend);
+ok('the panel falls back to getAllPatients when getPatient is too old',
+   /getAllPatients/.test(html), '');
 
 // ── 3. the registration form shows it back ──────────────────────────────
 const regAt = html.indexOf('// Auto-load existing patient if globalPat is set');

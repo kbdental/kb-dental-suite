@@ -218,7 +218,7 @@ const KB_BACKEND_IS_APPS_SCRIPT = /script\.google\.com/.test(SCRIPT_URL);
 // nicer is the boy who cried wolf, and it sat across a working screen for an
 // afternoon. This goes up again the next time the app genuinely cannot work
 // without a new Code.gs.
-const KB_BACKEND_BUILD_REQUIRED = "2026-11-02b";
+const KB_BACKEND_BUILD_REQUIRED = "2026-11-10";
 // WHICH APP THIS IS.
 //
 // There was no way to tell. The sidebar said which BACKEND was answering
@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-02b";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-10b";
+const KB_APP_BUILD = "2026-11-10c";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -27420,6 +27420,88 @@ function csRecordFromSheetRows(formId, rows, pat) {
   return { ...top, [itemsKey]: items, __fromSheetTab: tabCfg.tab };
 }
 
+// The forms announce themselves by sheet type, which is what the Clinical
+// Sheets row is keyed on. Everything else here is keyed by form id.
+const CS_FORM_BY_SHEET_TYPE = {
+  "RCT": "rct",
+  "Implant Surgery": "imp_surgery",
+  "Implant Prosthetic": "imp_prosth",
+  "Crown Bridge": "crown"
+};
+
+// ── The record, written back out in columns a person can read ───────────
+// csRecordFromSheetRows above turns the clinic's flat rows INTO a record.
+// This goes the other way, and exists because the four wizard forms save
+// only as JSON: one row per patient in a Clinical Sheets tab, holding the
+// whole course of treatment in a single cell. The clinic opens the "RCT"
+// tab, sees the columns it set up, and finds nothing new in them -- the
+// work is saved, but in a form nobody can read.
+//
+// One row per VISIT, the same unit the printed sheet gives a column to.
+// Keyed by label, not by position, so the backend can match them to
+// whatever header that tab actually has.
+function csFlatRowsFromRecord(formId, rec) {
+  const cfg = CS_FORM_CONFIG[formId];
+  const tabCfg = CS_RECORD_TAB[formId];
+  if (!cfg || !tabCfg || !rec) return null;
+  const itemsKey = cfg.itemsKey || (cfg.mode === "entries" ? "entries" : null);
+  if (!itemsKey) return null;
+  const idField = CS_ITEM_ID_FIELD[itemsKey] || "tooth";
+  const items = Array.isArray(rec[itemsKey]) ? rec[itemsKey] : [];
+  const put = (row, label, val) => {
+    if (!label) return;
+    if (val === undefined || val === null) return;
+    const v = String(val).trim();
+    if (!v || v === "\u2014") return;
+    row[label] = v;
+  };
+  const rows = [];
+  items.forEach(it => {
+    // An earlier course on the same tooth is its own set of visits, exactly
+    // as the printed sheet gives it its own columns: a retreatment must not
+    // read as part of the original course.
+    const courses = (it.past || []).concat([it]);
+    courses.forEach(course => {
+      const log = (course.visits && course.visits.length) ? course.visits : [course];
+      log.forEach(v => {
+        const flat = {};
+        Object.keys(course).forEach(k => { if (k !== "visits" && k !== "past") flat[k] = course[k]; });
+        Object.keys(v).forEach(k => { if (k !== "visits" && k !== "past") flat[k] = v[k]; });
+        const row = {};
+        put(row, "UHID", rec.pId);
+        put(row, "Patient Name", rec.pName);
+        put(row, "Age", rec.age);
+        put(row, "Gender", rec.gender);
+        put(row, "Doctor", v.doctor || course.doctor || rec.doctor);
+        put(row, tabCfg.col, flat[idField]);
+        put(row, tabCfg.date, flat.date);
+        [...(cfg.fields || []), ...(cfg.itemFields || [])]
+          .forEach(([k, l]) => put(row, l, flat[k]));
+        // The case-wide answers belong on every one of its visits: a row
+        // that carries only what changed that day cannot be read on its own.
+        (cfg.topFields || []).forEach(([k, l]) => put(row, l, rec[k]));
+        // RCT keeps a length per canal, as an object. Flattened, or the
+        // column that matters most on an endodontic record stays empty.
+        if (cfg.wlKey && flat[cfg.wlKey] && typeof flat[cfg.wlKey] === "object") {
+          const wl = Object.keys(flat[cfg.wlKey])
+            .map(c => c + ": " + flat[cfg.wlKey][c])
+            .filter(x => !/:\s*$/.test(x)).join(" | ");
+          put(row, "Length Determination", wl);
+        }
+        // UHID, name, age and gender alone say nothing happened that day.
+        if (Object.keys(row).length > 4) rows.push(row);
+      });
+    });
+  });
+  if (!rows.length) return null;
+  // What makes two rows the same visit, so a re-save corrects its row
+  // instead of adding another. Every save re-sends the whole record.
+  const keyColumns = ["UHID"];
+  if (tabCfg.date) keyColumns.push(tabCfg.date);
+  if (tabCfg.col) keyColumns.push(tabCfg.col);
+  return { tabName: tabCfg.tab, rows: rows, keyColumns: keyColumns };
+}
+
 // ── Read-only saved-record viewer for RCT/Implant Surgery/Implant Prosthetic/Crown & Bridge ──
 function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
   const [loading, setLoading] = React.useState(true);
@@ -35640,6 +35722,11 @@ function App() {
   // held for the staff to check before it is written. Null when nothing is
   // waiting.
   const [pendingRegister, setPendingRegister] = useState(null);
+  // Said out loud when the readable copy of a record does not reach the tab
+  // the clinic reads. The record itself is safe either way, so this is a
+  // warning and not a failed save -- but a console message nobody opens is
+  // how the clinic came to have a year of work it could not see.
+  const [sheetCopyWarn, setSheetCopyWarn] = useState("");
 
   // Listen for save messages posted from the standalone iframe clinical forms (RCT/Implant/Crown-Bridge/Restoration/Orthodontics/Denture/Pedo/TMJoint)
   useEffect(() => {
@@ -35676,6 +35763,33 @@ function App() {
           // tab shows the visit just saved, without a reload.
           if (res && res.success && e.source) {
             e.source.postMessage({ type: "KB_CLINICAL_RECORD", record: merged }, "*");
+          }
+          // And write it out where the clinic reads it. The JSON row above is
+          // what the form resumes from; this is the same work in the columns
+          // the clinic set up, one row per visit. Without it the "RCT" tab
+          // never gains a row and the work looks lost, which is exactly how
+          // it was reported.
+          //
+          // Deliberately after the reply: the record is already safe, so a
+          // failure here must not tell the dentist the save failed. It is
+          // reported where it belongs -- in the console and on the save
+          // message -- rather than by discarding a good save.
+          if (res && res.success) {
+            const flat = csFlatRowsFromRecord(
+              CS_FORM_BY_SHEET_TYPE[String(d.sheetType || "").trim()] || "", merged);
+            if (flat) {
+              apiPost("appendClinicalRecordRows", {
+                tabName: flat.tabName,
+                rows: JSON.stringify(flat.rows),
+                keyColumns: JSON.stringify(flat.keyColumns)
+              }).then(r => {
+                if (!(r && r.success)) setSheetCopyWarn("The record is saved, but its readable copy " +
+                  "could not be written to the " + flat.tabName + " tab: " +
+                  ((r && r.error) || "the sheet did not answer") + ".");
+              }).catch(err => setSheetCopyWarn("The record is saved, but its readable copy " +
+                "could not be written to the " + flat.tabName + " tab: " +
+                ((err && err.message) || err) + "."));
+            }
           }
           // The work just recorded also belongs in the Daily Register — see
           // the note on registerPrefill below for why this is offered, not written.
@@ -36067,6 +36181,16 @@ function App() {
       "Endorsement, prescription and bill for a panel patient"),
     /*#__PURE__*/React.createElement(CghsRecords, { key:(globalPat&&globalPat.uhid)||"x", globalPat:globalPat })
   ), page === "crm" && /*#__PURE__*/React.createElement(CRMModule, null), page === "chatbot" && /*#__PURE__*/React.createElement(ChatbotModule, null), page === "master" && /*#__PURE__*/React.createElement(SimplePasswordGate, { verifyAction:"verifyMasterPassword", sessionKey:"kbdc_master_unlocked", message:"Enter the Master password to view this page." }, /*#__PURE__*/React.createElement(Master, null)), page === "followups" && /*#__PURE__*/React.createElement(FollowUps, { onNavigate: setPage }), page === "reports" && /*#__PURE__*/React.createElement(SimplePasswordGate, { verifyAction:"verifyReportsPassword", sessionKey:"kbdc_reports_unlocked", message:"Enter your password to view Reports (either of the two people's passwords works)." }, /*#__PURE__*/React.createElement(ReportsModule, null))),
+    sheetCopyWarn && /*#__PURE__*/React.createElement("div", {
+      style:{ position:"fixed", left:16, right:16, bottom:16, zIndex:9500, background:"#fff2f0",
+        border:"1px solid #e24b4a", borderRadius:10, padding:"11px 14px", fontSize:13.5,
+        color:"#a12e2e", boxShadow:"0 10px 30px rgba(0,0,0,.18)", display:"flex", gap:12,
+        alignItems:"flex-start" }
+    },
+      /*#__PURE__*/React.createElement("div", { style:{ flex:1 } }, "\u26A0 " + sheetCopyWarn),
+      /*#__PURE__*/React.createElement("button", { onClick: () => setSheetCopyWarn(""),
+        style:{ border:"none", background:"transparent", color:"#a12e2e", cursor:"pointer",
+          fontSize:16, fontWeight:700, lineHeight:1 } }, "\u00d7")),
     pendingRegister && /*#__PURE__*/React.createElement(RegisterConfirm, {
       entry: pendingRegister,
       onCancel: () => setPendingRegister(null),
