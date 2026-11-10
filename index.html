@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-10";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-10c";
+const KB_APP_BUILD = "2026-11-10d";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -19850,23 +19850,30 @@ const KB_FORM_BRIDGE_FOR = {
   crown:       ["Crown & Bridge",     "WD-04"]
 };
 
+// Every work-done form gets this, RCT included: it only replaces how a
+// clinical note template's blanks are filled in.
+const KB_FORM_NOTE_FIX = "<script>\n/* What a clinical note template's blanks are filled from.\n *\n * Every form shipped a cnResolveValue() that looked up ONE element by id,\n * through a short alias table written by hand. So {tooth} filled and almost\n * nothing else did: {irrigants} missed because the alias said \"irrigant\",\n * {canals} because no element has that id, {instrument} because the alias\n * pointed at the rotary-system group and the instrument had been recorded\n * somewhere else on the same row. The dentist retyped what was already on\n * the screen a few inches above.\n *\n * This keeps each form's own table -- it encodes real knowledge -- and then\n * does what a person does when the id does not match: reads the LABELS.\n * \"Irrigants Used\" answers {irrigants}, \"No. of Canals\" answers {canals},\n * \"Instrument\" answers {instrument}, in any form, with no table to maintain.\n *\n * Anything still unknown is left blank on purpose. These are editable boxes,\n * and a blank the dentist fills in beats a confident wrong guess inserted\n * into a medico-legal note.\n */\n(function(){\n  var orig = typeof window.cnResolveValue === \"function\" ? window.cnResolveValue : null;\n  function norm(v){ return String(v == null ? \"\" : v).toLowerCase().replace(/[^a-z0-9]+/g, \"\"); }\n  function sing(v){ return v.replace(/s$/, \"\"); }\n\n  /* The answer on a row, however that row takes it. */\n  function valueOf(fc){\n    var out = [], i;\n    var on = fc.querySelectorAll(\".btn.active\");\n    for (i = 0; i < on.length; i++) out.push(on[i].textContent.trim());\n    var f = fc.querySelectorAll(\"input,select,textarea\");\n    for (i = 0; i < f.length; i++){\n      var el = f[i];\n      if (el.type === \"button\" || el.type === \"submit\") continue;\n      if (el.type === \"checkbox\" || el.type === \"radio\") { if (el.checked) out.push(el.value || \"Yes\"); continue; }\n      var v = String(el.value || \"\").trim();\n      if (v) out.push(v);\n    }\n    return out.filter(function(v, i2, a){ return v && a.indexOf(v) === i2; }).join(\", \");\n  }\n\n  /* How well a row's label answers a token. Exact first, then the same word\n     singular or plural, then a label that contains the word -- \"Irrigants\n     Used\" for {irrigants} -- preferring the shortest such label, because a\n     longer one is usually a different question that happens to share a word. */\n  function score(label, tok){\n    var L = norm(label), T = norm(tok);\n    if (!L || !T) return 0;\n    if (L === T) return 100;\n    if (sing(L) === sing(T)) return 90;\n    if (sing(T).length >= 3 && L.indexOf(sing(T)) >= 0)\n      return Math.max(40, 70 - Math.max(0, L.length - T.length));\n    return 0;\n  }\n\n  function byLabel(tok){\n    var rows = document.querySelectorAll(\".fr\"), best = null, bestScore = 0;\n    for (var i = 0; i < rows.length; i++){\n      var fl = rows[i].querySelector(\".fl\"), fc = rows[i].querySelector(\".fc\");\n      if (!fl || !fc) continue;\n      var label = fl.textContent.replace(/\\*+\\s*$/, \"\").trim();\n      /* The template picker is a control, not an answer about the patient. */\n      if (/insert .*template/i.test(label)) continue;\n      var sc = score(label, tok);\n      if (sc > bestScore) { bestScore = sc; best = fc; }\n    }\n    return (best && bestScore >= 40) ? valueOf(best) : \"\";\n  }\n\n  /* The per-canal table on the RCT form is a table, not a row, so no label\n     reaches it -- and it holds the three things an endodontic note is mostly\n     made of. Read straight off the inputs it builds. */\n  function fromCanals(tok){\n    var raw = norm(tok), t = sing(raw);\n    var wl = document.querySelectorAll('[id^=\"wl_\"]');\n    if (!wl.length) return \"\";\n    var names = [], lengths = [], files = [];\n    for (var i = 0; i < wl.length; i++){\n      var canal = wl[i].id.slice(3);\n      if (!canal) continue;\n      names.push(canal);\n      var mm = String(wl[i].value || \"\").trim();\n      if (mm) lengths.push(canal + \" \" + mm + \"mm\");\n      var sg = document.getElementById(\"sG_\" + canal);\n      if (sg){\n        var on = sg.querySelectorAll(\".btn.active\"), seq = [];\n        for (var j = 0; j < on.length; j++) seq.push(on[j].textContent.trim());\n        if (seq.length) files.push(canal + \" \" + seq.join(\"/\"));\n      }\n    }\n    /* \"{canals} located\" wants the count the printed sheet shows -- 3 (MB,\n       ML, DB) -- while \"{Canal}= ({WL}/{MAF})\" wants the canals themselves.\n       Checked before the plural is stripped, or the two collapse into one. */\n    if (raw === \"canals\" || raw === \"noofcanals\")\n      return names.length + \" (\" + names.join(\", \") + \")\";\n    if (t === \"canal\") return names.join(\", \");\n    if (t === \"wl\" || t === \"workinglength\") return lengths.join(\", \");\n    if (t === \"size\" || t === \"maf\" || t === \"filesequence\" || t === \"file\") return files.join(\", \");\n    return \"\";\n  }\n\n  window.cnResolveValue = function(tok){\n    var v = \"\";\n    try { if (orig) v = String(orig(tok) || \"\").trim(); } catch (e) { v = \"\"; }\n    if (v) return v;\n    try { v = fromCanals(tok); if (v) return v; } catch (e) {}\n    try { v = byLabel(tok); if (v) return v; } catch (e) {}\n    return \"\";\n  };\n})();\n<\/script>\n";
+
 // Puts the tail in front of </body>, so it is the last thing on the page --
 // under the form, where the RCT summary sits.
 function kbFormWithTail(html, formId) {
   const wizard = KB_FORM_BRIDGE_FOR[formId];
   const cfg = wizard || KB_FORM_TAIL_FOR[formId];
-  if (!cfg) return html;
-  // A wizard gets the engine without the markup, plus the bridge onto the
-  // panes it already has. Everything else gets the whole tail.
-  const whole = KB_FORM_TAIL
-    .split("__KBWD_NAME__").join(cfg[0])
-    .split("__KBWD_CODE__").join(cfg[1])
-    .split("__KBWD_LOGO__").join((typeof window !== "undefined" && window.LOGO_B64) || "");
-  const tail = wizard
-    ? whole.slice(whole.indexOf("<script>")) + KB_FORM_BRIDGE
-    : whole;
+  // Every form gets the note-template fix, RCT included -- RCT needs no tail
+  // (it has the one the others were matched to) but its template blanks were
+  // left just as empty as everyone else's.
+  let add = KB_FORM_NOTE_FIX;
+  if (cfg) {
+    // A wizard gets the engine without the markup, plus the bridge onto the
+    // panes it already has. Everything else gets the whole tail.
+    const whole = KB_FORM_TAIL
+      .split("__KBWD_NAME__").join(cfg[0])
+      .split("__KBWD_CODE__").join(cfg[1])
+      .split("__KBWD_LOGO__").join((typeof window !== "undefined" && window.LOGO_B64) || "");
+    add = (wizard ? whole.slice(whole.indexOf("<script>")) + KB_FORM_BRIDGE : whole) + add;
+  }
   const at = html.lastIndexOf("</body>");
-  return at < 0 ? html + tail : html.slice(0, at) + tail + html.slice(at);
+  return at < 0 ? html + add : html.slice(0, at) + add + html.slice(at);
 }
 
 function b64decode(b64) {
@@ -23230,7 +23237,7 @@ const CROWN_BRIDGE_B64 =
 var _rctFormBlobUrl = null;
 function getRCTFormUrl() {
   if (!_rctFormBlobUrl) {
-    var blob = new Blob([b64decode(RCT_FORM_B64)], {type:'text/html'});
+    var blob = new Blob([kbFormWithTail(b64decode(RCT_FORM_B64), "rct")], {type:'text/html'});
     _rctFormBlobUrl = URL.createObjectURL(blob);
   }
   return _rctFormBlobUrl;
