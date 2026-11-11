@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-10";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-11b";
+const KB_APP_BUILD = "2026-11-11c";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -32820,7 +32820,12 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
 
   // UHID prompt — no active patient
   if (pendingForm) {
-    const form = FORMS.find(f => f.id === pendingForm);
+    // pendingForm became { id, open } when the sheets started using this same
+    // box. Matching it against f.id found nothing, so the prompt lost the
+    // icon and the name of whatever had been clicked and came up as a bare
+    // clipboard over a page with everything else hidden behind it.
+    const form = FORMS.find(f => f.id === (pendingForm.id || pendingForm));
+    const wantsSheet = pendingForm.open === "sheet";
     return React.createElement("div", null,
       React.createElement(ClinicHeader, null),
       React.createElement("div", {
@@ -32831,10 +32836,17 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
           form ? form.label.split(" ")[0] : "📋"
         ),
         React.createElement("div", { style:{ fontSize:15, fontWeight:700, textAlign:"center", marginBottom:4 } },
-          form ? form.label.slice(form.label.indexOf(" ")+1) : ""
+          (form ? form.label.slice(form.label.indexOf(" ")+1) : "")
+            + (wantsSheet ? " \u2014 Work Done Sheet" : "")
         ),
         React.createElement("div", { style:{ fontSize:13, color:"#444444", textAlign:"center", marginBottom:24 } },
-          "Enter patient UHID to auto-fill, or open blank"
+          // The same box asks for a patient whether a form or a sheet was
+          // picked, and the two want different things said. A form can be
+          // opened blank and filled in; a work done sheet is a reading of
+          // one patient's record, so there is nothing to open blank.
+          wantsSheet
+            ? "Enter patient UHID to open the work done sheet"
+            : "Enter patient UHID to auto-fill, or open blank"
         ),
         React.createElement("div", { style:{ marginBottom:14 } },
           React.createElement("label", {
@@ -32861,8 +32873,10 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
           )
         ),
         React.createElement("div", { style:{ display:"flex", gap:8 } },
-          React.createElement("button", {
-            onClick: () => { openForm(pendingForm, null); setPendingForm(null); },
+          // Offered for a form only: a blank sheet would be a letterhead with
+          // nobody's name on it and no record under it.
+          wantsSheet ? null : React.createElement("button", {
+            onClick: () => { openForm(pendingForm && pendingForm.id, null); setPendingForm(null); },
             style:{ flex:1, padding:"9px", fontSize:13, fontWeight:600, border:`1px solid ${BORDER}`,
               borderRadius:8, cursor:"pointer", background:"#fff", color:"#2e2e2e" }
           }, "Open Blank Form"),

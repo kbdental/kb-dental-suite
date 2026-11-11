@@ -123,6 +123,61 @@ const LOCAL = {
      (grid.match(/Work Done Sheet/g) || []).length >= 18, true);
   ['RCT', 'Implant Surgery', 'Crown & Bridge', 'Scaling', 'Lab Log', 'Ortho Progress Visit']
     .forEach(n => ok('the ' + n + ' sheet is on the page', grid.indexOf(n) >= 0, ''));
+  // ── the prompt that asks for a patient ────────────────────────────────
+  // Both the form card and the sheet card use this one box. When the sheets
+  // started using it, pendingForm became { id, open } and two places still
+  // read it as a form id: the prompt stopped naming what had been clicked,
+  // and Open Blank Form opened a form that did not exist -- an empty page
+  // with a back button and nothing else. It shipped that way.
+  // Back to the Forms tab by the tab button itself: "Scaling" is on a card
+  // in both grids, so which grid is showing has to be certain first.
+  await page.locator('[data-kb-page] button', { hasText: /Forms$/ }).first().click();
+  await page.waitForTimeout(600);
+  const onForms = await page.evaluate(() => {
+    const el = document.querySelector('[data-kb-page]');
+    return /Root Canal Work Done/.test((el && el.innerText) || '');
+  });
+  ok('the Forms grid still holds its cards', onForms, '');
+  await page.getByText('Scaling Work Done', { exact: false }).first().click();
+  await page.waitForTimeout(900);
+  const formPrompt = await page.evaluate(() => {
+    const el = document.querySelector('[data-kb-page]');
+    return (el && el.innerText.replace(/\s+/g, ' ')) || '';
+  });
+  ok('the prompt names the form that was clicked', /Scaling/.test(formPrompt), formPrompt.slice(0, 200));
+  ok('and offers a blank one, because a form can be filled in blank',
+     /Open Blank Form/.test(formPrompt), formPrompt.slice(0, 200));
+
+  await page.locator('button', { hasText: /Open Blank Form/ }).first().click();
+  await page.waitForTimeout(1800);
+  const opened = await page.evaluate(() => {
+    const f = document.querySelector('iframe');
+    const el = document.querySelector('[data-kb-page]');
+    return { src: f ? (f.getAttribute('src') || '') : '',
+             bar: ((el && el.innerText) || '').replace(/\s+/g, ' ').slice(0, 80) };
+  });
+  ok('Open Blank Form actually opens the form', /^blob:/.test(opened.src), JSON.stringify(opened));
+  ok('and the bar says which form it is', /Scaling/.test(opened.bar), opened.bar);
+
+  // The sheet side of the same box.
+  await page.locator('button', { hasText: /Back to Clinical Records/ }).first().click();
+  await page.waitForTimeout(800);
+  await page.getByText('Work Done Sheet', { exact: false }).first().click();
+  await page.waitForTimeout(600);
+  await page.getByText('Scaling', { exact: false }).first().click();
+  await page.waitForTimeout(800);
+  const sheetPrompt = await page.evaluate(() => {
+    const el = document.querySelector('[data-kb-page]');
+    return (el && el.innerText.replace(/\s+/g, ' ')) || '';
+  });
+  ok('the sheet prompt names the sheet', /Scaling .{0,3} Work Done Sheet/.test(sheetPrompt),
+     sheetPrompt.slice(0, 220));
+  ok('and says it is opening a sheet', /open the work done sheet/.test(sheetPrompt),
+     sheetPrompt.slice(0, 220));
+  // A blank sheet would be a letterhead with nobody's name on it.
+  ok('with no blank option, because a sheet reads one patient\'s record',
+     !/Open Blank Form/.test(sheetPrompt), sheetPrompt.slice(0, 220));
+
   eq('nothing threw', errors, []);
   await browser.close();
 
