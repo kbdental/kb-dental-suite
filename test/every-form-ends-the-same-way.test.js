@@ -158,8 +158,14 @@ ok('RCT is left alone', !TAIL_FOR.rct && !BRIDGE_FOR.rct, '');
     ok(fid + ': has both tabs',
        tabs.length === 2 && /Work Done Sheet/.test(tabs[0]) && /Work Done Summary/.test(tabs[1]),
        JSON.stringify(tabs));
-    eq(fid + ': there is a Print Work Done Sheet button',
-       await page.$$eval('[data-kbwd-print]', e => e.length > 0), true);
+    // Printing moved out of the form. A Summary is for looking at what has
+    // been entered; the sheet is printed from Clinical Records -> Work Done
+    // Sheet, where all eighteen sit beside the forms -- one place that
+    // prints, rather than a button on every form printing its own version.
+    eq(fid + ': the Summary does not print',
+       await page.$$eval('[data-kbwd-print]', e => e.length), 0);
+    ok(fid + ': and says where printing happens',
+       /Work Done Sheet/.test(await textOf(page, '.kbwd-note')), await textOf(page, '.kbwd-note'));
 
     const summary = await textOf(page, '#kbwdSummaryBody');
     ok(fid + ': the summary is the note, with the clinic on it',
