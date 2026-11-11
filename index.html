@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-10";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-11e";
+const KB_APP_BUILD = "2026-11-11f";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -4101,6 +4101,22 @@ const emptyCP1 = {
     charges: ""
   }]
 };
+// ── What the Care Plan examines ────────────────────────────────────────
+// The findings, their sections and how each is answered come from Master →
+// Clinical Configuration → Examination. They were written into this page;
+// a clinic that wanted to start checking the tonsils had to ask for a
+// release. The seed below is what the page used to hold, so an older
+// backend, or a list not filled in yet, examines exactly what it always did.
+function useExaminationList() {
+  const master = useMasterList("getClinicalExaminationList", "findings");
+  return React.useMemo(() => (master && master.length) ? master
+    : CLINICAL_EXAM_SEED.map(r => ({ section:r[0], finding:r[1], kind:r[2], key:r[3] })),
+    [master]);
+}
+// The four the page was built around, drawn where they have always been.
+// Anything else the clinic adds is drawn after them, in its own section.
+const CP_EXAM_SECTIONS = ["Extra-Oral Check", "Intra-Oral Check", "Gum Assessment", "Wasting Disease"];
+
 const emptyCP2 = {
   jawJoints: hp(),
   lymphNodes: hp(),
@@ -4344,6 +4360,24 @@ function CarePlan({
     ...p,
     [k]: v
   }));
+
+  // The examination, off the master list. A row knows which component draws
+  // it and which key a saved plan keeps its answer under; a plan saved
+  // before a finding existed simply has no answer for it yet.
+  const examList = useExaminationList();
+  const examIn = (section) => examList.filter(r => String(r.section || "") === section);
+  const examRow = (r) => {
+    const healthy = String(r.kind || "present") === "healthy";
+    const Row = healthy ? HRow : PRow;
+    return React.createElement(Row, { key: r.key || r.finding, label: r.finding,
+      val: p2[r.key] || (healthy ? hp() : pp()), onChange: v => u2(r.key, v) });
+  };
+  const examKind = (section, kind) => examIn(section)
+    .filter(r => String(r.kind || "present") === kind).map(examRow);
+  // Sections the clinic has added. Drawn after the four the page was built
+  // around, so a new one appears rather than being quietly dropped.
+  const examExtra = examList.map(r => String(r.section || ""))
+    .filter((x, i, arr) => x && arr.indexOf(x) === i && CP_EXAM_SECTIONS.indexOf(x) < 0);
   const ui = (k, v) => setP2(p => ({
     ...p,
     inv: {
@@ -4455,8 +4489,15 @@ function CarePlan({
   function buildCPPage2HTML() {
     const hf = v => v.healthy ? "Healthy" : `Obs: ${v.observation || "—"}`;
     const pf = v => v.present ? `Present${v.area ? " — " + v.area : ""}` : "-";
+    // One cell per finding, off the same list the screen draws from, so the
+    // paper and the screen cannot disagree about what was examined.
+    const examCells = (section) => examIn(section).map(r => {
+      const healthy = String(r.kind || "present") === "healthy";
+      const v = p2[r.key] || (healthy ? hp() : pp());
+      return `<div class="fl"><div class="lbl">${r.finding}</div><div class="val">${healthy ? hf(v) : pf(v)}</div></div>`;
+    }).join("");
     const invKeys = [["iopa", "IOPA"], ["opg", "OPG"], ["latCeph", "Lat. Ceph"], ["digScan", "Digital Scan"], ["mri", "MRI"], ["tScan", "T-Scan"], ["cbct", "CBCT"], ["intraOralPics", "Intra Oral Pics"], ["extraOralPics", "Extra Oral Pics"]];
-    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="sec">Extra-Oral Check</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt"><div class="fl"><div class="lbl">Jaw Joints</div><div class="val">${hf(p2.jawJoints)}</div></div><div class="fl"><div class="lbl">Lymph Nodes</div><div class="val">${hf(p2.lymphNodes)}</div></div><div class="fl"><div class="lbl">Facial Profile</div><div class="val">${p2.facialProfile || "—"}</div></div><div class="fl"><div class="lbl">Facial Asymmetry</div><div class="val">${pf(p2.facialAsymmetry)}</div></div><div class="fl"><div class="lbl">Swelling</div><div class="val">${pf(p2.swelling)}</div></div><div class="fl"><div class="lbl">Lip Competency</div><div class="val">${pf(p2.lipCompetency)}</div></div></div><div class="sec">Intra-Oral — Soft Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt"><div class="fl"><div class="lbl">Tongue</div><div class="val">${hf(p2.tongue)}</div></div><div class="fl"><div class="lbl">Palate</div><div class="val">${hf(p2.palate)}</div></div><div class="fl"><div class="lbl">Floor of Mouth</div><div class="val">${hf(p2.floorMouth)}</div></div><div class="fl"><div class="lbl">Buccal Mucosa</div><div class="val">${hf(p2.buccalMucosa)}</div></div><div class="fl"><div class="lbl">Frenum</div><div class="val">${p2.frenum || "—"}</div></div><div class="fl"><div class="lbl">Pigmentation</div><div class="val">${p2.pigmentation || "—"}</div></div></div><div class="sec">Intra-Oral — Hard Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${[["silverFillings", "Silver Fillings"], ["whiteFillings", "White Fillings"], ["decayedTeeth", "Decayed Teeth"], ["chippedTeeth", "Chipped Teeth"], ["missingTeeth", "Missing Teeth"], ["crowns", "Crowns"], ["bridges", "Bridges"], ["veneers", "Veneers"], ["crowding", "Crowding"], ["dentures", "Dentures"], ["stainsCalculus", "Stains & Calculus"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="val">${pf(p2[k])}</div></div>`).join("")}</div><div class="sec">Gum &amp; Parafunctional &amp; Wasting</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt"><div class="fl"><div class="lbl">Bleeding on Probing</div><div class="val">${pf(p2.bleedingProbing)}</div></div><div class="fl"><div class="lbl">Gum Recession</div><div class="val">${pf(p2.gumRecession)}</div></div><div class="fl"><div class="lbl">Furcation</div><div class="val">${pf(p2.furcation)}</div></div><div class="fl"><div class="lbl">Mobility</div><div class="val">${pf(p2.mobility)}</div></div><div class="fl"><div class="lbl">Parafunctional</div><div class="val">${p2.parafunctional.present ? "Present" + (p2.parafunctional.description ? " — " + p2.parafunctional.description : "") : "-"}</div></div><div class="fl"><div class="lbl">Abrasion</div><div class="val">${pf(p2.abrasion)}</div></div><div class="fl"><div class="lbl">Attrition</div><div class="val">${pf(p2.attrition)}</div></div><div class="fl"><div class="lbl">Abfraction</div><div class="val">${pf(p2.abfraction)}</div></div><div class="fl"><div class="lbl">Erosion</div><div class="val">${pf(p2.erosion)}</div></div></div><div class="sec">Investigations Required</div><div style="margin-bottom:5pt">${invKeys.map(([k, l]) => `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:8pt;font-weight:${p2.inv[k] ? 700 : 400};background:${p2.inv[k] ? "#DCF4FB" : "#f5f5f5"};color:${p2.inv[k] ? "#0078B4" : "#aaa"};border:0.5pt solid ${p2.inv[k] ? "#0090CC" : "#ddd"}">${l}</span>`).join("")}${p2.inv.blood ? `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:8pt;font-weight:700;background:#DCF4FB;color:#0078B4;border:0.5pt solid #0090CC">Blood Exam${p2.inv.bloodText ? " — " + p2.inv.bloodText : ""}</span>` : ""}</div><div class="sec">Post Radiograph Findings</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:5pt"><div class="fl"><div class="lbl">RCT</div><div class="val">${p2.rct || "—"}</div></div><div class="fl"><div class="lbl">Implants</div><div class="val">${p2.implants || "—"}</div></div><div class="fl"><div class="lbl">Shade of Teeth</div><div class="val">${p2.shadeOfTeeth || "—"}</div></div></div>${p2.otherFindings ? `<div class="fl"><div class="lbl">Any Other Findings</div><div class="val">${p2.otherFindings}</div></div>` : ""}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
+    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="sec">Extra-Oral Check</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Extra-Oral Check")}<div class="fl"><div class="lbl">Facial Profile</div><div class="val">${p2.facialProfile || "—"}</div></div></div><div class="sec">Intra-Oral — Soft Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Intra-Oral Check")}<div class="fl"><div class="lbl">Frenum</div><div class="val">${p2.frenum || "—"}</div></div><div class="fl"><div class="lbl">Pigmentation</div><div class="val">${p2.pigmentation || "—"}</div></div></div><div class="sec">Intra-Oral — Hard Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${[["silverFillings", "Silver Fillings"], ["whiteFillings", "White Fillings"], ["decayedTeeth", "Decayed Teeth"], ["chippedTeeth", "Chipped Teeth"], ["missingTeeth", "Missing Teeth"], ["crowns", "Crowns"], ["bridges", "Bridges"], ["veneers", "Veneers"], ["crowding", "Crowding"], ["dentures", "Dentures"], ["stainsCalculus", "Stains & Calculus"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="val">${pf(p2[k])}</div></div>`).join("")}</div><div class="sec">Gum &amp; Parafunctional &amp; Wasting</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Gum Assessment")}<div class="fl"><div class="lbl">Parafunctional</div><div class="val">${p2.parafunctional.present ? "Present" + (p2.parafunctional.description ? " — " + p2.parafunctional.description : "") : "-"}</div></div>${examCells("Wasting Disease")}${examExtra.map(sec => examCells(sec)).join("")}</div><div class="sec">Investigations Required</div><div style="margin-bottom:5pt">${invKeys.map(([k, l]) => `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:8pt;font-weight:${p2.inv[k] ? 700 : 400};background:${p2.inv[k] ? "#DCF4FB" : "#f5f5f5"};color:${p2.inv[k] ? "#0078B4" : "#aaa"};border:0.5pt solid ${p2.inv[k] ? "#0090CC" : "#ddd"}">${l}</span>`).join("")}${p2.inv.blood ? `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:8pt;font-weight:700;background:#DCF4FB;color:#0078B4;border:0.5pt solid #0090CC">Blood Exam${p2.inv.bloodText ? " — " + p2.inv.bloodText : ""}</span>` : ""}</div><div class="sec">Post Radiograph Findings</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:5pt"><div class="fl"><div class="lbl">RCT</div><div class="val">${p2.rct || "—"}</div></div><div class="fl"><div class="lbl">Implants</div><div class="val">${p2.implants || "—"}</div></div><div class="fl"><div class="lbl">Shade of Teeth</div><div class="val">${p2.shadeOfTeeth || "—"}</div></div></div>${p2.otherFindings ? `<div class="fl"><div class="lbl">Any Other Findings</div><div class="val">${p2.otherFindings}</div></div>` : ""}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
   }
   function buildCPPage3HTML() {
     return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="sec">Radiograph Findings</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8pt;margin-bottom:10pt">${[["iopa", "IOPA"], ["opg", "OPG"], ["latCeph", "Lateral Cephalogram"], ["cbct", "CBCT"], ["digScan", "Digital Scan"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="vb" style="min-height:50pt">${p3[k] || "&nbsp;"}</div></div>`).join("")}</div><div class="sec">Medication Record</div><table><thead><tr><th style="width:38%">Name of Drug</th><th style="width:14%">Dose</th><th style="width:18%">Route</th><th style="width:30%">Frequency</th></tr></thead><tbody>${p3.meds.filter(m => m.drug).map(m => `<tr><td>${m.drug}</td><td>${m.dose}</td><td>${m.route}</td><td>${m.frequency}</td></tr>`).join("") || "<tr><td colspan='4' style='color:#5a5a5a;text-align:center;padding:8pt'>No medications recorded</td></tr>"}</tbody></table>${[["medCorrelation", "Medical Correlation (if any)"], ["provisionalDiagnosis", "Provisional Diagnosis"], ["specialNotes", "Special Notes (if any)"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="vb">${p3[k] || "&nbsp;"}</div></div>`).join("")}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
@@ -4818,15 +4859,7 @@ function CarePlan({
       marginBottom: 6,
       textTransform: "uppercase"
     }
-  }, "Healthy / Observation"), /*#__PURE__*/React.createElement(HRow, {
-    label: "Jaw Joints",
-    val: p2.jawJoints,
-    onChange: v => u2("jawJoints", v)
-  }), /*#__PURE__*/React.createElement(HRow, {
-    label: "Lymph Nodes",
-    val: p2.lymphNodes,
-    onChange: v => u2("lymphNodes", v)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, "Healthy / Observation"), /*#__PURE__*/examKind("Extra-Oral Check", "healthy")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       fontWeight: 700,
@@ -4834,19 +4867,7 @@ function CarePlan({
       marginBottom: 6,
       textTransform: "uppercase"
     }
-  }, "Present / Area"), /*#__PURE__*/React.createElement(PRow, {
-    label: "Swelling",
-    val: p2.swelling,
-    onChange: v => u2("swelling", v)
-  }), /*#__PURE__*/React.createElement(PRow, {
-    label: "Lip Competency",
-    val: p2.lipCompetency,
-    onChange: v => u2("lipCompetency", v)
-  }), /*#__PURE__*/React.createElement(PRow, {
-    label: "Facial Asymmetry",
-    val: p2.facialAsymmetry,
-    onChange: v => u2("facialAsymmetry", v)
-  }))), /*#__PURE__*/React.createElement("div", {
+  }, "Present / Area"), /*#__PURE__*/examKind("Extra-Oral Check", "present"))), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
       marginBottom: 12
@@ -4896,23 +4917,7 @@ function CarePlan({
       marginBottom: 6,
       textTransform: "uppercase"
     }
-  }, "Soft Tissue"), /*#__PURE__*/React.createElement(HRow, {
-    label: "Tongue",
-    val: p2.tongue,
-    onChange: v => u2("tongue", v)
-  }), /*#__PURE__*/React.createElement(HRow, {
-    label: "Palate",
-    val: p2.palate,
-    onChange: v => u2("palate", v)
-  }), /*#__PURE__*/React.createElement(HRow, {
-    label: "Floor of Mouth",
-    val: p2.floorMouth,
-    onChange: v => u2("floorMouth", v)
-  }), /*#__PURE__*/React.createElement(HRow, {
-    label: "Buccal Mucosa",
-    val: p2.buccalMucosa,
-    onChange: v => u2("buccalMucosa", v)
-  }), /*#__PURE__*/React.createElement("div", {
+  }, "Soft Tissue"), /*#__PURE__*/examIn("Intra-Oral Check").map(examRow), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 6
     }
@@ -4953,12 +4958,7 @@ function CarePlan({
       gridTemplateColumns: "1fr 1fr",
       gap: 16
     }
-  }, /*#__PURE__*/React.createElement("div", null, [["bleedingProbing", "Bleeding on Probing"], ["gumRecession", "Gum Recession"], ["furcation", "Furcation"], ["mobility", "Mobility"]].map(([k, l]) => /*#__PURE__*/React.createElement(PRow, {
-    key: k,
-    label: l,
-    val: p2[k],
-    onChange: v => u2(k, v)
-  })))), /*#__PURE__*/React.createElement(Sec, {
+  }, /*#__PURE__*/React.createElement("div", null, examIn("Gum Assessment").map(examRow))), /*#__PURE__*/React.createElement(Sec, {
     t: "Parafunctional Habits"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5009,23 +5009,12 @@ function CarePlan({
       gridTemplateColumns: "1fr 1fr",
       gap: 16
     }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(PRow, {
-    label: "Abrasion",
-    val: p2.abrasion,
-    onChange: v => u2("abrasion", v)
-  }), /*#__PURE__*/React.createElement(PRow, {
-    label: "Attrition",
-    val: p2.attrition,
-    onChange: v => u2("attrition", v)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(PRow, {
-    label: "Abfraction",
-    val: p2.abfraction,
-    onChange: v => u2("abfraction", v)
-  }), /*#__PURE__*/React.createElement(PRow, {
-    label: "Erosion",
-    val: p2.erosion,
-    onChange: v => u2("erosion", v)
-  }))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/examIn("Wasting Disease").slice(0, Math.ceil(examIn("Wasting Disease").length / 2)).map(examRow)), /*#__PURE__*/React.createElement("div", null, examIn("Wasting Disease").slice(Math.ceil(examIn("Wasting Disease").length / 2)).map(examRow))), /*#__PURE__*/examExtra.map(sec => /*#__PURE__*/React.createElement("div", { key: sec },
+    /*#__PURE__*/React.createElement(Sec, { t: sec }),
+    /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } },
+      /*#__PURE__*/React.createElement("div", null, examIn(sec).slice(0, Math.ceil(examIn(sec).length / 2)).map(examRow)),
+      /*#__PURE__*/React.createElement("div", null, examIn(sec).slice(Math.ceil(examIn(sec).length / 2)).map(examRow))))),
+  /*#__PURE__*/React.createElement("div", {
     style: { display:"flex", alignItems:"center", justifyContent:"space-between", margin:"12px 0 8px", padding:"4px 8px", borderLeft:`3px solid ${T}`, background:"#f0f6fb" }
   }, /*#__PURE__*/React.createElement("span", {
     style: { fontSize:10, fontWeight:800, color:T, textTransform:"uppercase", letterSpacing:"0.07em" }
@@ -28727,6 +28716,52 @@ function ImplantBrandListEditor({ items, onAdd, onRemove, onEdit }) {
 // Both live here rather than in Code.gs because that file is pasted into
 // two script editors by hand. Each is a STARTING point: written to its
 // sheet on the button, and the sheet is the truth afterwards.
+// ── What the clinic examines ────────────────────────────────────────────
+// The Care Plan's examination was seventeen findings written into the page.
+// This is the same seventeen, in the same order, under the same keys -- the
+// starting point for a list the clinic owns rather than asks for.
+//
+// kind is how a finding is answered:
+//   "healthy"  Healthy, or an observation written instead  (Jaw Joints)
+//   "present"  Present, with a note of where             (Swelling)
+//
+// key is what a saved care plan stores the answer under. It is fixed when a
+// finding is created and a rename never touches it: a plan saved three
+// years ago must still read back.
+const CLINICAL_EXAM_SEED = [
+  ["Extra-Oral Check", "Jaw Joints",          "healthy", "jawJoints"],
+  ["Extra-Oral Check", "Lymph Nodes",         "healthy", "lymphNodes"],
+  ["Extra-Oral Check", "Swelling",            "present", "swelling"],
+  ["Extra-Oral Check", "Lip Competency",      "present", "lipCompetency"],
+  ["Extra-Oral Check", "Facial Asymmetry",    "present", "facialAsymmetry"],
+  ["Intra-Oral Check", "Tongue",              "healthy", "tongue"],
+  ["Intra-Oral Check", "Palate",              "healthy", "palate"],
+  ["Intra-Oral Check", "Floor of Mouth",      "healthy", "floorMouth"],
+  ["Intra-Oral Check", "Buccal Mucosa",       "healthy", "buccalMucosa"],
+  ["Gum Assessment",   "Bleeding on Probing", "present", "bleedingProbing"],
+  ["Gum Assessment",   "Gum Recession",       "present", "gumRecession"],
+  ["Gum Assessment",   "Furcation",           "present", "furcation"],
+  ["Gum Assessment",   "Mobility",            "present", "mobility"],
+  ["Wasting Disease",  "Abrasion",            "present", "abrasion"],
+  ["Wasting Disease",  "Attrition",           "present", "attrition"],
+  ["Wasting Disease",  "Abfraction",          "present", "abfraction"],
+  ["Wasting Disease",  "Erosion",             "present", "erosion"]
+];
+const CLINICAL_EXAM_KINDS = [
+  ["healthy", "Healthy, or an observation"],
+  ["present", "Present, with a note"]
+];
+// A finding the clinic adds needs a key of its own that will not collide
+// with one already in a saved plan, and will not change when it is renamed.
+function clinicalExamKey(finding, taken) {
+  const base = String(finding || "").trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ").trim().split(" ")
+    .map((w, i) => i ? w.charAt(0).toUpperCase() + w.slice(1) : w).join("") || "finding";
+  let k = base, n = 2;
+  while (taken && taken.indexOf(k) >= 0) k = base + n++;
+  return k;
+}
+
 const CLINICAL_NOTE_TEMPLATE_SEED = [
   ["RCT", "Access Opening", "Access opening done wrt {tooth} [under {LA}] [& {isolation} isolation]. {Pulp status} pulp extirpated, {canals} located.", "Access opening done wrt {tooth} under {anaesthesia} [and {isolation} isolation]. {Pulp status} pulp extirpated, {canals} [{configuration}] located. [Irrigated with {irrigants}.]"],
   ["RCT", "Working Length", "WL determined wrt {tooth} using {method}, {Canal}= ({WL}mm, {ref}) & \u2026. [{Dressing} placed.] [IOPA taken.]", "Working length determined wrt {tooth} using {method}, {Canal}= ({WL}mm, {reference}, IAF {size}) & \u2026. [{Dressing} placed.] [IOPA taken.]"],
@@ -29576,6 +29611,120 @@ function kbClinGroup(list, keyOf) {
     (groups[k] = groups[k] || []).push(x);
   });
   return { groups: groups, order: Object.keys(groups).sort() };
+}
+
+// ── Master → Clinical Configuration → Examination ──────────────────────
+// The findings the Care Plan asks about, and which section each sits under.
+// The Care Plan draws its examination from this, so a finding added here
+// appears on the next care plan and on its printed page.
+//
+// A finding's KEY is what a saved plan stores its answer under. It is set
+// when the finding is created and a rename never touches it, so renaming
+// "Swelling" to "Swelling / Oedema" relabels every plan rather than losing
+// the answers under the old name.
+function ClinicalExaminationEditor({ rows, onSave, saving, seed }) {
+  const txt = KB_CLIN_TXT;
+  const blank = { section:"", finding:"", kind:"present", key:"" };
+  const [form, setForm] = React.useState(blank);
+  const [editing, setEditing] = React.useState(null);
+  const [draft, setDraft] = React.useState(blank);
+
+  const all = rows || [];
+  if (!all.length) return React.createElement(KbClinEmpty, {
+    what: "No examination findings yet",
+    detail: "The Care Plan asks about seventeen findings across four sections. " +
+            "Load them here and they become yours to add to, rename and reorder.",
+    label: "Load the clinic's seventeen findings",
+    saving: saving,
+    onLoad: () => onSave(seed.map(r => ({ section:r[0], finding:r[1], kind:r[2], key:r[3] })))
+  });
+
+  const sections = [];
+  all.forEach(r => { const s2 = txt(r.section) || "Uncategorized";
+    if (sections.indexOf(s2) < 0) sections.push(s2); });
+  const { groups } = kbClinGroup(all, r => txt(r.section));
+  // In the clinic's own order, not alphabetical: an examination runs
+  // outside the mouth before inside it.
+  const order = sections;
+
+  const kindLabel = (k) => (CLINICAL_EXAM_KINDS.find(x => x[0] === k) || CLINICAL_EXAM_KINDS[1])[1];
+
+  const fld = (value, onChange, placeholder, opts) => React.createElement("input", {
+    value: value, onChange: e => onChange(e.target.value), placeholder: placeholder,
+    list: opts, style:{ ...inp, width:"100%" } });
+  const kindPick = (value, onChange) => React.createElement("select", {
+    value: value, onChange: e => onChange(e.target.value), style:{ ...inp, width:"100%" } },
+    CLINICAL_EXAM_KINDS.map(([v, l]) => React.createElement("option", { key:v, value:v }, l)));
+
+  const editor = (state, set, commit, cancel, label) => React.createElement("div", {
+    style:{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr auto", gap:8, alignItems:"center" } },
+    fld(state.section, v => set({ ...state, section:v }), "Section", "kbExamSections"),
+    fld(state.finding, v => set({ ...state, finding:v }), "Finding"),
+    kindPick(state.kind, v => set({ ...state, kind:v })),
+    React.createElement("div", { style:{ display:"flex", gap:8 } },
+      React.createElement("button", { onClick: commit, disabled: saving,
+        style:{ padding:"8px 16px", fontSize:13, fontWeight:700, border:"none", borderRadius:7,
+          cursor: saving ? "not-allowed" : "pointer", background: saving ? "#e3e3e3" : T,
+          color: saving ? "#444444" : "#fff" } }, saving ? "Saving…" : label),
+      cancel && React.createElement("button", { onClick: cancel,
+        style:{ padding:"8px 14px", fontSize:13, border:`1px solid ${BORDER}`, borderRadius:7,
+          cursor:"pointer", background:"#fff", color:"#2e2e2e" } }, "Cancel")));
+
+  const add = () => {
+    const finding = txt(form.finding).trim();
+    if (!finding) return;
+    const taken = all.map(r => txt(r.key));
+    onSave(all.concat([{ section: txt(form.section).trim() || "Other",
+      finding: finding, kind: form.kind || "present",
+      key: clinicalExamKey(finding, taken) }]));
+    setForm(blank);
+  };
+  const commitEdit = (i) => {
+    const finding = txt(draft.finding).trim();
+    if (!finding) return;
+    // The key is carried over untouched: a rename must not orphan the
+    // answers already saved against this finding.
+    onSave(all.map((r, n) => n === i
+      ? { section: txt(draft.section).trim() || "Other", finding: finding,
+          kind: draft.kind || "present", key: txt(r.key) || clinicalExamKey(finding, all.map(x => txt(x.key))) }
+      : r));
+    setEditing(null);
+  };
+
+  return React.createElement("div", null,
+    React.createElement("datalist", { id:"kbExamSections" },
+      sections.map(s2 => React.createElement("option", { key:s2, value:s2 }))),
+    React.createElement("div", { style:{ fontSize:13, color:"#444444", marginBottom:12, lineHeight:1.6, maxWidth:720 } },
+      "What the Care Plan asks about. A finding added here is on the next care plan and on its printed page. ",
+      React.createElement("b", null, "Healthy, or an observation"),
+      " gives a Healthy tick with a box to write what was seen instead; ",
+      React.createElement("b", null, "Present, with a note"),
+      " gives a Present tick with a box for where."),
+    React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:9,
+      padding:"12px 14px", marginBottom:18 } },
+      React.createElement("div", { style:{ fontSize:12, fontWeight:700, color:"#444444",
+        textTransform:"uppercase", letterSpacing:"0.04em", marginBottom:8 } }, "Add a finding"),
+      editor(form, setForm, add, null, "Add")),
+    React.createElement(KbClinGroups, { groups: groups, order: order,
+      render: (r) => {
+        const i = all.indexOf(r);
+        return React.createElement("div", { key: txt(r.key) || i,
+          style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:9, padding:"10px 13px" } },
+          editing === i
+            ? editor(draft, setDraft, () => commitEdit(i), () => setEditing(null), "Save")
+            : React.createElement("div", { style:{ display:"flex", alignItems:"baseline", gap:12 } },
+                React.createElement("div", { style:{ fontSize:13.5, fontWeight:700 } }, txt(r.finding)),
+                React.createElement("div", { style:{ fontSize:12.5, color:"#5a5a5a" } }, kindLabel(txt(r.kind))),
+                React.createElement(KbClinRowBtns, {
+                  onEdit: () => { setDraft({ section:txt(r.section), finding:txt(r.finding),
+                    kind:txt(r.kind) || "present", key:txt(r.key) }); setEditing(i); },
+                  onRemove: () => {
+                    if (!window.confirm("Remove \u201c" + txt(r.finding) + "\u201d from the examination?\n\n" +
+                      "Care plans already saved keep their answer; it simply stops being asked.")) return;
+                    onSave(all.filter((_, n) => n !== i));
+                  }
+                })));
+      } }));
 }
 
 // ── Master → Clinical Configuration → Clinical Note Templates ───────────
@@ -30721,7 +30870,7 @@ const MASTER_STRUCTURE = [
     { id:"departments",     label:"Departments" },
     // Held open, with nothing under it yet. A subtab marked this way says
     // so on its own page instead of opening blank.
-    { id:"examination",     label:"Examination", placeholder:true },
+    { id:"examination",     label:"Examination" },
     { id:"medInstructions", label:"Patient Instructions" },
     { id:"medNotes",        label:"Post op instructions" },
     { id:"implantBrands",   label:"Implant Brands & Sizes" }
@@ -31918,6 +32067,7 @@ function Master() {
   const [notePlan, setNotePlan] = React.useState([]);
   const [noteTemplates, setNoteTemplates] = React.useState([]);
   const [clinDepts, setClinDepts] = React.useState([]);
+  const [examFindings, setExamFindings] = React.useState([]);
   const [medicines, setMedicines] = React.useState([]);
   const [medDosages, setMedDosages] = React.useState([]);
   const [medFrequencies, setMedFrequencies] = React.useState([]);
@@ -31957,8 +32107,8 @@ function Master() {
       "getImplantBrandsList", "getPanelsList", "getWorkingDays", "getClinicTimings",
       "getSafetyFlagsList", "getOccupationsList",
       "getReferralSourcesList", "getPatientTypesList", "getClinicalNotePlan",
-      "getClinicalNoteTemplateLib", "getClinicalDepartmentsList"
-    ]).then(([t,d,e,c,m,tpl,ch,med,dos,freq,dur,instr,mn,ar,cp,dc,pl,ib,pnl,wd,ct,sf,oc,rs,pt,np,ntl,cd]) => {
+      "getClinicalNoteTemplateLib", "getClinicalDepartmentsList", "getClinicalExaminationList"
+    ]).then(([t,d,e,c,m,tpl,ch,med,dos,freq,dur,instr,mn,ar,cp,dc,pl,ib,pnl,wd,ct,sf,oc,rs,pt,np,ntl,cd,ex]) => {
       setLoading(false);
       if (t.success) setTreatments(t.treatments || []);
       // An older backend without this list simply leaves it empty, and the
@@ -31979,6 +32129,9 @@ function Master() {
       // A backend without this list leaves it empty, and the dropdowns fall
       // back to the built-in departments until it is saved.
       if (cd && cd.success) setClinDepts(cd.departments || []);
+      // An older backend without this list leaves it empty, and the Care
+      // Plan keeps the seventeen findings it was built with.
+      if (ex && ex.success) setExamFindings(ex.findings || []);
       if (ch.success) setChairsList(ch.chairs || []);
       if (med.success) setMedicines(med.medicines || []);
       if (dos.success) setMedDosages(dos.dosages || []);
@@ -32047,6 +32200,7 @@ function Master() {
   const saveNotePlan = (arr) => persist("saveClinicalNotePlan", { rows: JSON.stringify(arr) }, arr, setNotePlan, notePlan);
   const saveNoteTemplates = (arr) => persist("saveClinicalNoteTemplateLib", { rows: JSON.stringify(arr) }, arr, setNoteTemplates, noteTemplates);
   const saveClinDepts = (arr) => persist("saveClinicalDepartmentsList", { departments: JSON.stringify(arr) }, arr, setClinDepts, clinDepts);
+  const saveExamFindings = (arr) => persist("saveClinicalExaminationList", { findings: JSON.stringify(arr) }, arr, setExamFindings, examFindings);
   const saveChairs = (arr) => persist("saveChairsList", { chairs: JSON.stringify(arr) }, arr, setChairsList, chairsList);
   const saveMedicines = (arr) => persist("saveMedicinesMaster", { medicines: JSON.stringify(arr) }, arr, setMedicines, medicines);
   const saveImplantBrands = (arr) => persist("saveImplantBrandsList", { brands: JSON.stringify(arr) }, arr, setImplantBrands, implantBrands);
@@ -32169,6 +32323,12 @@ function Master() {
     }),
     // The name is the key in three places -- the templates, both plans and
     // each form's own definition -- so this does more than add a word.
+    // What the Care Plan asks about. The Care Plan reads the same list, so
+    // a finding added here is on the next examination and on its printout.
+    examination: () => React.createElement(ClinicalExaminationEditor, {
+      rows: examFindings, onSave: saveExamFindings, saving: loading,
+      seed: CLINICAL_EXAM_SEED
+    }),
     departments: () => React.createElement(ClinicalDepartmentEditor, {
       departments: clinDepts, templates: noteTemplates, plan: notePlan,
       builtIn: CLINICAL_TEMPLATE_CATEGORIES, saving: loading,

@@ -114,12 +114,13 @@ const orphaned = rendered.filter(id => wanted.indexOf(id) < 0);
 eq('and no screen is left with nothing to open it', orphaned, []);
 
 // A placeholder is deliberate: it says it is coming rather than opening blank.
-// Examination is held open with nothing under it yet, so it is marked --
-// a placeholder says so on its own page instead of opening blank, and the
-// check below for orphaned screens knows to skip it.
+// Examination was one until the Care Plan's findings became a list the
+// clinic owns; it now has a screen, so it is no longer marked.
 eq('the placeholders are marked as such',
    MENU.flatMap(t => (t.subtabs || []).filter(s => s.placeholder).map(s => s.id)),
-   ["examination", "drugCategories", "accountHeads"]);
+   ["drugCategories", "accountHeads"]);
+ok('and Examination is not one of them any more',
+   !MENU.flatMap(t => (t.subtabs || [])).some(s => s.id === "examination" && s.placeholder), '');
 
 // ── and nothing still sends staff to the old place ──────────────────────
 // A message naming a path is a path that has to exist. This one is on the
