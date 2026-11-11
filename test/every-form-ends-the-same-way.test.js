@@ -172,6 +172,11 @@ ok('RCT is left alone', !TAIL_FOR.rct && !BRIDGE_FOR.rct, '');
     await page.click('.kbwd-tab[data-kbwd-tab=sheet]').catch(() => {});
     await page.waitForTimeout(250);
     const sheet = await textOf(page, '#kbwdSheetBody');
+    // RCT draws its sheet whether or not a word has been typed -- letterhead,
+    // title and every line -- which is what makes a blank one printable and
+    // fillable by hand. A sentence saying there is nothing yet is not that.
+    ok(fid + ': the sheet draws even before anything is typed',
+       /WORK-DONE SHEET/.test(sheet) && !/Nothing filled in yet/.test(sheet), sheet.slice(0, 200));
     ok(fid + ': the sheet is on the clinic letterhead',
        /C\. A\. R\. E\. S\./.test(sheet) && /DILSHAD GARDEN/.test(sheet), sheet.slice(0, 160));
     ok(fid + ': titled for this form',
@@ -179,6 +184,25 @@ ok('RCT is left alone', !TAIL_FOR.rct && !BRIDGE_FOR.rct, '');
     ok(fid + ': carrying its document code', sheet.indexOf('KBDC/FORMS/' + code) >= 0, sheet.slice(0, 220));
     ok(fid + ': with the patient on it', /Santosh Kumar/.test(sheet) && /AL1010/.test(sheet), sheet.slice(0, 200));
     ok(fid + ': and a signature line', /Signature of Attending Doctor/.test(sheet), '');
+
+    // The control the clinic looked for and did not find. RCT has a
+    // "Treatment complete" tick that records the course as finished; no
+    // other form had one, which is most of why they did not look alike.
+    const tick = await page.$('#kbwdDone');
+    ok(fid + ': has the Treatment complete tick', !!tick, '');
+    ok(fid + ': labelled the way RCT labels it',
+       /Treatment complete/.test(await textOf(page, '.kbwd-done-wrap')), '');
+    ok(fid + ': and the sheet says where the treatment stands',
+       /Treatment Status/.test(sheet) && /In progress/.test(sheet), sheet.slice(0, 240));
+    if (tick) {
+      await tick.check();
+      await page.waitForTimeout(250);
+      const after = await textOf(page, '#kbwdSheetBody');
+      ok(fid + ': ticking it says so on the sheet',
+         /Treatment complete/.test(after), after.slice(0, 240));
+      await tick.uncheck();
+      await page.waitForTimeout(150);
+    }
     // The emoji belong on screen, not on a sheet a panel may read.
     ok(fid + ': no emoji in the printed headings',
        !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(sheet), sheet.slice(0, 200));
