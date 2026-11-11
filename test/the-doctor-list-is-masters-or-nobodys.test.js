@@ -156,6 +156,56 @@ senders.forEach((src, i) => ok('sender ' + (i + 1) + ' re-reads the list while i
   eq('nothing threw', errs, []);
   await browser.close();
 
+  // ── and the app actually sends it, with no patient loaded ────────────
+  // This is what kept the list out of the forms. sendDoctorsToForm was
+  // called from inside sendPatientToForm, which returns early when there is
+  // no patient -- so a form opened blank, or opened before a patient was
+  // picked, never received Master's list and kept the names in its own
+  // markup. Who works at the clinic does not depend on who is in the chair.
+  const LOCAL = {
+    'react/18.2.0/umd/react.production.min.js': 'node_modules/react/umd/react.production.min.js',
+    'react-dom/18.2.0/umd/react-dom.production.min.js': 'node_modules/react-dom/umd/react-dom.production.min.js'
+  };
+  const DOCTORS = ['Dr. A Mittel', 'Dr. B Malik', 'Dr. C Sharma', 'Dr. D Taneja',
+    'Dr. E Apoorva', 'Dr. F Singh', 'Dr. G Mathur', 'Dr. H Gogia', 'Dr. I Mittel']
+    .map(n => ({ name: n, phone: '', email: '', role: 'Doctor' }));
+  const app = await chromium.launch({ executablePath: process.env.CHROME_PATH, args: ['--no-sandbox'] });
+  const p3 = await app.newPage({ viewport: { width: 1500, height: 1050 } });
+  await p3.route('**cdnjs.cloudflare.com/**', r => {
+    const u = r.request().url();
+    const h = Object.keys(LOCAL).find(k => u.indexOf(k) >= 0);
+    return r.fulfill({ status: 200, contentType: 'application/javascript',
+      body: h ? fs.readFileSync(path.join(REPO, LOCAL[h]), 'utf8') : '/* not needed */' });
+  });
+  await p3.route('**script.google.com/**', r => {
+    const body = r.request().postData() || r.request().url();
+    return r.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify(/getDoctorDetailsList/.test(body)
+        ? { success: true, doctors: DOCTORS } : { success: true }) });
+  });
+  const appErrs = [];
+  p3.on('pageerror', e => appErrs.push(String((e && e.message) || e)));
+  await p3.goto('file://' + path.join(REPO, 'index.html'));
+  await p3.waitForTimeout(2200);
+  await p3.getByText('Records', { exact: false }).first().click();
+  await p3.waitForTimeout(600);
+  await p3.getByText('Clinical Records', { exact: false }).first().click();
+  await p3.waitForTimeout(1000);
+  await p3.getByText('Root Canal Work Done', { exact: false }).first().click();
+  await p3.waitForTimeout(900);
+  const blankBtn = p3.locator('button', { hasText: /Open Blank Form/ }).first();
+  ok('a form can be opened with no patient', await blankBtn.count() > 0, '');
+  if (await blankBtn.count()) await blankBtn.click();
+  await p3.waitForTimeout(4000);
+  let inForm = [];
+  try { inForm = await p3.frameLocator('iframe').locator('#pDoc option').allTextContents(); }
+  catch (e) { inForm = ['(no frame)']; }
+  eq('every doctor in Master reaches the form, with no patient loaded', inForm.length, 9);
+  ok('and they are Master\'s names, not the form\'s own',
+     inForm.indexOf('Dr. A Mittel') >= 0 && inForm.indexOf('Dr. Viveyk') < 0, JSON.stringify(inForm));
+  eq('nothing threw in the app', appErrs, []);
+  await app.close();
+
   let pass = 0, fail = 0;
   checks.forEach(c => {
     if (c.ok) pass++;

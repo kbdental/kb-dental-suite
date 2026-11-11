@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-10";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-11d";
+const KB_APP_BUILD = "2026-11-11e";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -32476,7 +32476,6 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
         gender: pat.gender || "",
         doctor: getDoctors()[0] || ""
       }, "*");
-      sendDoctorsToForm(pat.uhid || "");
     }
   };
 
@@ -32756,7 +32755,17 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
               src: form ? form.getUrl() : "",
               style:{ width:"100%", flex:1, border:"none", display:"block" },
               title: form ? form.subtitle : "",
-              onLoad: () => { if (globalPat && globalPat.uhid) { sendPatientToForm(globalPat); sendRecordToForm(form.id, globalPat); } sendTemplatesToForm(); }
+              // The doctors are sent whether or not a patient is loaded.
+              // They used to be pushed from inside sendPatientToForm, which
+              // returns early with no patient -- so a form opened blank, or
+              // opened before a patient was picked, never got the master
+              // list and kept the one or two names in its own markup. Who
+              // works at the clinic does not depend on who is in the chair.
+              onLoad: () => {
+                if (globalPat && globalPat.uhid) { sendPatientToForm(globalPat); sendRecordToForm(form.id, globalPat); }
+                sendDoctorsToForm((globalPat && globalPat.uhid) || "");
+                sendTemplatesToForm();
+              }
             })
       );
     }
@@ -33081,7 +33090,6 @@ function Prescription({ globalPat }) {
         gender: globalPat.gender || "",
         doctor: getDoctors()[0] || ""
       }, "*");
-      sendDoctorsToForm(globalPat.uhid || "");
     }
   };
 
@@ -33188,7 +33196,12 @@ function Prescription({ globalPat }) {
       src: getPrescriptionFormUrl(),
       style:{ width:"100%", flex:1, border:"none", display:"block" },
       title: "Prescription",
-      onLoad: () => { sendPatientToForm(); sendTodaysProceduresToForm(); sendMedicinesToForm(); sendMedListsToForm(); sendPadMarginsToForm(); sendClinicNameToForm(); }
+      // The doctors go in on open, not from inside the patient push: the
+      // prescription pad is opened without a patient as often as with one,
+      // and who signs it is a master list either way.
+      onLoad: () => { sendPatientToForm(); sendDoctorsToForm((globalPat && globalPat.uhid) || "");
+        sendTodaysProceduresToForm(); sendMedicinesToForm(); sendMedListsToForm();
+        sendPadMarginsToForm(); sendClinicNameToForm(); }
     })
   );
 }
