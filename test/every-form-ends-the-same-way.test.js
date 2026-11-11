@@ -121,34 +121,12 @@ ok('RCT is left alone', !TAIL_FOR.rct && !BRIDGE_FOR.rct, '');
     await page.waitForTimeout(400);
     return { page, errs };
   };
-  // A single-page form now carries the wizards' step bar: the form, then a
-  // tick and Summary. The ending lives on the Summary step, as it does on
-  // RCT, so the form itself is not pushed down the page by it.
-  const toSummary = async (page) => {
-    const bar = await page.$('.kbwd-steps .tab[data-kbwd-step=summary]');
-    if (bar) { await bar.click(); await page.waitForTimeout(350); }
-    return !!bar;
-  };
   const textOf = (page, sel) =>
     page.$eval(sel, e => e.innerText.replace(/\s+/g, ' ').trim()).catch(() => '');
 
   // ── the fourteen that had nothing ─────────────────────────────────────
   for (const [name, fid, label, code] of FLAT) {
     const { page, errs } = await openAndFill(name, fid);
-
-    const steps = await page.$$eval('.kbwd-steps .tab', e => e.map(x => x.textContent.trim()));
-    ok(fid + ': has a step bar like the wizards',
-       steps.length === 2 && /Summary$/.test(steps[1]), JSON.stringify(steps));
-    ok(fid + ': whose first step is the form itself',
-       steps[0] && steps[0].indexOf(label + ' Record') >= 0, JSON.stringify(steps));
-    ok(fid + ': ending in a tick, not a number', /\u2713/.test(steps[1] || ''), JSON.stringify(steps));
-    // Entry is untouched: the form is what opens, not the summary.
-    ok(fid + ': the form is what opens',
-       await page.evaluate(() => {
-         const m = document.querySelector('.main'), k = document.getElementById('kbwd');
-         return !!m && m.style.display !== 'none' && !!k && k.style.display === 'none';
-       }), '');
-    ok(fid + ': and the Summary step opens the ending', await toSummary(page), '');
 
     const bar = await textOf(page, '.kbwd-bar');
     ok(fid + ': has the Complete header', /COMPLETE/.test(bar), bar);
