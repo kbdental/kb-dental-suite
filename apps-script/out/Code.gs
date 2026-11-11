@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-10";
+var BACKEND_BUILD = "2026-11-11";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -1116,6 +1116,8 @@ function route(p) {
       case "getClinicalSheets":  return getClinicalSheets(p);
       case "saveClinicalSheets": return saveClinicalSheets(p);
       case "appendClinicalRecordRows": return appendClinicalRecordRows(p);
+      case "getClinicalExaminationList":  return getClinicalExaminationList();
+      case "saveClinicalExaminationList": return saveClinicalExaminationList(p);
 
       // ── Daily Register ─────────────────────────────────────
       case "getDailyRegister":   return getDailyRegister(p);
@@ -6006,6 +6008,56 @@ function saveClinicalNoteTemplateLib(p) {
 // is why renaming one has to cascade, and why the page does the cascade
 // rather than this -- it holds all three lists already.
 var CLINICAL_DEPT_SHEET = "Clinical Departments";
+
+// ── What the clinic examines ─────────────────────────────────────────────
+// The Care Plan's examination was seventeen findings written into the page:
+// which sections there are, what is checked under each, and whether a
+// finding is answered "healthy, or this observation" or "present, with a
+// note". A clinic that wants to start checking the tonsils had to ask for a
+// release. It is a list, so it belongs in Master with the other lists.
+//
+// Key is what a saved care plan stores the answer under. It is written once,
+// when a finding is created, and never changed by a rename -- a plan saved
+// three years ago must still read back under the name it was saved with.
+var CLINICAL_EXAM_SHEET = "Clinical Examination";
+var CLINICAL_EXAM_HEADERS = ["Section", "Finding", "Kind", "Key", "Updated At"];
+
+function getClinicalExaminationList() {
+  var sh = getSheet(CLINICAL_EXAM_SHEET);
+  var data = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < data.length; i++) {
+    var finding = String(data[i][1] || "").trim();
+    if (!finding) continue;
+    items.push({
+      section: String(data[i][0] || "").trim(),
+      finding: finding,
+      kind:    String(data[i][2] || "").trim() || "present",
+      key:     String(data[i][3] || "").trim()
+    });
+  }
+  return { success: true, findings: items };
+}
+
+function saveClinicalExaminationList(p) {
+  var arr = parseList_(p.findings, "clinical examination");
+  if (arr && arr.__bad) return { success: false, error: arr.__bad };
+  var sh = getSheet(CLINICAL_EXAM_SHEET);
+  sh.clearContents();
+  ensureGridWidth_(sh, CLINICAL_EXAM_HEADERS.length);
+  sh.appendRow(CLINICAL_EXAM_HEADERS);
+  var now = new Date().toISOString();
+  var block = [];
+  for (var i = 0; i < arr.length; i++) {
+    var r = arr[i] || {};
+    var finding = String(r.finding || "").trim();
+    if (!finding) continue;
+    block.push([String(r.section || "").trim(), finding,
+                String(r.kind || "present").trim(), String(r.key || "").trim(), now]);
+  }
+  if (block.length) sh.getRange(2, 1, block.length, CLINICAL_EXAM_HEADERS.length).setValues(block);
+  return { success: true, saved: block.length };
+}
 
 function getClinicalDepartmentsList() {
   var sh = getSheet(CLINICAL_DEPT_SHEET);
