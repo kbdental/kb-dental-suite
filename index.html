@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-12";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-12";
+const KB_APP_BUILD = "2026-11-12a";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -7446,6 +7446,31 @@ function CghsPrescription({ pat, lines, plan }) {
     return edits[k] !== undefined ? edits[k] : suggested(x);
   };
   const setDetail = (x, v) => { const k = keyOf(x); setEdits(e => ({ ...e, [k]: v })); };
+
+  // ── The day each treatment was done ──────────────────────────────────
+  // One date at the top of the sheet is right for a single sitting and
+  // wrong for everything else. A course of treatment is endorsed once and
+  // carried out over weeks -- the flap surgery in one visit, the sutures
+  // out in the next, the crown a fortnight later -- and a prescription that
+  // dates all of it to the day it was printed says something that did not
+  // happen. So every treatment carries its own date.
+  //
+  // Untouched, a line follows the date at the top, which is what a sheet
+  // for one sitting needs and means nothing has to be filled in twice.
+  // Once a line is given a date of its own it keeps it, and can be put
+  // back to following the top date.
+  const [lineDates, setLineDates] = React.useState({});
+  const dateOf = (x) => {
+    const k = keyOf(x);
+    return lineDates[k] !== undefined ? lineDates[k] : date;
+  };
+  const ownDate = (x) => lineDates[keyOf(x)] !== undefined;
+  const setLineDate = (x, v) => setLineDates(d => ({ ...d, [keyOf(x)]: v }));
+  const clearLineDate = (x) => setLineDates(d => {
+    const out = { ...d };
+    delete out[keyOf(x)];
+    return out;
+  });
   const matched = rows.filter(x => !!suggested(x)).length;
 
   const build = () => {
@@ -7453,6 +7478,9 @@ function CghsPrescription({ pat, lines, plan }) {
     const trs = rows.map((x, i) => {
       const detail = cghsBlankTokens(detailOf(x)).trim();
       return `<tr><td class="c">${i + 1}</td>` +
+        // Before the treatment, because that is the order it is read in:
+        // on this day, this was done.
+        `<td class="c">${cghsEsc(fmtDMY(dateOf(x)) || when)}</td>` +
         `<td class="c b">${cghsEsc(x.code) || "—"}</td>` +
         `<td>${cghsEsc(nameOf(x))}</td>` +
         `<td class="c b">${cghsEsc(x.r.tooth) || "—"}</td>` +
@@ -7460,7 +7488,7 @@ function CghsPrescription({ pat, lines, plan }) {
         // Under its own line rather than in a sixth column: the detail is
         // sentences, and a column of sentences on a pad is unreadable.
         (detail
-          ? `<tr><td></td><td colspan="4" style="padding-top:0;border-top:none;` +
+          ? `<tr><td></td><td colspan="5" style="padding-top:0;border-top:none;` +
             `font-size:8.5pt;line-height:1.45;white-space:pre-wrap">${cghsEsc(detail)}</td></tr>`
           : "");
     }).join("");
@@ -7472,9 +7500,10 @@ function CghsPrescription({ pat, lines, plan }) {
         `<div class="fl"><div class="lbl">UHID</div><div class="val">${cghsEsc(pat.uhid) || "&nbsp;"}</div></div>` +
         `<div class="fl"><div class="lbl">Date</div><div class="val">${cghsEsc(when)}</div></div>` +
       `</div><div class="sec">Treatment Advised — Endorsed</div>` +
-      `<table><thead><tr><th style="width:8%" class="c">Sn</th><th style="width:15%">Code</th>` +
-      `<th>Treatment Advised</th><th style="width:16%" class="c">Tooth Number</th>` +
-      `<th style="width:12%" class="c">No. of Units</th></tr></thead><tbody>${trs}</tbody></table>` +
+      `<table><thead><tr><th style="width:6%" class="c">Sn</th>` +
+      `<th style="width:13%" class="c">Date</th><th style="width:13%">Code</th>` +
+      `<th>Treatment Advised</th><th style="width:14%" class="c">Tooth Number</th>` +
+      `<th style="width:11%" class="c">No. of Units</th></tr></thead><tbody>${trs}</tbody></table>` +
       `<div class="sig"><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div>` +
       `<div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(when)}</div></div></body></html>`;
   };
@@ -7512,12 +7541,30 @@ function CghsPrescription({ pat, lines, plan }) {
         return React.createElement("div", { key: keyOf(x) + "|" + i,
           style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8,
                   padding:"10px 12px", marginBottom:8 } },
-          React.createElement("div", { style:{ display:"flex", gap:8, alignItems:"baseline",
+          React.createElement("div", { style:{ display:"flex", gap:8, alignItems:"center",
             flexWrap:"wrap", marginBottom:6 } },
             React.createElement("span", { style:{ fontSize:13, fontWeight:700 } }, (i + 1) + ". " + nameOf(x)),
             x.code ? React.createElement("span", { style:{ fontSize:12.5, fontWeight:700, color:T } }, x.code) : null,
             React.createElement("span", { style:{ fontSize:12.5, color:"#5a5a5a" } },
-              (x.r.tooth ? x.r.tooth + " · " : "") + x.qty + (x.qty === 1 ? " unit" : " units"))),
+              (x.r.tooth ? x.r.tooth + " · " : "") + x.qty + (x.qty === 1 ? " unit" : " units")),
+            // The date this treatment was carried out, in front of it, the
+            // way it prints. A course of treatment runs over several
+            // visits; one date at the top cannot say when each was done.
+            React.createElement("span", { style:{ marginLeft:"auto", display:"flex",
+              gap:6, alignItems:"center" } },
+              React.createElement("span", { style:{ fontSize:12, fontWeight:700, color:"#444444",
+                textTransform:"uppercase", letterSpacing:".04em" } }, "Date done"),
+              React.createElement("input", { type:"date", value: dateOf(x),
+                "data-kb-line-date": nameOf(x),
+                onChange: e => setLineDate(x, e.target.value),
+                style:{ ...inp, width:158, fontSize:12.5, padding:"5px 7px" } }),
+              ownDate(x)
+                ? React.createElement("button", { onClick: () => clearLineDate(x),
+                    title: "Follow the date at the top of the sheet",
+                    style:{ padding:"4px 9px", fontSize:12, fontWeight:700, border:`1px solid ${BORDER}`,
+                      borderRadius:6, background:"#fff", color:T, cursor:"pointer", fontFamily:"inherit" } },
+                    "\u21ba Same as sheet")
+                : null)),
           // What Plan CGHS lists for this treatment, to pick instead of type.
           opts.length
             ? React.createElement("select", {
