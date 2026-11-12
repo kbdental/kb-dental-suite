@@ -106,11 +106,15 @@ ok('it does not go through the medicines form’s procedures box',
     text: document.body.textContent
   }));
   await view.close();
-  eq('the sheet lists Sn, code, treatment, tooth and units',
-     got.heads, ['Sn', 'Code', 'Treatment Advised', 'Tooth Number', 'No. of Units']);
-  eq('every endorsed line is on it, numbered', got.rows,
-     [['1', 'DP007', 'Flap Surgery- Per Tooth', '16', '1'],
-      ['2', 'DP014', 'Scaling', '26, 27', '2']]);
+  // The date sits before the treatment, one per line. A course of treatment
+  // is endorsed once and carried out over weeks, and the single date at the
+  // top of the sheet used to be the only one on it -- which dated the whole
+  // course to the day it was printed.
+  eq('the sheet lists Sn, the date, code, treatment, tooth and units',
+     got.heads, ['Sn', 'Date', 'Code', 'Treatment Advised', 'Tooth Number', 'No. of Units']);
+  eq('every endorsed line is on it, numbered and dated', got.rows,
+     [['1', '10/11/2026', 'DP007', 'Flap Surgery- Per Tooth', '16', '1'],
+      ['2', '10/11/2026', 'DP014', 'Scaling', '26, 27', '2']]);
   ok('it is a prescription, not another endorsement request',
      /Prescription/i.test(got.text) && !/Request for Endorsement/i.test(got.text), got.text.slice(0, 120));
   ok('the patient and their age are on it',

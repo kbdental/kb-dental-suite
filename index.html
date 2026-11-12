@@ -221,7 +221,7 @@ const KB_BACKEND_IS_APPS_SCRIPT = /script\.google\.com/.test(SCRIPT_URL);
 // nicer is the boy who cried wolf, and it sat across a working screen for an
 // afternoon. This goes up again the next time the app genuinely cannot work
 // without a new Code.gs.
-const KB_BACKEND_BUILD_REQUIRED = "2026-11-02b";
+const KB_BACKEND_BUILD_REQUIRED = "2026-11-12";
 // WHICH APP THIS IS.
 //
 // There was no way to tell. The sidebar said which BACKEND was answering
@@ -241,7 +241,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-02b";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-10b";
+const KB_APP_BUILD = "2026-11-12a";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -426,13 +426,23 @@ const KB_LIST_CACHE = {};
 function useMasterList(action, key) {
   const [items, setItems] = React.useState(KB_LIST_CACHE[action] || []);
   React.useEffect(() => {
-    if (KB_LIST_CACHE[action]) { setItems(KB_LIST_CACHE[action]); return; }
+    // An EMPTY list is not an answer worth keeping. [] is truthy, so a read
+    // that failed, or that landed before the backend was ready, used to be
+    // cached for the rest of the session and never tried again -- the list
+    // stayed empty on every screen until the page was reloaded. That is how
+    // the doctors went missing: with none to send, each form fell back to
+    // the one or two names typed into its own markup years ago, and said
+    // nothing about it.
+    if (KB_LIST_CACHE[action] && KB_LIST_CACHE[action].length) {
+      setItems(KB_LIST_CACHE[action]);
+      return;
+    }
     let alive = true;
     api(action).then(res => {
       const list = (res && res.success && res[key]) || [];
-      KB_LIST_CACHE[action] = list;
+      if (list.length) KB_LIST_CACHE[action] = list;
       if (alive) setItems(list);
-    });
+    }).catch(() => { /* not cached, so the next screen tries again */ });
     return () => { alive = false; };
   }, [action, key]);
   return items;
@@ -4112,6 +4122,24 @@ const emptyCP1 = {
     charges: ""
   }]
 };
+// ── What the Care Plan examines ────────────────────────────────────────
+// The findings, their sections and how each is answered come from Master →
+// Clinical Configuration → Examination. They were written into this page;
+// a clinic that wanted to start checking the tonsils had to ask for a
+// release. The seed below is what the page used to hold, so an older
+// backend, or a list not filled in yet, examines exactly what it always did.
+function useExaminationList() {
+  const master = useMasterList("getClinicalExaminationList", "findings");
+  return React.useMemo(() => (master && master.length) ? master
+    : CLINICAL_EXAM_SEED.map(r => ({ section:r[0], finding:r[1], kind:r[2], key:r[3] })),
+    [master]);
+}
+// The four the page was built around, drawn where they have always been.
+// Anything else the clinic adds is drawn after them, in its own section.
+const CP_EXAM_SECTIONS = ["Extra-Oral Check", "Intra-Oral Check", "Gum Assessment",
+  "Wasting Disease", "Parafunctional Habits", "Investigations Required",
+  "Post Radiograph Findings"];
+
 const emptyCP2 = {
   jawJoints: hp(),
   lymphNodes: hp(),
@@ -4140,10 +4168,11 @@ const emptyCP2 = {
   gumRecession: pp(),
   furcation: pp(),
   mobility: pp(),
-  parafunctional: {
-    present: false,
-    description: ""
-  },
+  // The same shape as every other Present finding, now that it is one of
+  // them on the list rather than a block of its own. A plan saved under the
+  // old "description" still reads back: both the screen and the printed
+  // page take whichever of the two a stored answer carries.
+  parafunctional: pp(),
   abrasion: pp(),
   attrition: pp(),
   abfraction: pp(),
@@ -4355,6 +4384,44 @@ function CarePlan({
     ...p,
     [k]: v
   }));
+
+  // The examination, off the master list. A row knows which component draws
+  // it and which key a saved plan keeps its answer under; a plan saved
+  // before a finding existed simply has no answer for it yet.
+  const examList = useExaminationList();
+  const examIn = (section) => examList.filter(r => String(r.section || "") === section);
+  const examRow = (r) => {
+    const kind = String(r.kind || "present");
+    const k = r.key || r.finding;
+    // A tick, kept with the other investigations.
+    if (kind === "check") return React.createElement("label", { key: k,
+      style:{ display:"flex", alignItems:"center", gap:5, fontSize:13, cursor:"pointer",
+        padding:"5px 12px", borderRadius:6, border:`1px solid ${p2.inv[k] ? T : BORDER}`,
+        background: p2.inv[k] ? TL : "#fff", color: p2.inv[k] ? T : "#444" } },
+      React.createElement("input", { type:"checkbox", checked: !!p2.inv[k],
+        onChange: e => ui(k, e.target.checked), style:{ accentColor:T } }), r.finding);
+    // A line of text.
+    if (kind === "text") return React.createElement("div", { key: k, style:{ marginBottom:6 } },
+      React.createElement(Lbl, { c: r.finding }),
+      React.createElement("input", { style: inp, value: p2[k] || "",
+        onChange: e => u2(k, e.target.value) }));
+    const healthy = kind === "healthy";
+    const Row = healthy ? HRow : PRow;
+    // Parafunctional was saved with its note under `description`; every
+    // other present-row uses `area`. Read both so a plan saved before this
+    // was a list still shows what was written on it.
+    const raw = p2[k];
+    const val = raw ? (healthy ? raw : { present: !!raw.present, area: raw.area || raw.description || "" })
+                    : (healthy ? hp() : pp());
+    return React.createElement(Row, { key: k, label: r.finding,
+      val: val, onChange: v => u2(k, v) });
+  };
+  const examKind = (section, kind) => examIn(section)
+    .filter(r => String(r.kind || "present") === kind).map(examRow);
+  // Sections the clinic has added. Drawn after the four the page was built
+  // around, so a new one appears rather than being quietly dropped.
+  const examExtra = examList.map(r => String(r.section || ""))
+    .filter((x, i, arr) => x && arr.indexOf(x) === i && CP_EXAM_SECTIONS.indexOf(x) < 0);
   const ui = (k, v) => setP2(p => ({
     ...p,
     inv: {
@@ -4465,9 +4532,25 @@ function CarePlan({
   }
   function buildCPPage2HTML() {
     const hf = v => v.healthy ? "Healthy" : `Obs: ${v.observation || "—"}`;
-    const pf = v => v.present ? `Present${v.area ? " — " + v.area : ""}` : "-";
-    const invKeys = [["iopa", "IOPA"], ["opg", "OPG"], ["latCeph", "Lat. Ceph"], ["digScan", "Digital Scan"], ["mri", "MRI"], ["tScan", "T-Scan"], ["cbct", "CBCT"], ["intraOralPics", "Intra Oral Pics"], ["extraOralPics", "Extra Oral Pics"]];
-    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="sec">Extra-Oral Check</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt"><div class="fl"><div class="lbl">Jaw Joints</div><div class="val">${hf(p2.jawJoints)}</div></div><div class="fl"><div class="lbl">Lymph Nodes</div><div class="val">${hf(p2.lymphNodes)}</div></div><div class="fl"><div class="lbl">Facial Profile</div><div class="val">${p2.facialProfile || "—"}</div></div><div class="fl"><div class="lbl">Facial Asymmetry</div><div class="val">${pf(p2.facialAsymmetry)}</div></div><div class="fl"><div class="lbl">Swelling</div><div class="val">${pf(p2.swelling)}</div></div><div class="fl"><div class="lbl">Lip Competency</div><div class="val">${pf(p2.lipCompetency)}</div></div></div><div class="sec">Intra-Oral — Soft Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt"><div class="fl"><div class="lbl">Tongue</div><div class="val">${hf(p2.tongue)}</div></div><div class="fl"><div class="lbl">Palate</div><div class="val">${hf(p2.palate)}</div></div><div class="fl"><div class="lbl">Floor of Mouth</div><div class="val">${hf(p2.floorMouth)}</div></div><div class="fl"><div class="lbl">Buccal Mucosa</div><div class="val">${hf(p2.buccalMucosa)}</div></div><div class="fl"><div class="lbl">Frenum</div><div class="val">${p2.frenum || "—"}</div></div><div class="fl"><div class="lbl">Pigmentation</div><div class="val">${p2.pigmentation || "—"}</div></div></div><div class="sec">Intra-Oral — Hard Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${[["silverFillings", "Silver Fillings"], ["whiteFillings", "White Fillings"], ["decayedTeeth", "Decayed Teeth"], ["chippedTeeth", "Chipped Teeth"], ["missingTeeth", "Missing Teeth"], ["crowns", "Crowns"], ["bridges", "Bridges"], ["veneers", "Veneers"], ["crowding", "Crowding"], ["dentures", "Dentures"], ["stainsCalculus", "Stains & Calculus"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="val">${pf(p2[k])}</div></div>`).join("")}</div><div class="sec">Gum &amp; Parafunctional &amp; Wasting</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt"><div class="fl"><div class="lbl">Bleeding on Probing</div><div class="val">${pf(p2.bleedingProbing)}</div></div><div class="fl"><div class="lbl">Gum Recession</div><div class="val">${pf(p2.gumRecession)}</div></div><div class="fl"><div class="lbl">Furcation</div><div class="val">${pf(p2.furcation)}</div></div><div class="fl"><div class="lbl">Mobility</div><div class="val">${pf(p2.mobility)}</div></div><div class="fl"><div class="lbl">Parafunctional</div><div class="val">${p2.parafunctional.present ? "Present" + (p2.parafunctional.description ? " — " + p2.parafunctional.description : "") : "-"}</div></div><div class="fl"><div class="lbl">Abrasion</div><div class="val">${pf(p2.abrasion)}</div></div><div class="fl"><div class="lbl">Attrition</div><div class="val">${pf(p2.attrition)}</div></div><div class="fl"><div class="lbl">Abfraction</div><div class="val">${pf(p2.abfraction)}</div></div><div class="fl"><div class="lbl">Erosion</div><div class="val">${pf(p2.erosion)}</div></div></div><div class="sec">Investigations Required</div><div style="margin-bottom:5pt">${invKeys.map(([k, l]) => `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:8pt;font-weight:${p2.inv[k] ? 700 : 400};background:${p2.inv[k] ? "#DCF4FB" : "#f5f5f5"};color:${p2.inv[k] ? "#0078B4" : "#aaa"};border:0.5pt solid ${p2.inv[k] ? "#0090CC" : "#ddd"}">${l}</span>`).join("")}${p2.inv.blood ? `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:8pt;font-weight:700;background:#DCF4FB;color:#0078B4;border:0.5pt solid #0090CC">Blood Exam${p2.inv.bloodText ? " — " + p2.inv.bloodText : ""}</span>` : ""}</div><div class="sec">Post Radiograph Findings</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:5pt"><div class="fl"><div class="lbl">RCT</div><div class="val">${p2.rct || "—"}</div></div><div class="fl"><div class="lbl">Implants</div><div class="val">${p2.implants || "—"}</div></div><div class="fl"><div class="lbl">Shade of Teeth</div><div class="val">${p2.shadeOfTeeth || "—"}</div></div></div>${p2.otherFindings ? `<div class="fl"><div class="lbl">Any Other Findings</div><div class="val">${p2.otherFindings}</div></div>` : ""}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
+    const pf = v => v.present ? `Present${v.area || v.description ? " — " + (v.area || v.description) : ""}` : "-";
+    // One cell per finding, off the same list the screen draws from, so the
+    // paper and the screen cannot disagree about what was examined.
+    const examCells = (section) => examIn(section).map(r => {
+      const kind = String(r.kind || "present");
+      const k = r.key || r.finding;
+      if (kind === "check") return `<div class="fl"><div class="lbl">${r.finding}</div><div class="val">${p2.inv[k] ? "Yes" : "-"}</div></div>`;
+      if (kind === "text") return `<div class="fl"><div class="lbl">${r.finding}</div><div class="val">${p2[k] || "—"}</div></div>`;
+      const healthy = kind === "healthy";
+      const v = p2[k] || (healthy ? hp() : pp());
+      return `<div class="fl"><div class="lbl">${r.finding}</div><div class="val">${healthy ? hf(v) : pf(v)}</div></div>`;
+    }).join("");
+    // The investigations print as chips rather than cells, so they come off
+    // the same list through a renderer of their own.
+    const examChips = (section) => examIn(section).map(r => {
+      const on = !!p2.inv[r.key || r.finding];
+      return `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:8pt;font-weight:${on ? 700 : 400};background:${on ? "#DCF4FB" : "#f5f5f5"};color:${on ? "#0078B4" : "#8a8a8a"};border:0.5pt solid ${on ? "#0090CC" : "#ddd"}">${r.finding}</span>`;
+    }).join("");
+    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="sec">Extra-Oral Check</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Extra-Oral Check")}<div class="fl"><div class="lbl">Facial Profile</div><div class="val">${p2.facialProfile || "—"}</div></div></div><div class="sec">Intra-Oral — Soft Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Intra-Oral Check")}<div class="fl"><div class="lbl">Frenum</div><div class="val">${p2.frenum || "—"}</div></div><div class="fl"><div class="lbl">Pigmentation</div><div class="val">${p2.pigmentation || "—"}</div></div></div><div class="sec">Intra-Oral — Hard Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${[["silverFillings", "Silver Fillings"], ["whiteFillings", "White Fillings"], ["decayedTeeth", "Decayed Teeth"], ["chippedTeeth", "Chipped Teeth"], ["missingTeeth", "Missing Teeth"], ["crowns", "Crowns"], ["bridges", "Bridges"], ["veneers", "Veneers"], ["crowding", "Crowding"], ["dentures", "Dentures"], ["stainsCalculus", "Stains & Calculus"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="val">${pf(p2[k])}</div></div>`).join("")}</div><div class="sec">Gum &amp; Parafunctional &amp; Wasting</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Gum Assessment")}${examCells("Parafunctional Habits")}${examCells("Wasting Disease")}${examExtra.map(sec => examCells(sec)).join("")}</div><div class="sec">Investigations Required</div><div style="margin-bottom:5pt">${examChips("Investigations Required")}${p2.inv.blood ? `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:8pt;font-weight:700;background:#DCF4FB;color:#0078B4;border:0.5pt solid #0090CC">Blood Exam${p2.inv.bloodText ? " — " + p2.inv.bloodText : ""}</span>` : ""}</div><div class="sec">Post Radiograph Findings</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:5pt">${examCells("Post Radiograph Findings")}</div>${p2.otherFindings ? `<div class="fl"><div class="lbl">Any Other Findings</div><div class="val">${p2.otherFindings}</div></div>` : ""}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
   }
   function buildCPPage3HTML() {
     return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="sec">Radiograph Findings</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8pt;margin-bottom:10pt">${[["iopa", "IOPA"], ["opg", "OPG"], ["latCeph", "Lateral Cephalogram"], ["cbct", "CBCT"], ["digScan", "Digital Scan"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="vb" style="min-height:50pt">${p3[k] || "&nbsp;"}</div></div>`).join("")}</div><div class="sec">Medication Record</div><table><thead><tr><th style="width:38%">Name of Drug</th><th style="width:14%">Dose</th><th style="width:18%">Route</th><th style="width:30%">Frequency</th></tr></thead><tbody>${p3.meds.filter(m => m.drug).map(m => `<tr><td>${m.drug}</td><td>${m.dose}</td><td>${m.route}</td><td>${m.frequency}</td></tr>`).join("") || "<tr><td colspan='4' style='color:#5a5a5a;text-align:center;padding:8pt'>No medications recorded</td></tr>"}</tbody></table>${[["medCorrelation", "Medical Correlation (if any)"], ["provisionalDiagnosis", "Provisional Diagnosis"], ["specialNotes", "Special Notes (if any)"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="vb">${p3[k] || "&nbsp;"}</div></div>`).join("")}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
@@ -4829,15 +4912,7 @@ function CarePlan({
       marginBottom: 6,
       textTransform: "uppercase"
     }
-  }, "Healthy / Observation"), /*#__PURE__*/React.createElement(HRow, {
-    label: "Jaw Joints",
-    val: p2.jawJoints,
-    onChange: v => u2("jawJoints", v)
-  }), /*#__PURE__*/React.createElement(HRow, {
-    label: "Lymph Nodes",
-    val: p2.lymphNodes,
-    onChange: v => u2("lymphNodes", v)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, "Healthy / Observation"), /*#__PURE__*/examKind("Extra-Oral Check", "healthy")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       fontWeight: 700,
@@ -4845,19 +4920,7 @@ function CarePlan({
       marginBottom: 6,
       textTransform: "uppercase"
     }
-  }, "Present / Area"), /*#__PURE__*/React.createElement(PRow, {
-    label: "Swelling",
-    val: p2.swelling,
-    onChange: v => u2("swelling", v)
-  }), /*#__PURE__*/React.createElement(PRow, {
-    label: "Lip Competency",
-    val: p2.lipCompetency,
-    onChange: v => u2("lipCompetency", v)
-  }), /*#__PURE__*/React.createElement(PRow, {
-    label: "Facial Asymmetry",
-    val: p2.facialAsymmetry,
-    onChange: v => u2("facialAsymmetry", v)
-  }))), /*#__PURE__*/React.createElement("div", {
+  }, "Present / Area"), /*#__PURE__*/examKind("Extra-Oral Check", "present"))), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
       marginBottom: 12
@@ -4907,23 +4970,7 @@ function CarePlan({
       marginBottom: 6,
       textTransform: "uppercase"
     }
-  }, "Soft Tissue"), /*#__PURE__*/React.createElement(HRow, {
-    label: "Tongue",
-    val: p2.tongue,
-    onChange: v => u2("tongue", v)
-  }), /*#__PURE__*/React.createElement(HRow, {
-    label: "Palate",
-    val: p2.palate,
-    onChange: v => u2("palate", v)
-  }), /*#__PURE__*/React.createElement(HRow, {
-    label: "Floor of Mouth",
-    val: p2.floorMouth,
-    onChange: v => u2("floorMouth", v)
-  }), /*#__PURE__*/React.createElement(HRow, {
-    label: "Buccal Mucosa",
-    val: p2.buccalMucosa,
-    onChange: v => u2("buccalMucosa", v)
-  }), /*#__PURE__*/React.createElement("div", {
+  }, "Soft Tissue"), /*#__PURE__*/examIn("Intra-Oral Check").map(examRow), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 6
     }
@@ -4964,55 +5011,10 @@ function CarePlan({
       gridTemplateColumns: "1fr 1fr",
       gap: 16
     }
-  }, /*#__PURE__*/React.createElement("div", null, [["bleedingProbing", "Bleeding on Probing"], ["gumRecession", "Gum Recession"], ["furcation", "Furcation"], ["mobility", "Mobility"]].map(([k, l]) => /*#__PURE__*/React.createElement(PRow, {
-    key: k,
-    label: l,
-    val: p2[k],
-    onChange: v => u2(k, v)
-  })))), /*#__PURE__*/React.createElement(Sec, {
+  }, /*#__PURE__*/React.createElement("div", null, examIn("Gum Assessment").map(examRow))), /*#__PURE__*/React.createElement(Sec, {
     t: "Parafunctional Habits"
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      marginBottom: 8
-    }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 6,
-      fontSize: 13,
-      cursor: "pointer"
-    }
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: p2.parafunctional.present,
-    onChange: e => u2("parafunctional", {
-      ...p2.parafunctional,
-      present: e.target.checked
-    }),
-    style: {
-      accentColor: T
-    }
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: p2.parafunctional.present ? T : "#666",
-      fontWeight: p2.parafunctional.present ? 600 : 400
-    }
-  }, "Present")), p2.parafunctional.present && /*#__PURE__*/React.createElement("input", {
-    style: {
-      ...inp,
-      flex: 1
-    },
-    placeholder: "Description...",
-    value: p2.parafunctional.description,
-    onChange: e => u2("parafunctional", {
-      ...p2.parafunctional,
-      description: e.target.value
-    })
-  })), /*#__PURE__*/React.createElement(Sec, {
+  }), /*#__PURE__*/React.createElement("div", { style:{ marginBottom: 8 } },
+    examIn("Parafunctional Habits").map(examRow)), /*#__PURE__*/React.createElement(Sec, {
     t: "Wasting Disease"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5020,23 +5022,12 @@ function CarePlan({
       gridTemplateColumns: "1fr 1fr",
       gap: 16
     }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(PRow, {
-    label: "Abrasion",
-    val: p2.abrasion,
-    onChange: v => u2("abrasion", v)
-  }), /*#__PURE__*/React.createElement(PRow, {
-    label: "Attrition",
-    val: p2.attrition,
-    onChange: v => u2("attrition", v)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(PRow, {
-    label: "Abfraction",
-    val: p2.abfraction,
-    onChange: v => u2("abfraction", v)
-  }), /*#__PURE__*/React.createElement(PRow, {
-    label: "Erosion",
-    val: p2.erosion,
-    onChange: v => u2("erosion", v)
-  }))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/examIn("Wasting Disease").slice(0, Math.ceil(examIn("Wasting Disease").length / 2)).map(examRow)), /*#__PURE__*/React.createElement("div", null, examIn("Wasting Disease").slice(Math.ceil(examIn("Wasting Disease").length / 2)).map(examRow))), /*#__PURE__*/examExtra.map(sec => /*#__PURE__*/React.createElement("div", { key: sec },
+    /*#__PURE__*/React.createElement(Sec, { t: sec }),
+    /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } },
+      /*#__PURE__*/React.createElement("div", null, examIn(sec).slice(0, Math.ceil(examIn(sec).length / 2)).map(examRow)),
+      /*#__PURE__*/React.createElement("div", null, examIn(sec).slice(Math.ceil(examIn(sec).length / 2)).map(examRow))))),
+  /*#__PURE__*/React.createElement("div", {
     style: { display:"flex", alignItems:"center", justifyContent:"space-between", margin:"12px 0 8px", padding:"4px 8px", borderLeft:`3px solid ${T}`, background:"#f0f6fb" }
   }, /*#__PURE__*/React.createElement("span", {
     style: { fontSize:10, fontWeight:800, color:T, textTransform:"uppercase", letterSpacing:"0.07em" }
@@ -5066,28 +5057,7 @@ function CarePlan({
       gap: 8,
       marginBottom: 8
     }
-  }, [["iopa", "IOPA"], ["opg", "OPG"], ["latCeph", "Lateral Cephalogram"], ["digScan", "Digital Scan"], ["mri", "MRI"], ["tScan", "T-Scan"], ["cbct", "CBCT"], ["intraOralPics", "Intra Oral Pics"], ["extraOralPics", "Extra Oral Pics"]].map(([k, l]) => /*#__PURE__*/React.createElement("label", {
-    key: k,
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 5,
-      fontSize: 13,
-      cursor: "pointer",
-      padding: "5px 12px",
-      borderRadius: 6,
-      border: `1px solid ${p2.inv[k] ? T : BORDER}`,
-      background: p2.inv[k] ? TL : "#fff",
-      color: p2.inv[k] ? T : "#444"
-    }
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: p2.inv[k],
-    onChange: e => ui(k, e.target.checked),
-    style: {
-      accentColor: T
-    }
-  }), l))), /*#__PURE__*/React.createElement("div", {
+  }, examIn("Investigations Required").map(examRow)), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
@@ -5141,23 +5111,8 @@ function CarePlan({
       gap: 12,
       marginBottom: 8
     }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginBottom: 8
-    }
-  }, /*#__PURE__*/React.createElement(Lbl, {
-    c: "RCT"
-  }), /*#__PURE__*/React.createElement("input", {
-    style: inp,
-    value: p2.rct,
-    onChange: e => u2("rct", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, {
-    c: "Implants"
-  }), /*#__PURE__*/React.createElement("input", {
-    style: inp,
-    value: p2.implants,
-    onChange: e => u2("implants", e.target.value)
-  }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, {
+  }, /*#__PURE__*/React.createElement("div", null, examIn("Post Radiograph Findings").map(examRow)),
+    /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, {
     c: "Any Other Findings"
   }), /*#__PURE__*/React.createElement("textarea", {
     style: {
@@ -5166,17 +5121,7 @@ function CarePlan({
     },
     value: p2.otherFindings,
     onChange: e => u2("otherFindings", e.target.value)
-  }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, {
-    c: "Shade of Teeth"
-  }), /*#__PURE__*/React.createElement("input", {
-    style: {
-      ...inp,
-      maxWidth: 180
-    },
-    value: p2.shadeOfTeeth,
-    onChange: e => u2("shadeOfTeeth", e.target.value),
-    placeholder: "e.g. A2, B1..."
-  })), /*#__PURE__*/React.createElement(SigR, null)), cpPage === 3 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Sec, {
+  }))), /*#__PURE__*/React.createElement(SigR, null)), cpPage === 3 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Sec, {
     t: "Radiograph Findings"
   }), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -7522,6 +7467,31 @@ function CghsPrescription({ pat, lines, plan }) {
     return edits[k] !== undefined ? edits[k] : suggested(x);
   };
   const setDetail = (x, v) => { const k = keyOf(x); setEdits(e => ({ ...e, [k]: v })); };
+
+  // ── The day each treatment was done ──────────────────────────────────
+  // One date at the top of the sheet is right for a single sitting and
+  // wrong for everything else. A course of treatment is endorsed once and
+  // carried out over weeks -- the flap surgery in one visit, the sutures
+  // out in the next, the crown a fortnight later -- and a prescription that
+  // dates all of it to the day it was printed says something that did not
+  // happen. So every treatment carries its own date.
+  //
+  // Untouched, a line follows the date at the top, which is what a sheet
+  // for one sitting needs and means nothing has to be filled in twice.
+  // Once a line is given a date of its own it keeps it, and can be put
+  // back to following the top date.
+  const [lineDates, setLineDates] = React.useState({});
+  const dateOf = (x) => {
+    const k = keyOf(x);
+    return lineDates[k] !== undefined ? lineDates[k] : date;
+  };
+  const ownDate = (x) => lineDates[keyOf(x)] !== undefined;
+  const setLineDate = (x, v) => setLineDates(d => ({ ...d, [keyOf(x)]: v }));
+  const clearLineDate = (x) => setLineDates(d => {
+    const out = { ...d };
+    delete out[keyOf(x)];
+    return out;
+  });
   const matched = rows.filter(x => !!suggested(x)).length;
 
   const build = () => {
@@ -7529,6 +7499,9 @@ function CghsPrescription({ pat, lines, plan }) {
     const trs = rows.map((x, i) => {
       const detail = cghsBlankTokens(detailOf(x)).trim();
       return `<tr><td class="c">${i + 1}</td>` +
+        // Before the treatment, because that is the order it is read in:
+        // on this day, this was done.
+        `<td class="c">${cghsEsc(fmtDMY(dateOf(x)) || when)}</td>` +
         `<td class="c b">${cghsEsc(x.code) || "—"}</td>` +
         `<td>${cghsEsc(nameOf(x))}</td>` +
         `<td class="c b">${cghsEsc(x.r.tooth) || "—"}</td>` +
@@ -7536,7 +7509,7 @@ function CghsPrescription({ pat, lines, plan }) {
         // Under its own line rather than in a sixth column: the detail is
         // sentences, and a column of sentences on a pad is unreadable.
         (detail
-          ? `<tr><td></td><td colspan="4" style="padding-top:0;border-top:none;` +
+          ? `<tr><td></td><td colspan="5" style="padding-top:0;border-top:none;` +
             `font-size:8.5pt;line-height:1.45;white-space:pre-wrap">${cghsEsc(detail)}</td></tr>`
           : "");
     }).join("");
@@ -7548,9 +7521,10 @@ function CghsPrescription({ pat, lines, plan }) {
         `<div class="fl"><div class="lbl">UHID</div><div class="val">${cghsEsc(pat.uhid) || "&nbsp;"}</div></div>` +
         `<div class="fl"><div class="lbl">Date</div><div class="val">${cghsEsc(when)}</div></div>` +
       `</div><div class="sec">Treatment Advised — Endorsed</div>` +
-      `<table><thead><tr><th style="width:8%" class="c">Sn</th><th style="width:15%">Code</th>` +
-      `<th>Treatment Advised</th><th style="width:16%" class="c">Tooth Number</th>` +
-      `<th style="width:12%" class="c">No. of Units</th></tr></thead><tbody>${trs}</tbody></table>` +
+      `<table><thead><tr><th style="width:6%" class="c">Sn</th>` +
+      `<th style="width:13%" class="c">Date</th><th style="width:13%">Code</th>` +
+      `<th>Treatment Advised</th><th style="width:14%" class="c">Tooth Number</th>` +
+      `<th style="width:11%" class="c">No. of Units</th></tr></thead><tbody>${trs}</tbody></table>` +
       `<div class="sig"><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div>` +
       `<div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(when)}</div></div></body></html>`;
   };
@@ -7588,12 +7562,30 @@ function CghsPrescription({ pat, lines, plan }) {
         return React.createElement("div", { key: keyOf(x) + "|" + i,
           style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8,
                   padding:"10px 12px", marginBottom:8 } },
-          React.createElement("div", { style:{ display:"flex", gap:8, alignItems:"baseline",
+          React.createElement("div", { style:{ display:"flex", gap:8, alignItems:"center",
             flexWrap:"wrap", marginBottom:6 } },
             React.createElement("span", { style:{ fontSize:13, fontWeight:700 } }, (i + 1) + ". " + nameOf(x)),
             x.code ? React.createElement("span", { style:{ fontSize:12.5, fontWeight:700, color:T } }, x.code) : null,
             React.createElement("span", { style:{ fontSize:12.5, color:"#5a5a5a" } },
-              (x.r.tooth ? x.r.tooth + " · " : "") + x.qty + (x.qty === 1 ? " unit" : " units"))),
+              (x.r.tooth ? x.r.tooth + " · " : "") + x.qty + (x.qty === 1 ? " unit" : " units")),
+            // The date this treatment was carried out, in front of it, the
+            // way it prints. A course of treatment runs over several
+            // visits; one date at the top cannot say when each was done.
+            React.createElement("span", { style:{ marginLeft:"auto", display:"flex",
+              gap:6, alignItems:"center" } },
+              React.createElement("span", { style:{ fontSize:12, fontWeight:700, color:"#444444",
+                textTransform:"uppercase", letterSpacing:".04em" } }, "Date done"),
+              React.createElement("input", { type:"date", value: dateOf(x),
+                "data-kb-line-date": nameOf(x),
+                onChange: e => setLineDate(x, e.target.value),
+                style:{ ...inp, width:158, fontSize:12.5, padding:"5px 7px" } }),
+              ownDate(x)
+                ? React.createElement("button", { onClick: () => clearLineDate(x),
+                    title: "Follow the date at the top of the sheet",
+                    style:{ padding:"4px 9px", fontSize:12, fontWeight:700, border:`1px solid ${BORDER}`,
+                      borderRadius:6, background:"#fff", color:T, cursor:"pointer", fontFamily:"inherit" } },
+                    "\u21ba Same as sheet")
+                : null)),
           // What Plan CGHS lists for this treatment, to pick instead of type.
           opts.length
             ? React.createElement("select", {
@@ -14182,6 +14174,14 @@ function sampleTeethFor(tabId) {
   return [{ toothNo: "46", visits: visits }];
 }
 
+// The six forms whose records are kept per tooth or per implant, and so can
+// also be read tooth by tooth. The other twelve record a visit, not a site,
+// and have nothing to group.
+const CS_PER_TOOTH_FORM = {
+  rct: "rct", imp_surgery: "implant_surgery", imp_prosth: "implant_prosthetic",
+  crown: "crown_bridge", restoration: "restoration", pedo: "pedo"
+};
+
 const CS_TABS = [
   {id:"rct",               label:"🔬 RCT",              color:"#7C3AED", itemLabel:"Tooth"},
   {id:"implant_surgery",   label:"🔩 Implant Surgery",  color:"#0078B4", itemLabel:"Implant Site"},
@@ -14470,11 +14470,11 @@ function mapPedoData(records) {
 }
 
 // ── Main ClinicalSheets Component (read-only report over Forms' saved data) ──
-function ClinicalSheets({ globalPat, setGlobalPat, embedded=false }) {
+function ClinicalSheets({ globalPat, setGlobalPat, embedded=false, only=null }) {
   const [uhidInput, setUhidInput] = React.useState(globalPat?.uhid||"");
   const [pat, setPat] = React.useState(globalPat||null);
   const [notFound, setNotFound] = React.useState(false);
-  const [tab, setTab] = React.useState("rct");
+  const [tab, setTab] = React.useState(only || "rct");
   const [apiMsg, setApiMsg] = React.useState("");
   const [storedSigs, setStoredSigs] = React.useState({});
   // teeth: { rct:[{toothNo,visits:[]}], implant_surgery:[...], ... }
@@ -14574,8 +14574,8 @@ function ClinicalSheets({ globalPat, setGlobalPat, embedded=false }) {
   const currentTeeth = teeth[tab]||[];
 
   return React.createElement("div",null,
-    !embedded && React.createElement(ClinicHeader,null),
-    (!embedded || !globalPat) && React.createElement(PatientBanner,{
+    !embedded && !only && React.createElement(ClinicHeader,null),
+    (!embedded || !globalPat) && !only && React.createElement(PatientBanner,{
       pat,uhid:uhidInput,setUhid:setUhidInput,
       onLoad:p=>p===null?setPat(null):loadPat(),
       compact:!!globalPat&&!!pat
@@ -14584,7 +14584,7 @@ function ClinicalSheets({ globalPat, setGlobalPat, embedded=false }) {
     apiMsg&&React.createElement("div",{style:{background:TL,border:`1px solid ${TM}`,borderRadius:6,padding:"7px 12px",marginBottom:10,fontSize:13,color:T}},"⏳ ",apiMsg),
 
     // Tab bar
-    React.createElement("div",{style:{display:"flex",gap:4,background:BGS,borderRadius:8,padding:4,marginBottom:16}},
+    !only && React.createElement("div",{style:{display:"flex",gap:4,background:BGS,borderRadius:8,padding:4,marginBottom:16}},
       CS_TABS.map(t=>React.createElement("button",{
         key:t.id, onClick:()=>setTab(t.id),
         style:{flex:1,padding:"8px 4px",fontSize:13,fontWeight:tab===t.id?700:400,border:"none",borderRadius:6,
@@ -19936,7 +19936,7 @@ var _chatbotBlobUrl = null;
 // It reads each form through the markup they all share -- the .card / .fr /
 // .fl / .fc rows -- so it needs no per-form field list, and a form that
 // gains a field gains it on the sheet too.
-const KB_FORM_TAIL = "<style>\n.kbwd{max-width:1100px;margin:18px auto 40px;padding:0 24px;font-family:Outfit,Arial,sans-serif;}\n.kbwd-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;}\n.kbwd-done{font-size:11px;font-weight:800;letter-spacing:.5px;background:#D1FAE5;color:#047857;border:1px solid #6EE7B7;border-radius:14px;padding:4px 12px;}\n.kbwd-title{font-size:18px;font-weight:800;color:#0B2D4E;flex:1;}\n.kbwd-btn{padding:8px 18px;font-size:13px;font-weight:700;border:none;border-radius:8px;cursor:pointer;color:#fff;background:linear-gradient(135deg,#0B2D4E,#0891B2);font-family:inherit;}\n.kbwd-tabs{display:flex;gap:8px;margin-bottom:12px;}\n.kbwd-tab{padding:8px 18px;font-size:13px;font-weight:700;border:1px solid #cbd5e1;border-radius:20px;cursor:pointer;background:#fff;color:#0B2D4E;font-family:inherit;}\n.kbwd-tab.active{background:#0B2D4E;color:#fff;border-color:#0B2D4E;}\n.kbwd-pane{display:none;}\n.kbwd-pane.active{display:block;}\n.kbwd-paper{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:18px;}\n.kbwd-empty{text-align:center;padding:30px;color:#444444;font-size:13px;}\n@media print{\n  body.kbwd-printing > *{display:none!important;}\n  body.kbwd-printing .kbwd{display:block!important;max-width:none;margin:0;padding:0;}\n  body.kbwd-printing .kbwd > *{display:none!important;}\n  body.kbwd-printing .kbwd .kbwd-pane.kbwd-forprint{display:block!important;}\n  body.kbwd-printing .kbwd .kbwd-pane.kbwd-forprint .np{display:none!important;}\n  body.kbwd-printing .kbwd-paper{border:none;padding:0;}\n}\n</style>\n<div class=\"kbwd\" id=\"kbwd\">\n  <div class=\"kbwd-bar np\">\n    <span class=\"kbwd-done\">&#10003; COMPLETE</span>\n    <span class=\"kbwd-title\">__KBWD_NAME__ Summary</span>\n    <button type=\"button\" class=\"kbwd-btn\" data-kbwd-print=\"1\">&#128424; Print Work Done Sheet</button>\n  </div>\n  <div class=\"kbwd-tabs np\">\n    <button type=\"button\" class=\"kbwd-tab\" data-kbwd-tab=\"sheet\">&#128203; Work Done Sheet</button>\n    <button type=\"button\" class=\"kbwd-tab active\" data-kbwd-tab=\"summary\">&#128221; Work Done Summary</button>\n  </div>\n  <div class=\"kbwd-pane\" id=\"kbwdSheet\">\n    <div class=\"np\" style=\"display:flex;justify-content:flex-end;margin-bottom:10px;\">\n      <button type=\"button\" class=\"kbwd-btn\" data-kbwd-print=\"1\">&#128424; Print Work Done Sheet</button>\n    </div>\n    <div id=\"kbwdSheetBody\"></div>\n  </div>\n  <div class=\"kbwd-pane active\" id=\"kbwdSummary\">\n    <div class=\"kbwd-paper\" id=\"kbwdSummaryBody\"></div>\n  </div>\n</div>\n<script>\n/* The tail every work-done form carries: a Complete header, the Work Done\n   Sheet and Work Done Summary tabs, and one Print button that prints the\n   sheet rather than the data-entry screen.\n\n   It is written once and injected into every form, so the fourteen short\n   forms end the same way the RCT form does. It reads the form through its\n   OWN markup -- the .card / .fr / .fl / .fc rows every one of these forms is\n   built from -- so it needs no per-form field list and a form that gains a\n   field gains it on the sheet too.\n\n   What it shows is THIS VISIT, the way RCT's sheet shows what is in the form\n   now. A patient's earlier visits have their own home: Clinical Records,\n   View Records, where the sheet is built from the saved rows. */\n(function(){\n  var NAME = \"__KBWD_NAME__\", CODE = \"__KBWD_CODE__\", LOGO = \"__KBWD_LOGO__\";\n  var $ = function(id){ return document.getElementById(id); };\n  var esc = function(v){ return String(v==null?\"\":v)\n    .replace(/&/g,\"&amp;\").replace(/</g,\"&lt;\").replace(/>/g,\"&gt;\"); };\n\n  /* The value of one .fr row, whichever way that row takes its answer:\n     a box to type in, a list to pick from, or a strip of buttons. */\n  function rowValue(fc){\n    var out = [];\n    var active = fc.querySelectorAll(\".btn.active\");\n    for (var i=0;i<active.length;i++) out.push(active[i].textContent.trim());\n    var fields = fc.querySelectorAll(\"input,select,textarea\");\n    for (var j=0;j<fields.length;j++){\n      var f = fields[j];\n      if (f.type === \"button\" || f.type === \"submit\") continue;\n      if (f.type === \"checkbox\" || f.type === \"radio\") { if (f.checked) out.push(f.value || \"Yes\"); continue; }\n      var v = String(f.value||\"\").trim();\n      if (v) out.push(v);\n    }\n    return out.filter(function(v,i,a){ return v && a.indexOf(v)===i; }).join(\", \");\n  }\n\n  /* The patient strip at the top of the form, and then the cards, in the\n     order the form puts them in -- which is the order the work was done. */\n  function scrape(){\n    var val = function(id){ var e=$(id); return e ? String(e.value||\"\").trim() : \"\"; };\n    var out = { pName: val(\"pName\"), pId: val(\"pId\"), pAge: val(\"pAge\"),\n                pGender: val(\"pGender\"), pDoc: val(\"pDoc\"), sections: [] };\n    var cards = document.querySelectorAll(\".card\");\n    for (var c=0;c<cards.length;c++){\n      var head = cards[c].querySelector(\".ch\");\n      /* The card headings carry an emoji on screen. A printed clinical sheet\n         that a panel or a court may read should not. */\n      var title = head ? head.textContent.replace(/^[^A-Za-z0-9]+/, \"\").trim() : \"\";\n      var rows = cards[c].querySelectorAll(\".fr\");\n      var got = [];\n      for (var r=0;r<rows.length;r++){\n        var fl = rows[r].querySelector(\".fl\"), fc = rows[r].querySelector(\".fc\");\n        if (!fl || !fc) continue;\n        var label = fl.textContent.replace(/\\s*\\*\\s*$/,\"\").trim();\n        /* The template picker is a control for writing the notes, not an\n           answer about the patient. It has no place on the sheet. */\n        if (/insert .*template/i.test(label)) continue;\n        var v = rowValue(fc);\n        if (v) got.push({ label: label, value: v });\n      }\n      /* The notes box sits outside the .fr rows on most of these forms. */\n      var notes = cards[c].querySelector(\"textarea.notes\");\n      if (notes && String(notes.value||\"\").trim())\n        got.push({ label: \"Notes\", value: String(notes.value).trim() });\n      if (got.length) out.sections.push({ title: title, rows: got });\n    }\n    return out;\n  }\n\n  function anything(d){ return d.sections.length > 0; }\n\n  /* \u2500\u2500 The sheet: the clinic's A4 house layout, the same one the RCT sheet\n       and every printed record uses. \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n  function sheet(d){\n    if (!anything(d)) return '<div class=\"kbwd-empty\">Nothing filled in yet.<br>'\n      + 'Fill the form and the work done sheet draws itself here.</div>';\n    var C = \"border:1px solid #000;padding:3px 7px;font-size:12.5px;vertical-align:top;\";\n    var L = C + \"font-weight:600;background:#fafafa;width:220px;\";\n    var S = \"border:1px solid #000;padding:3px 7px;font-size:10.5px;font-weight:800;\"\n          + \"background:#E0F7FA;color:#0B2D4E;text-transform:uppercase;letter-spacing:.04em;\";\n    var t = '<style>@page{size:A4 portrait;margin:10mm;}</style>';\n    t += '<div style=\"max-width:980px;margin:0 auto;font-family:Outfit,Arial,sans-serif;\">';\n    t += '<div style=\"display:flex;align-items:center;gap:12px;border-bottom:2px solid #0B2D4E;padding-bottom:5px;margin-bottom:4px;\">';\n    if (LOGO) t += '<img src=\"' + LOGO + '\" style=\"width:90px;height:90px;object-fit:contain;flex-shrink:0;\">';\n    t += '<div style=\"flex:1;text-align:center;\">';\n    t += '<div style=\"font-size:13px;font-weight:800;color:#0B2D4E;letter-spacing:2px;text-decoration:underline;\">C. A. R. E. S.</div>';\n    t += '<div style=\"font-size:10px;font-weight:700;color:#333;\">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div>';\n    t += '<div style=\"font-size:9px;color:#444;\">BLOCK R-74, B DILSHAD GARDEN, DELHI-110095</div>';\n    t += '<div style=\"font-size:9px;color:#444;\">Ph.: 011-22131942 Mob: 7866939786, 9818161022K</div>';\n    t += '<div style=\"font-size:9px;color:#444;\">kbdentaldelhi@gmail.com www.kbdentaldelhi.com</div>';\n    t += '</div>';\n    t += '<div style=\"font-size:8px;color:#5a5a5a;align-self:flex-start;\">KBDC/FORMS/' + esc(CODE) + '</div>';\n    t += '</div>';\n    t += '<div style=\"text-align:center;font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;border:2px solid #000;padding:3px 0;margin:3px 0;\">'\n       + esc(NAME) + ' Work-Done Sheet</div>';\n    t += '<div style=\"display:flex;border:1px solid #000;border-bottom:none;font-size:12.5px;\">';\n    t += '<div style=\"flex:3;padding:2px 6px;border-right:1px solid #000;\">Name: <b>' + esc(d.pName || \"\u2014\") + '</b></div>';\n    t += '<div style=\"flex:1;padding:2px 6px;\">UHID: <b>' + esc(d.pId || \"\u2014\") + '</b></div>';\n    t += '</div>';\n    t += '<table style=\"width:100%;border-collapse:collapse;table-layout:fixed;\"><tbody>';\n    var ag = [d.pAge, d.pGender].filter(function(v){ return v; }).join(\" / \");\n    if (ag) t += '<tr><td style=\"' + L + '\">Age / Sex</td><td style=\"' + C + '\">' + esc(ag) + '</td></tr>';\n    if (d.pDoc) t += '<tr><td style=\"' + L + '\">Treating Doctor</td><td style=\"' + C + '\">' + esc(d.pDoc) + '</td></tr>';\n    d.sections.forEach(function(sec){\n      if (sec.title) t += '<tr><td style=\"' + S + '\" colspan=\"2\">' + esc(sec.title) + '</td></tr>';\n      sec.rows.forEach(function(r){\n        t += '<tr><td style=\"' + L + '\">' + esc(r.label) + '</td><td style=\"' + C + '\">' + esc(r.value) + '</td></tr>';\n      });\n    });\n    t += '</tbody></table>';\n    t += '<div style=\"margin-top:26px;display:flex;gap:20px;\">';\n    t += '<div style=\"flex:1;border-top:1.5px solid #0F172A;padding-top:4px;text-align:center;font-size:10.5px;color:#64748B;\">Signature of Attending Doctor</div>';\n    t += '<div style=\"flex:1;border-top:1.5px solid #0F172A;padding-top:4px;text-align:center;font-size:10.5px;color:#64748B;\">Date</div>';\n    t += '</div></div>';\n    return t;\n  }\n\n  /* \u2500\u2500 The summary: the RCT form's shape. A note somebody can read and\n       sign, not a grid of every field. \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n  function summary(d){\n    if (!anything(d)) return '<div class=\"kbwd-empty\">Nothing filled in yet.<br>'\n      + 'Fill the form and the summary writes itself here.</div>';\n    var today = new Date();\n    var p = function(n){ return (n<10?\"0\":\"\") + n; };\n    var date = p(today.getDate()) + \"/\" + p(today.getMonth()+1) + \"/\" + today.getFullYear();\n    var o = '';\n    o += '<div style=\"display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0B2D4E;padding-bottom:6px;margin-bottom:8px;\">';\n    o += '<div style=\"font-size:13px;font-weight:800;color:#0B2D4E;\">K.B. Dental Clinic &nbsp;<span style=\"font-size:11px;font-weight:600;color:#0891B2;\">\u2014 Work Done</span></div>';\n    o += '<div style=\"font-size:11px;color:#334155;text-align:right;\">' + esc(date) + ' &nbsp;|&nbsp; ' + esc(d.pDoc || \"\u2014\") + '</div>';\n    o += '</div>';\n    o += '<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;\">';\n    o += '<div style=\"font-size:12px;color:#0F172A;\"><b>' + esc(d.pName || \"\u2014\") + '</b> &nbsp;\u00b7&nbsp; File: ' + esc(d.pId || \"\u2014\") + '</div>';\n    o += '<div style=\"font-size:10.5px;font-weight:700;background:#0891B2;color:#fff;padding:2px 10px;border-radius:10px;\">' + esc(NAME) + '</div>';\n    o += '</div>';\n    var notes = [];\n    o += '<div style=\"font-size:12.5px;line-height:2;color:#0F172A;border-left:3px solid #0891B2;padding-left:10px;\">';\n    d.sections.forEach(function(sec){\n      var parts = [];\n      sec.rows.forEach(function(r){\n        if (/^notes$/i.test(r.label) || /remark/i.test(r.label)) { notes.push(r.value); return; }\n        parts.push(r.label + \": \" + r.value);\n      });\n      if (parts.length) o += '<div>' + esc(sec.title ? sec.title + \" \u2014 \" : \"\")\n        + esc(parts.join(\" \u00b7 \")) + '</div>';\n    });\n    o += '</div>';\n    if (notes.length){\n      o += '<div style=\"margin-top:8px;padding:6px 10px;background:#FFFBEB;border-radius:5px;border-left:3px solid #F59E0B;font-size:12px;color:#334155;\">';\n      o += '<b style=\"font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#92400E;\">Notes:</b> ' + esc(notes.join(\" | \"));\n      o += '</div>';\n    }\n    o += '<div style=\"margin-top:16px;display:flex;gap:20px;\">';\n    o += '<div style=\"flex:1;border-top:1.5px solid #0F172A;padding-top:4px;text-align:center;font-size:10.5px;color:#64748B;\">Signature of Attending Doctor</div>';\n    o += '<div style=\"flex:1;border-top:1.5px solid #0F172A;padding-top:4px;text-align:center;font-size:10.5px;color:#64748B;\">Date</div>';\n    o += '</div>';\n    return o;\n  }\n\n  function draw(){\n    var d = scrape();\n    var a = $(\"kbwdSheetBody\"), b = $(\"kbwdSummaryBody\");\n    if (a) a.innerHTML = sheet(d);\n    if (b) b.innerHTML = summary(d);\n  }\n  window.kbwdRedraw = draw;\n  /* The four step-wizard forms already have panes of their own. They are\n     given this engine without the markup, and bridge it onto those panes,\n     so every form draws the same sheet from the same code. */\n  window.kbwdBuild = { scrape: scrape, sheet: sheet, summary: summary, anything: anything };\n\n  function show(which){\n    var tabs = document.querySelectorAll(\".kbwd-tab\");\n    for (var i=0;i<tabs.length;i++)\n      tabs[i].classList.toggle(\"active\", tabs[i].getAttribute(\"data-kbwd-tab\") === which);\n    var sh = $(\"kbwdSheet\"), su = $(\"kbwdSummary\");\n    if (sh) sh.classList.toggle(\"active\", which === \"sheet\");\n    if (su) su.classList.toggle(\"active\", which === \"summary\");\n  }\n\n  document.addEventListener(\"click\", function(e){\n    var t = e.target.closest ? e.target.closest(\"button\") : null;\n    if (!t) return;\n    if (t.getAttribute(\"data-kbwd-tab\")) { draw(); show(t.getAttribute(\"data-kbwd-tab\")); return; }\n    if (t.getAttribute(\"data-kbwd-print\")){\n      /* The sheet is what prints -- not the screen it was filled in on.\n         Everything else is hidden for the one print and put straight back,\n         so the form the dentist is working in is untouched. */\n      draw();\n      var pane = $(\"kbwdSheet\");\n      if (pane) pane.classList.add(\"kbwd-forprint\");\n      document.body.classList.add(\"kbwd-printing\");\n      var clean = function(){\n        document.body.classList.remove(\"kbwd-printing\");\n        if (pane) pane.classList.remove(\"kbwd-forprint\");\n        window.removeEventListener(\"afterprint\", clean);\n      };\n      window.addEventListener(\"afterprint\", clean);\n      setTimeout(function(){ window.print(); setTimeout(clean, 1200); }, 60);\n      return;\n    }\n    /* A button group or a toggle changed an answer: keep the sheet honest. */\n    setTimeout(draw, 0);\n  });\n  document.addEventListener(\"input\", function(){ setTimeout(draw, 0); });\n  document.addEventListener(\"change\", function(){ setTimeout(draw, 0); });\n\n  if (document.readyState === \"loading\") document.addEventListener(\"DOMContentLoaded\", draw);\n  else draw();\n})();\n<\/script>\n";
+const KB_FORM_TAIL = "<style>\n/* The wizard forms carry a step bar ending in a tick; the single-page\n   forms carried none, so the two did not look like each other however\n   alike their sheets were. Same class names, same rules, so a form with\n   one step reads as a form with one step rather than as a different app. */\n.tabs{background:var(--card);border-bottom:2px solid var(--bl);padding:0 24px;display:flex;overflow-x:auto;}\n.tab{display:flex;align-items:center;gap:6px;padding:9px 14px;cursor:pointer;border-bottom:3px solid transparent;color:var(--muted);font-weight:600;font-size:12px;white-space:nowrap;transition:all .15s;user-select:none;margin-bottom:-2px;}\n.tab:hover{color:var(--teal);}\n.tab.active{color:var(--navy);border-bottom-color:var(--teal-b);}\n.tn{width:19px;height:19px;border-radius:50%;background:var(--bl);color:var(--muted);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}\n.tab.active .tn{background:linear-gradient(135deg,var(--teal),var(--teal-b));color:#fff;box-shadow:0 2px 5px rgba(8,145,178,.35);}\n.kbwd{max-width:1100px;margin:18px auto 40px;padding:0 24px;font-family:Outfit,Arial,sans-serif;}\n.kbwd-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;}\n.kbwd-done{font-size:11px;font-weight:800;letter-spacing:.5px;background:#D1FAE5;color:#047857;border:1px solid #6EE7B7;border-radius:14px;padding:4px 12px;}\n.kbwd-title{font-size:18px;font-weight:800;color:#0B2D4E;flex:1;}\n.kbwd-btn{padding:8px 18px;font-size:13px;font-weight:700;border:none;border-radius:8px;cursor:pointer;color:#fff;background:linear-gradient(135deg,#0B2D4E,#0891B2);font-family:inherit;}\n/* The RCT form's \"Treatment complete\" tick, to the letter: every other form\n   went without one, which is the control the clinic looked for and did not\n   find. */\n.kbwd-done-wrap{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#047857;background:#fff;border:1.5px solid #047857;border-radius:18px;padding:7px 14px;cursor:pointer;font-family:inherit;}\n.kbwd-done-wrap input{width:15px;height:15px;cursor:pointer;margin:0;}\n.kbwd-tabs{display:flex;gap:8px;margin-bottom:12px;}\n.kbwd-tab{padding:8px 18px;font-size:13px;font-weight:700;border:1px solid #cbd5e1;border-radius:20px;cursor:pointer;background:#fff;color:#0B2D4E;font-family:inherit;}\n.kbwd-tab.active{background:#0B2D4E;color:#fff;border-color:#0B2D4E;}\n.kbwd-pane{display:none;}\n.kbwd-pane.active{display:block;}\n.kbwd-paper{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:18px;}\n.kbwd-empty{text-align:center;padding:30px;color:#444444;font-size:13px;}\n.kbwd-note{font-size:12px;color:#5a5a5a;margin-bottom:10px;text-align:right;}\n/* Nothing here prints any more: the sheet is printed from Clinical\n   Records -> Work Done Sheet, through the app's own printer. */\n\n</style>\n<div class=\"kbwd\" id=\"kbwd\">\n  <div class=\"kbwd-bar np\">\n    <span class=\"kbwd-done\">&#10003; COMPLETE</span>\n    <span class=\"kbwd-title\">__KBWD_NAME__ Summary</span>\n    <label class=\"kbwd-done-wrap\" title=\"Tick when this treatment is finished. It is recorded on the work done sheet and kept with the patient.\">\n      <input type=\"checkbox\" id=\"kbwdDone\">Treatment complete\n    </label>\n  </div>\n  <div class=\"kbwd-tabs np\">\n    <button type=\"button\" class=\"kbwd-tab\" data-kbwd-tab=\"sheet\">&#128203; Work Done Sheet</button>\n    <button type=\"button\" class=\"kbwd-tab active\" data-kbwd-tab=\"summary\">&#128221; Work Done Summary</button>\n  </div>\n  <div class=\"kbwd-pane\" id=\"kbwdSheet\">\n    <!-- No Print here. A form's Summary is for looking at what has been\n         entered; the sheet is printed from Clinical Records -> Work Done\n         Sheet, where all eighteen live beside the forms. -->\n    <div class=\"np kbwd-note\">Printed from Clinical Records &rarr; Work Done Sheet.</div>\n    <div id=\"kbwdSheetBody\"></div>\n  </div>\n  <div class=\"kbwd-pane active\" id=\"kbwdSummary\">\n    <div class=\"kbwd-paper\" id=\"kbwdSummaryBody\"></div>\n  </div>\n</div>\n<script>\n/* The tail every work-done form carries: a Complete header, the Work Done\n   Sheet and Work Done Summary tabs, and one Print button that prints the\n   sheet rather than the data-entry screen.\n\n   It is written once and injected into every form, so the fourteen short\n   forms end the same way the RCT form does. It reads the form through its\n   OWN markup -- the .card / .fr / .fl / .fc rows every one of these forms is\n   built from -- so it needs no per-form field list and a form that gains a\n   field gains it on the sheet too.\n\n   What it shows is THIS VISIT, the way RCT's sheet shows what is in the form\n   now. A patient's earlier visits have their own home: Clinical Records,\n   View Records, where the sheet is built from the saved rows. */\n(function(){\n  var NAME = \"__KBWD_NAME__\", CODE = \"__KBWD_CODE__\", LOGO = \"__KBWD_LOGO__\";\n  var $ = function(id){ return document.getElementById(id); };\n  var esc = function(v){ return String(v==null?\"\":v)\n    .replace(/&/g,\"&amp;\").replace(/</g,\"&lt;\").replace(/>/g,\"&gt;\"); };\n\n  /* The value of one .fr row, whichever way that row takes its answer:\n     a box to type in, a list to pick from, or a strip of buttons. */\n  function rowValue(fc){\n    var out = [];\n    var active = fc.querySelectorAll(\".btn.active\");\n    for (var i=0;i<active.length;i++) out.push(active[i].textContent.trim());\n    var fields = fc.querySelectorAll(\"input,select,textarea\");\n    for (var j=0;j<fields.length;j++){\n      var f = fields[j];\n      if (f.type === \"button\" || f.type === \"submit\") continue;\n      if (f.type === \"checkbox\" || f.type === \"radio\") { if (f.checked) out.push(f.value || \"Yes\"); continue; }\n      var v = String(f.value||\"\").trim();\n      if (v) out.push(v);\n    }\n    return out.filter(function(v,i,a){ return v && a.indexOf(v)===i; }).join(\", \");\n  }\n\n  /* The patient strip at the top of the form, and then the cards, in the\n     order the form puts them in -- which is the order the work was done. */\n  function scrape(){\n    var val = function(id){ var e=$(id); return e ? String(e.value||\"\").trim() : \"\"; };\n    var out = { pName: val(\"pName\"), pId: val(\"pId\"), pAge: val(\"pAge\"),\n                pGender: val(\"pGender\"), pDoc: val(\"pDoc\"),\n                done: doneGet(), sections: [] };\n    var cards = document.querySelectorAll(\".card\");\n    for (var c=0;c<cards.length;c++){\n      var head = cards[c].querySelector(\".ch\");\n      /* The card headings carry an emoji on screen. A printed clinical sheet\n         that a panel or a court may read should not. */\n      var title = head ? head.textContent.replace(/^[^A-Za-z0-9]+/, \"\").trim() : \"\";\n      var rows = cards[c].querySelectorAll(\".fr\");\n      var got = [];\n      for (var r=0;r<rows.length;r++){\n        var fl = rows[r].querySelector(\".fl\"), fc = rows[r].querySelector(\".fc\");\n        if (!fl || !fc) continue;\n        var label = fl.textContent.replace(/\\s*\\*\\s*$/,\"\").trim();\n        /* The template picker is a control for writing the notes, not an\n           answer about the patient. It has no place on the sheet. */\n        if (/insert .*template/i.test(label)) continue;\n        /* Kept whether or not it is filled. The sheet is a document with a\n           fixed set of lines, the way the RCT sheet is: a blank line is a\n           line nobody wrote on, and it still belongs on the page -- it is\n           what makes a printed sheet fillable by hand. */\n        got.push({ label: label, value: rowValue(fc) });\n      }\n      /* The notes box sits outside the .fr rows on most of these forms. */\n      var notes = cards[c].querySelector(\"textarea.notes\");\n      if (notes) got.push({ label: \"Notes\", value: String(notes.value || \"\").trim() });\n      if (got.length) out.sections.push({ title: title, rows: got });\n    }\n    return out;\n  }\n\n  /* Whether anything has actually been written down, as opposed to whether\n     the form has rows at all. The sheet draws either way; this only decides\n     what a caller is told. */\n  /* Remembered per form and per patient, so a tick survives the screen being\n     closed the way RCT's does -- it is a statement about the treatment, not\n     about this page view. */\n  /* The form runs in a blob: URL, which keeps the page's origin -- so the\n     two clinics share one localStorage and an unscoped key would tick the\n     empanelled clinic's treatment from the main one. The app scopes every\n     key for exactly that reason; this borrows its scoper rather than\n     inventing a second answer. */\n  /* The app's own key scoper, borrowed rather than reinvented. The form runs\n     in a blob: URL, which keeps the page's origin, so the two clinics share\n     one localStorage -- unscoped, a tick in the main clinic would show as a\n     finished treatment in the empanelled one. */\n  function lsKey(k){\n    try {\n      if (window.parent && typeof window.parent.lsKey === \"function\") return window.parent.lsKey(k);\n    } catch (e) {}\n    return \"kbdc_\" + k;\n  }\n  function doneKey(){\n    var id = ($(\"pId\") && $(\"pId\").value) || \"\";\n    return \"wdDone:\" + NAME + \":\" + id.trim().toUpperCase();\n  }\n  function doneGet(){\n    try { return window.localStorage.getItem(lsKey(doneKey())) === \"1\"; } catch (e) { return false; }\n  }\n  function doneSet(v){\n    try { window.localStorage.setItem(lsKey(doneKey()), v ? \"1\" : \"0\"); } catch (e) {}\n  }\n\n  function anything(d){\n    for (var i = 0; i < d.sections.length; i++)\n      for (var j = 0; j < d.sections[i].rows.length; j++)\n        if (d.sections[i].rows[j].value) return true;\n    return !!(d.pName || d.pId);\n  }\n\n  /* \u2500\u2500 The sheet: the clinic's A4 house layout, the same one the RCT sheet\n       and every printed record uses. \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n  /* Always drawn. The RCT sheet puts its letterhead, its title and every one\n     of its lines on the page whether or not a word has been typed -- which is\n     why a blank one can be printed and filled in by hand, and why the two did\n     not look like each other while this one printed a sentence saying there\n     was nothing to show. */\n  var COLS = 4;\n  function sheet(d){\n    var C = \"border:1px solid #000;padding:3px 7px;font-size:12.5px;vertical-align:top;\";\n    var L = C + \"font-weight:600;background:#fafafa;width:220px;\";\n    var S = \"border:1px solid #000;padding:3px 7px;font-size:10.5px;font-weight:800;\"\n          + \"background:#E0F7FA;color:#0B2D4E;text-transform:uppercase;letter-spacing:.04em;\";\n    var t = '<style>@page{size:A4 portrait;margin:10mm;}</style>';\n    t += '<div style=\"max-width:980px;margin:0 auto;font-family:Outfit,Arial,sans-serif;\">';\n    t += '<div style=\"display:flex;align-items:center;gap:12px;border-bottom:2px solid #0B2D4E;padding-bottom:5px;margin-bottom:4px;\">';\n    if (LOGO) t += '<img src=\"' + LOGO + '\" style=\"width:90px;height:90px;object-fit:contain;flex-shrink:0;\">';\n    t += '<div style=\"flex:1;text-align:center;\">';\n    t += '<div style=\"font-size:13px;font-weight:800;color:#0B2D4E;letter-spacing:2px;text-decoration:underline;\">C. A. R. E. S.</div>';\n    t += '<div style=\"font-size:10px;font-weight:700;color:#333;\">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div>';\n    t += '<div style=\"font-size:9px;color:#444;\">BLOCK R-74, B DILSHAD GARDEN, DELHI-110095</div>';\n    t += '<div style=\"font-size:9px;color:#444;\">Ph.: 011-22131942 Mob: 7866939786, 9818161022K</div>';\n    t += '<div style=\"font-size:9px;color:#444;\">kbdentaldelhi@gmail.com www.kbdentaldelhi.com</div>';\n    t += '</div>';\n    t += '<div style=\"font-size:8px;color:#5a5a5a;align-self:flex-start;\">KBDC/FORMS/' + esc(CODE) + '</div>';\n    t += '</div>';\n    t += '<div style=\"text-align:center;font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;border:2px solid #000;padding:3px 0;margin:3px 0;\">'\n       + esc(NAME) + ' Work-Done Sheet</div>';\n    t += '<div style=\"display:flex;border:1px solid #000;border-bottom:none;font-size:12.5px;\">';\n    t += '<div style=\"flex:3;padding:2px 6px;border-right:1px solid #000;\">Name: <b>' + esc(d.pName || \"\u2014\") + '</b></div>';\n    t += '<div style=\"flex:1;padding:2px 6px;\">UHID: <b>' + esc(d.pId || \"\u2014\") + '</b></div>';\n    t += '</div>';\n    /* One column for this visit and three left blank for the next ones --\n       the same grid the RCT sheet rules. */\n    t += '<table style=\"width:100%;border-collapse:collapse;table-layout:fixed;\">';\n    t += '<colgroup><col style=\"width:220px;\">';\n    for (var ci = 0; ci < COLS; ci++) t += '<col>';\n    t += '</colgroup><tbody>';\n    var blanks = \"\";\n    for (var bi = 1; bi < COLS; bi++) blanks += '<td style=\"' + C + '\">&nbsp;</td>';\n    var line = function (label, value, style){\n      return '<tr><td style=\"' + L + '\">' + esc(label) + '</td>'\n           + '<td style=\"' + (style || C) + '\">' + (esc(value) || \"&nbsp;\") + '</td>' + blanks + '</tr>';\n    };\n    t += line(\"Age / Sex\", [d.pAge, d.pGender].filter(function(v){ return v; }).join(\" / \"));\n    t += line(\"Treating Doctor\", d.pDoc);\n    t += line(\"Treatment Status\", d.done ? \"Treatment complete\" : \"In progress\");\n    d.sections.forEach(function(sec){\n      if (sec.title) t += '<tr><td style=\"' + S + '\" colspan=\"' + (COLS + 1) + '\">' + esc(sec.title) + '</td></tr>';\n      sec.rows.forEach(function(r){ t += line(r.label, r.value); });\n    });\n    t += '</tbody></table>';\n    t += '<div style=\"margin-top:26px;display:flex;gap:20px;\">';\n    t += '<div style=\"flex:1;border-top:1.5px solid #0F172A;padding-top:4px;text-align:center;font-size:10.5px;color:#64748B;\">Signature of Attending Doctor</div>';\n    t += '<div style=\"flex:1;border-top:1.5px solid #0F172A;padding-top:4px;text-align:center;font-size:10.5px;color:#64748B;\">Date</div>';\n    t += '</div></div>';\n    return t;\n  }\n\n  /* \u2500\u2500 The summary: the RCT form's shape. A note somebody can read and\n       sign, not a grid of every field. \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */\n  /* Also always drawn, for the same reason: RCT's summary is a card with a\n     heading, the patient and a signature line under it from the moment the\n     form opens. A sentence saying there is nothing yet is not that card. */\n  function summary(d){\n    var today = new Date();\n    var p = function(n){ return (n<10?\"0\":\"\") + n; };\n    var date = p(today.getDate()) + \"/\" + p(today.getMonth()+1) + \"/\" + today.getFullYear();\n    var o = '';\n    o += '<div style=\"display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0B2D4E;padding-bottom:6px;margin-bottom:8px;\">';\n    o += '<div style=\"font-size:13px;font-weight:800;color:#0B2D4E;\">K.B. Dental Clinic &nbsp;<span style=\"font-size:11px;font-weight:600;color:#0891B2;\">\u2014 Work Done</span></div>';\n    o += '<div style=\"font-size:11px;color:#334155;text-align:right;\">' + esc(date) + ' &nbsp;|&nbsp; ' + esc(d.pDoc || \"\u2014\") + '</div>';\n    o += '</div>';\n    o += '<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;\">';\n    o += '<div style=\"font-size:12px;color:#0F172A;\"><b>' + esc(d.pName || \"\u2014\") + '</b> &nbsp;\u00b7&nbsp; File: ' + esc(d.pId || \"\u2014\") + '</div>';\n    o += '<div style=\"font-size:10.5px;font-weight:700;background:' + (d.done ? \"#047857\" : \"#0891B2\")\n       + ';color:#fff;padding:2px 10px;border-radius:10px;\">'\n       + esc(d.done ? NAME + \" \\u2014 complete\" : NAME) + '</div>';\n    o += '</div>';\n    /* The SHEET carries every line, blank ones included, because it is a\n       form. The SUMMARY is a sentence about what was done, so a field\n       nobody filled has no place in it. */\n    var notes = [], said = false;\n    o += '<div style=\"font-size:12.5px;line-height:2;color:#0F172A;border-left:3px solid #0891B2;padding-left:10px;\">';\n    d.sections.forEach(function(sec){\n      var parts = [];\n      sec.rows.forEach(function(r){\n        if (!r.value) return;\n        if (/^notes$/i.test(r.label) || /remark/i.test(r.label)) { notes.push(r.value); return; }\n        parts.push(r.label + \": \" + r.value);\n      });\n      if (parts.length) { said = true; o += '<div>' + esc(sec.title ? sec.title + \" \u2014 \" : \"\")\n        + esc(parts.join(\" \u00b7 \")) + '</div>'; }\n    });\n    if (!said && !notes.length)\n      o += '<div style=\"color:#5a5a5a;\">Nothing recorded on this visit yet.</div>';\n    o += '</div>';\n    if (notes.length){\n      o += '<div style=\"margin-top:8px;padding:6px 10px;background:#FFFBEB;border-radius:5px;border-left:3px solid #F59E0B;font-size:12px;color:#334155;\">';\n      o += '<b style=\"font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#92400E;\">Notes:</b> ' + esc(notes.join(\" | \"));\n      o += '</div>';\n    }\n    o += '<div style=\"margin-top:16px;display:flex;gap:20px;\">';\n    o += '<div style=\"flex:1;border-top:1.5px solid #0F172A;padding-top:4px;text-align:center;font-size:10.5px;color:#64748B;\">Signature of Attending Doctor</div>';\n    o += '<div style=\"flex:1;border-top:1.5px solid #0F172A;padding-top:4px;text-align:center;font-size:10.5px;color:#64748B;\">Date</div>';\n    o += '</div>';\n    return o;\n  }\n\n  function draw(){\n    var d = scrape();\n    var a = $(\"kbwdSheetBody\"), b = $(\"kbwdSummaryBody\");\n    if (a) a.innerHTML = sheet(d);\n    if (b) b.innerHTML = summary(d);\n  }\n  window.kbwdRedraw = draw;\n  /* The four step-wizard forms already have panes of their own. They are\n     given this engine without the markup, and bridge it onto those panes,\n     so every form draws the same sheet from the same code. */\n  window.kbwdBuild = { scrape: scrape, sheet: sheet, summary: summary, anything: anything };\n\n  function show(which){\n    var tabs = document.querySelectorAll(\".kbwd-tab\");\n    for (var i=0;i<tabs.length;i++)\n      tabs[i].classList.toggle(\"active\", tabs[i].getAttribute(\"data-kbwd-tab\") === which);\n    var sh = $(\"kbwdSheet\"), su = $(\"kbwdSummary\");\n    if (sh) sh.classList.toggle(\"active\", which === \"sheet\");\n    if (su) su.classList.toggle(\"active\", which === \"summary\");\n  }\n\n  document.addEventListener(\"click\", function(e){\n    var t = e.target.closest ? e.target.closest(\"button\") : null;\n    if (!t) return;\n    if (t.getAttribute(\"data-kbwd-tab\")) { draw(); show(t.getAttribute(\"data-kbwd-tab\")); return; }\n    /* A button group or a toggle changed an answer: keep the sheet honest. */\n    setTimeout(draw, 0);\n  });\n  document.addEventListener(\"input\", function(){ setTimeout(draw, 0); });\n  document.addEventListener(\"change\", function(){ setTimeout(draw, 0); });\n\n  /* Two steps: the form, and the summary -- the same shape the wizards\n     have, without turning a one-page form into a four-click one. Built\n     here rather than written into fourteen documents, and put where the\n     wizards put theirs: above the form, under the patient strip. */\n  function steps(){\n    var main = document.querySelector(\".main\"), kbwd = $(\"kbwd\");\n    if (!main || !kbwd || document.querySelector(\".kbwd-steps\")) return;\n    var bar = document.createElement(\"div\");\n    bar.className = \"tabs np kbwd-steps\";\n    bar.innerHTML =\n      '<div class=\"tab active\" data-kbwd-step=\"form\"><span class=\"tn\">1</span>' + NAME + ' Record</div>' +\n      '<div class=\"tab\" data-kbwd-step=\"summary\"><span class=\"tn\" style=\"font-size:9px;\">\\u2713</span>Summary</div>';\n    main.parentNode.insertBefore(bar, main);\n    var go = function (which){\n      var tabs = bar.querySelectorAll(\".tab\");\n      for (var i = 0; i < tabs.length; i++)\n        tabs[i].classList.toggle(\"active\", tabs[i].getAttribute(\"data-kbwd-step\") === which);\n      main.style.display = which === \"summary\" ? \"none\" : \"\";\n      kbwd.style.display = which === \"summary\" ? \"block\" : \"none\";\n      if (which === \"summary\") { draw(); show(\"summary\"); }\n      window.scrollTo({ top: 0, behavior: \"smooth\" });\n    };\n    bar.addEventListener(\"click\", function (e){\n      var t = e.target.closest ? e.target.closest(\".tab\") : null;\n      if (t) go(t.getAttribute(\"data-kbwd-step\"));\n    });\n    // The form opens on the form, the way a wizard opens on step 1.\n    go(\"form\");\n  }\n\n  function done(){\n    var box = $(\"kbwdDone\");\n    if (!box) return;\n    box.checked = doneGet();\n    box.addEventListener(\"change\", function(){ doneSet(box.checked); draw(); });\n    /* The tick belongs to the patient in the box, so it follows when that\n       changes rather than staying ticked for the next person. */\n    var id = $(\"pId\");\n    if (id) id.addEventListener(\"change\", function(){ box.checked = doneGet(); draw(); });\n  }\n  function start(){ steps(); done(); draw(); }\n  if (document.readyState === \"loading\") document.addEventListener(\"DOMContentLoaded\", start);\n  else start();\n})();\n<\/script>\n";
 
 // Which form, and the document code its sheet prints in the corner. The code
 // follows the clinic's own KBDC/FORMS/... series.
@@ -19958,7 +19958,7 @@ const KB_FORM_TAIL_FOR = {
 };
 
 // The bridge the step-wizard forms get instead of the markup.
-const KB_FORM_BRIDGE = "<script>\n/* The three implant/crown wizards already carry a Work Done Sheet and a Work\n   Done Summary, but not the same ones RCT carries:\n\n   - their sheet reads ONLY the record already saved to Google Sheets, so a\n     form filled in but not yet saved said \"No work done sheet saved for this\n     patient yet\" while RCT, which reads what is in the form, drew the sheet.\n     Same patient, same moment, two different answers.\n   - their summary is a grid of every field. RCT's is a note that ends in a\n     signature line -- a document somebody can sign and file.\n\n   Their own rich sheet is kept: once a record IS saved it prints a column per\n   visit, which is better than anything built from one screen. This fills only\n   the gap where it had nothing to show, and puts the summary into the shape\n   the clinic chose. */\n(function(){\n  var EMPTY = /No work done sheet saved for this patient yet/;\n  var busy = false;\n  function mine(el, attr){\n    var c = el && el.firstElementChild;\n    return !!(c && c.getAttribute && c.getAttribute(attr) === \"1\");\n  }\n  function fill(){\n    var B = window.kbwdBuild;\n    if (!B || busy) return;\n    busy = true;\n    try {\n      var d = B.scrape(), filled = B.anything(d);\n      var rec = document.getElementById(\"clinRecContent\");\n      /* Replace their empty message, and keep what replaced it up to date.\n         An untouched form keeps THEIR message: \"nothing saved yet\" is the\n         truer thing to say than \"nothing filled in yet\" when the dentist has\n         not typed anything either. */\n      if (rec && filled && (EMPTY.test(rec.textContent || \"\") || mine(rec, \"data-kbwd-sheet\")))\n        rec.innerHTML = '<div data-kbwd-sheet=\"1\">' + B.sheet(d) + '</div>';\n      var sum = document.getElementById(\"summaryContent\");\n      if (sum && !mine(sum, \"data-kbwd-sum\"))\n        sum.innerHTML = '<div data-kbwd-sum=\"1\">' + B.summary(d) + '</div>';\n    } catch (e) { /* the form still works; only its summary would be theirs */ }\n    busy = false;\n  }\n  function redraw(){\n    /* Typing changed an answer, so whatever is on these panes is stale --\n       including the copy this put there. */\n    var sum = document.getElementById(\"summaryContent\");\n    if (sum && mine(sum, \"data-kbwd-sum\")) sum.innerHTML = \"\";\n    setTimeout(fill, 0);\n  }\n  /* The form rewrites both panes whenever a step changes, which removes the\n     marker and is exactly when this needs to run again. */\n  function watch(){\n    var sum = document.getElementById(\"summaryContent\");\n    var rec = document.getElementById(\"clinRecContent\");\n    if (!sum && !rec) return false;\n    var obs = new MutationObserver(function(){ if (!busy) setTimeout(fill, 0); });\n    if (sum) obs.observe(sum, { childList: true });\n    if (rec) obs.observe(rec, { childList: true });\n    return true;\n  }\n  function start(){ if (!watch()) return setTimeout(start, 300); fill(); }\n  if (document.readyState === \"loading\") document.addEventListener(\"DOMContentLoaded\", start);\n  else start();\n  document.addEventListener(\"input\", redraw);\n  document.addEventListener(\"change\", redraw);\n  document.addEventListener(\"click\", function(){ setTimeout(redraw, 0); });\n})();\n<\/script>\n";
+const KB_FORM_BRIDGE = "<script>\n/* The three implant/crown wizards already carry a Work Done Sheet and a Work\n   Done Summary, but not the same ones RCT carries:\n\n   - their sheet reads ONLY the record already saved to Google Sheets, so a\n     form filled in but not yet saved said \"No work done sheet saved for this\n     patient yet\" while RCT, which reads what is in the form, drew the sheet.\n     Same patient, same moment, two different answers.\n   - their summary is a grid of every field. RCT's is a note that ends in a\n     signature line -- a document somebody can sign and file.\n\n   Their own rich sheet is kept: once a record IS saved it prints a column per\n   visit, which is better than anything built from one screen. This fills only\n   the gap where it had nothing to show, and puts the summary into the shape\n   the clinic chose. */\n(function(){\n  var EMPTY = /No work done sheet saved for this patient yet/;\n  var busy = false;\n  function mine(el, attr){\n    var c = el && el.firstElementChild;\n    return !!(c && c.getAttribute && c.getAttribute(attr) === \"1\");\n  }\n  function fill(){\n    var B = window.kbwdBuild;\n    if (!B || busy) return;\n    busy = true;\n    try {\n      var d = B.scrape(), filled = B.anything(d);\n      var rec = document.getElementById(\"clinRecContent\");\n      /* Replace their empty message, and keep what replaced it up to date.\n         An untouched form keeps THEIR message: \"nothing saved yet\" is the\n         truer thing to say than \"nothing filled in yet\" when the dentist has\n         not typed anything either. */\n      if (rec && filled && (EMPTY.test(rec.textContent || \"\") || mine(rec, \"data-kbwd-sheet\")))\n        rec.innerHTML = '<div data-kbwd-sheet=\"1\">' + B.sheet(d) + '</div>';\n      var box = document.getElementById(\"kbwdDone\");\n      d.done = !!(box && box.checked);\n      var sum = document.getElementById(\"summaryContent\");\n      if (sum && !mine(sum, \"data-kbwd-sum\"))\n        sum.innerHTML = '<div data-kbwd-sum=\"1\">' + B.summary(d) + '</div>';\n    } catch (e) { /* the form still works; only its summary would be theirs */ }\n    busy = false;\n  }\n  function redraw(){\n    /* Typing changed an answer, so whatever is on these panes is stale --\n       including the copy this put there. */\n    var sum = document.getElementById(\"summaryContent\");\n    if (sum && mine(sum, \"data-kbwd-sum\")) sum.innerHTML = \"\";\n    setTimeout(fill, 0);\n  }\n  /* The form rewrites both panes whenever a step changes, which removes the\n     marker and is exactly when this needs to run again. */\n  function watch(){\n    var sum = document.getElementById(\"summaryContent\");\n    var rec = document.getElementById(\"clinRecContent\");\n    if (!sum && !rec) return false;\n    var obs = new MutationObserver(function(){ if (!busy) { tick(); setTimeout(fill, 0); } });\n    if (sum) obs.observe(sum, { childList: true });\n    if (rec) obs.observe(rec, { childList: true });\n    return true;\n  }\n  /* RCT's Summary header carries a \"Treatment complete\" tick that writes\n     status: \"complete\" into the saved record. The other three wizards had\n     no such control -- the clinic looked for it and found a different row\n     of buttons. Added here, in their own header, doing the same job. */\n  function tick(){\n    if (document.getElementById(\"kbwdDone\")) return true;\n    var print = document.getElementById(\"printBtn\");\n    if (!print || !print.parentNode) return false;\n    var wrap = document.createElement(\"label\");\n    wrap.className = \"kbwd-done-wrap\";\n    wrap.title = \"Tick when this treatment is finished. It is saved with the record.\";\n    wrap.style.cssText = \"display:flex;align-items:center;gap:6px;font-family:inherit;font-size:12px;\"\n      + \"font-weight:700;color:#047857;background:#fff;border:1.5px solid #047857;border-radius:18px;\"\n      + \"padding:7px 14px;cursor:pointer;\";\n    wrap.innerHTML = '<input type=\"checkbox\" id=\"kbwdDone\" style=\"width:15px;height:15px;cursor:pointer;margin:0;\">Treatment complete';\n    print.parentNode.insertBefore(wrap, print.nextSibling);\n    var box = wrap.querySelector(\"input\");\n    /* Scoped through the app's own lsKey: a blob: URL shares the page's\n       origin, so the two clinics would otherwise share one tick. */\n    var lsKey = function (k){\n      try {\n        if (window.parent && typeof window.parent.lsKey === \"function\") return window.parent.lsKey(k);\n      } catch (e) {}\n      return \"kbdc_\" + k;\n    };\n    var key = function (){\n      var id = document.getElementById(\"pId\");\n      return \"wdDone:\" + (document.title || \"form\") + \":\"\n        + String((id && id.value) || \"\").trim().toUpperCase();\n    };\n    try { box.checked = window.localStorage.getItem(lsKey(key())) === \"1\"; } catch (e) {}\n    box.addEventListener(\"change\", function (){\n      try { window.localStorage.setItem(lsKey(key()), box.checked ? \"1\" : \"0\"); } catch (e) {}\n      var sum = document.getElementById(\"summaryContent\");\n      if (sum) sum.innerHTML = \"\";\n      setTimeout(fill, 0);\n    });\n    return true;\n  }\n\n  /* And it has to reach the record, not just the screen. The form posts its\n     save to the app; the tick is stamped on the way past, the same field RCT\n     writes, so a finished treatment reads as finished wherever it is read. */\n  (function(){\n    var post = window.parent && window.parent.postMessage;\n    if (!post) return;\n    var orig = window.parent.postMessage.bind(window.parent);\n    window.parent.postMessage = function (msg, origin){\n      try {\n        if (msg && msg.type === \"KB_SAVE_CLINICAL_SHEET\" && msg.allTeeth) {\n          var box = document.getElementById(\"kbwdDone\");\n          var st = (box && box.checked) ? \"complete\" : \"open\";\n          msg.allTeeth.status = st;\n          var key = msg.allTeeth.implants ? \"implants\" : (msg.allTeeth.teeth ? \"teeth\" : null);\n          if (key && Array.isArray(msg.allTeeth[key]))\n            msg.allTeeth[key].forEach(function (it){ it.status = st; });\n        }\n      } catch (e) { /* a save must never fail over a tick */ }\n      return orig(msg, origin);\n    };\n  })();\n\n  /* On these three the Summary header's own Print is the sheet print, so it\n     goes the same way. Their Save and Clear stay. */\n  function noPrint(){\n    var el = document.getElementById(\"printBtn\");\n    if (el) el.style.display = \"none\";\n  }\n  function start(){ if (!watch()) return setTimeout(start, 300); tick(); noPrint(); fill(); }\n  if (document.readyState === \"loading\") document.addEventListener(\"DOMContentLoaded\", start);\n  else start();\n  document.addEventListener(\"input\", redraw);\n  document.addEventListener(\"change\", redraw);\n  document.addEventListener(\"click\", function(){ setTimeout(redraw, 0); });\n})();\n<\/script>\n";
 
 // The three wizards whose sheet and summary did not match RCT's. RCT itself
 // is already the shape everything else is being matched to, so it is left
@@ -19969,23 +19969,30 @@ const KB_FORM_BRIDGE_FOR = {
   crown:       ["Crown & Bridge",     "WD-04"]
 };
 
+// Every work-done form gets this, RCT included: it only replaces how a
+// clinical note template's blanks are filled in.
+const KB_FORM_NOTE_FIX = "<script>\n/* What a clinical note template's blanks are filled from.\n *\n * Every form shipped a cnResolveValue() that looked up ONE element by id,\n * through a short alias table written by hand. So {tooth} filled and almost\n * nothing else did: {irrigants} missed because the alias said \"irrigant\",\n * {canals} because no element has that id, {instrument} because the alias\n * pointed at the rotary-system group and the instrument had been recorded\n * somewhere else on the same row. The dentist retyped what was already on\n * the screen a few inches above.\n *\n * This keeps each form's own table -- it encodes real knowledge -- and then\n * does what a person does when the id does not match: reads the LABELS.\n * \"Irrigants Used\" answers {irrigants}, \"No. of Canals\" answers {canals},\n * \"Instrument\" answers {instrument}, in any form, with no table to maintain.\n *\n * Anything still unknown is left blank on purpose. These are editable boxes,\n * and a blank the dentist fills in beats a confident wrong guess inserted\n * into a medico-legal note.\n */\n(function(){\n  var orig = typeof window.cnResolveValue === \"function\" ? window.cnResolveValue : null;\n  function norm(v){ return String(v == null ? \"\" : v).toLowerCase().replace(/[^a-z0-9]+/g, \"\"); }\n  function sing(v){ return v.replace(/s$/, \"\"); }\n\n  /* The answer on a row, however that row takes it. */\n  function valueOf(fc){\n    var out = [], i;\n    var on = fc.querySelectorAll(\".btn.active\");\n    for (i = 0; i < on.length; i++) out.push(on[i].textContent.trim());\n    var f = fc.querySelectorAll(\"input,select,textarea\");\n    for (i = 0; i < f.length; i++){\n      var el = f[i];\n      if (el.type === \"button\" || el.type === \"submit\") continue;\n      if (el.type === \"checkbox\" || el.type === \"radio\") { if (el.checked) out.push(el.value || \"Yes\"); continue; }\n      var v = String(el.value || \"\").trim();\n      if (v) out.push(v);\n    }\n    return out.filter(function(v, i2, a){ return v && a.indexOf(v) === i2; }).join(\", \");\n  }\n\n  /* How well a row's label answers a token. Exact first, then the same word\n     singular or plural, then a label that contains the word -- \"Irrigants\n     Used\" for {irrigants} -- preferring the shortest such label, because a\n     longer one is usually a different question that happens to share a word. */\n  function score(label, tok){\n    var L = norm(label), T = norm(tok);\n    if (!L || !T) return 0;\n    if (L === T) return 100;\n    if (sing(L) === sing(T)) return 90;\n    if (sing(T).length >= 3 && L.indexOf(sing(T)) >= 0)\n      return Math.max(40, 70 - Math.max(0, L.length - T.length));\n    return 0;\n  }\n\n  function byLabel(tok){\n    var rows = document.querySelectorAll(\".fr\"), best = null, bestScore = 0;\n    for (var i = 0; i < rows.length; i++){\n      var fl = rows[i].querySelector(\".fl\"), fc = rows[i].querySelector(\".fc\");\n      if (!fl || !fc) continue;\n      var label = fl.textContent.replace(/\\*+\\s*$/, \"\").trim();\n      /* The template picker is a control, not an answer about the patient. */\n      if (/insert .*template/i.test(label)) continue;\n      var sc = score(label, tok);\n      if (sc > bestScore) { bestScore = sc; best = fc; }\n    }\n    return (best && bestScore >= 40) ? valueOf(best) : \"\";\n  }\n\n  /* The per-canal table on the RCT form is a table, not a row, so no label\n     reaches it -- and it holds the three things an endodontic note is mostly\n     made of. Read straight off the inputs it builds. */\n  function fromCanals(tok){\n    var raw = norm(tok), t = sing(raw);\n    var wl = document.querySelectorAll('[id^=\"wl_\"]');\n    if (!wl.length) return \"\";\n    var names = [], lengths = [], files = [];\n    for (var i = 0; i < wl.length; i++){\n      var canal = wl[i].id.slice(3);\n      if (!canal) continue;\n      names.push(canal);\n      var mm = String(wl[i].value || \"\").trim();\n      if (mm) lengths.push(canal + \" \" + mm + \"mm\");\n      var sg = document.getElementById(\"sG_\" + canal);\n      if (sg){\n        var on = sg.querySelectorAll(\".btn.active\"), seq = [];\n        for (var j = 0; j < on.length; j++) seq.push(on[j].textContent.trim());\n        if (seq.length) files.push(canal + \" \" + seq.join(\"/\"));\n      }\n    }\n    /* \"{canals} located\" wants the count the printed sheet shows -- 3 (MB,\n       ML, DB) -- while \"{Canal}= ({WL}/{MAF})\" wants the canals themselves.\n       Checked before the plural is stripped, or the two collapse into one. */\n    if (raw === \"canals\" || raw === \"noofcanals\")\n      return names.length + \" (\" + names.join(\", \") + \")\";\n    if (t === \"canal\") return names.join(\", \");\n    if (t === \"wl\" || t === \"workinglength\") return lengths.join(\", \");\n    if (t === \"size\" || t === \"maf\" || t === \"filesequence\" || t === \"file\") return files.join(\", \");\n    return \"\";\n  }\n\n  /* A form's Summary is for looking at what has been entered. The work done\n     sheet is printed from Clinical Records -> Work Done Sheet, where all\n     eighteen sit beside the forms -- one place that prints, rather than a\n     button on every form printing a slightly different thing.\n\n     By id, so only the sheet prints go: the single-page forms' own \"Print\"\n     prints the form they are on, which is a different thing and stays. */\n  (function(){\n    function hide(){\n      /* printBtn too, now. On a single-page form that is the \"Print\" that\n         prints the data-entry screen; on the three wizards it is the sheet\n         print the bridge also hides. Printing happens in one place:\n         Clinical Records -> Work Done Sheet.\n\n         The prescription pad also has a printBtn and keeps it -- it is not\n         built through this injector, which is the whole reason this can be\n         done by id without taking the pad's Print with it. */\n      [\"printClin\", \"printLet\", \"printBtn\"].forEach(function(id){\n        var el = document.getElementById(id);\n        if (el) el.style.display = \"none\";\n      });\n    }\n    if (document.readyState === \"loading\") document.addEventListener(\"DOMContentLoaded\", hide);\n    else hide();\n    setTimeout(hide, 600);\n  })();\n\n  /* WHO IS IN THE DOCTOR BOX.\n   *\n   * Each form ships a Treating Doctor control with names typed into its own\n   * markup -- one form has a single name in it, another has two. The\n   * app sends the real list from Master and the form replaces them. When the\n   * list never arrives, the form keeps the typed-in names and says nothing,\n   * so the box looks answered and every record is signed by whoever was\n   * written into the file years ago.\n   *\n   * It cannot be made to arrive from in here. It can be made to stop looking\n   * like an answer. */\n  (function(){\n    var arrived = false;\n    var wrap = function(){\n      var orig = window.applyMasterDoctors;\n      if (typeof orig !== \"function\") return false;\n      window.applyMasterDoctors = function(list, selected){\n        if (list && list.length) arrived = true;\n        return orig.apply(this, arguments);\n      };\n      return true;\n    };\n    if (!wrap()) {\n      var tries = 0;\n      var t = setInterval(function(){ if (wrap() || ++tries > 40) clearInterval(t); }, 250);\n    }\n    setTimeout(function(){\n      if (arrived) return;\n      var el = document.getElementById(\"pDoc\");\n      if (!el || document.getElementById(\"kbwdDocWarn\")) return;\n      var note = document.createElement(\"div\");\n      note.id = \"kbwdDocWarn\";\n      note.style.cssText = \"font-size:11px;font-weight:700;color:#a12e2e;margin-top:3px;max-width:220px;line-height:1.35;\";\n      note.textContent = \"\\u26A0 Master's doctor list did not load \\u2014 these are the form's built-in names. Check before saving.\";\n      if (el.parentNode) el.parentNode.appendChild(note);\n    }, 12000);\n  })();\n\n  window.cnResolveValue = function(tok){\n    var v = \"\";\n    try { if (orig) v = String(orig(tok) || \"\").trim(); } catch (e) { v = \"\"; }\n    if (v) return v;\n    try { v = fromCanals(tok); if (v) return v; } catch (e) {}\n    try { v = byLabel(tok); if (v) return v; } catch (e) {}\n    return \"\";\n  };\n})();\n<\/script>\n";
+
 // Puts the tail in front of </body>, so it is the last thing on the page --
 // under the form, where the RCT summary sits.
 function kbFormWithTail(html, formId) {
   const wizard = KB_FORM_BRIDGE_FOR[formId];
   const cfg = wizard || KB_FORM_TAIL_FOR[formId];
-  if (!cfg) return html;
-  // A wizard gets the engine without the markup, plus the bridge onto the
-  // panes it already has. Everything else gets the whole tail.
-  const whole = KB_FORM_TAIL
-    .split("__KBWD_NAME__").join(cfg[0])
-    .split("__KBWD_CODE__").join(cfg[1])
-    .split("__KBWD_LOGO__").join((typeof window !== "undefined" && window.LOGO_B64) || "");
-  const tail = wizard
-    ? whole.slice(whole.indexOf("<script>")) + KB_FORM_BRIDGE
-    : whole;
+  // Every form gets the note-template fix, RCT included -- RCT needs no tail
+  // (it has the one the others were matched to) but its template blanks were
+  // left just as empty as everyone else's.
+  let add = KB_FORM_NOTE_FIX;
+  if (cfg) {
+    // A wizard gets the engine without the markup, plus the bridge onto the
+    // panes it already has. Everything else gets the whole tail.
+    const whole = KB_FORM_TAIL
+      .split("__KBWD_NAME__").join(cfg[0])
+      .split("__KBWD_CODE__").join(cfg[1])
+      .split("__KBWD_LOGO__").join((typeof window !== "undefined" && window.LOGO_B64) || "");
+    add = (wizard ? whole.slice(whole.indexOf("<script>")) + KB_FORM_BRIDGE : whole) + add;
+  }
   const at = html.lastIndexOf("</body>");
-  return at < 0 ? html + tail : html.slice(0, at) + tail + html.slice(at);
+  return at < 0 ? html + add : html.slice(0, at) + add + html.slice(at);
 }
 
 function b64decode(b64) {
@@ -23349,7 +23356,7 @@ const CROWN_BRIDGE_B64 =
 var _rctFormBlobUrl = null;
 function getRCTFormUrl() {
   if (!_rctFormBlobUrl) {
-    var blob = new Blob([b64decode(RCT_FORM_B64)], {type:'text/html'});
+    var blob = new Blob([kbFormWithTail(b64decode(RCT_FORM_B64), "rct")], {type:'text/html'});
     _rctFormBlobUrl = URL.createObjectURL(blob);
   }
   return _rctFormBlobUrl;
@@ -27539,6 +27546,88 @@ function csRecordFromSheetRows(formId, rows, pat) {
   return { ...top, [itemsKey]: items, __fromSheetTab: tabCfg.tab };
 }
 
+// The forms announce themselves by sheet type, which is what the Clinical
+// Sheets row is keyed on. Everything else here is keyed by form id.
+const CS_FORM_BY_SHEET_TYPE = {
+  "RCT": "rct",
+  "Implant Surgery": "imp_surgery",
+  "Implant Prosthetic": "imp_prosth",
+  "Crown Bridge": "crown"
+};
+
+// ── The record, written back out in columns a person can read ───────────
+// csRecordFromSheetRows above turns the clinic's flat rows INTO a record.
+// This goes the other way, and exists because the four wizard forms save
+// only as JSON: one row per patient in a Clinical Sheets tab, holding the
+// whole course of treatment in a single cell. The clinic opens the "RCT"
+// tab, sees the columns it set up, and finds nothing new in them -- the
+// work is saved, but in a form nobody can read.
+//
+// One row per VISIT, the same unit the printed sheet gives a column to.
+// Keyed by label, not by position, so the backend can match them to
+// whatever header that tab actually has.
+function csFlatRowsFromRecord(formId, rec) {
+  const cfg = CS_FORM_CONFIG[formId];
+  const tabCfg = CS_RECORD_TAB[formId];
+  if (!cfg || !tabCfg || !rec) return null;
+  const itemsKey = cfg.itemsKey || (cfg.mode === "entries" ? "entries" : null);
+  if (!itemsKey) return null;
+  const idField = CS_ITEM_ID_FIELD[itemsKey] || "tooth";
+  const items = Array.isArray(rec[itemsKey]) ? rec[itemsKey] : [];
+  const put = (row, label, val) => {
+    if (!label) return;
+    if (val === undefined || val === null) return;
+    const v = String(val).trim();
+    if (!v || v === "\u2014") return;
+    row[label] = v;
+  };
+  const rows = [];
+  items.forEach(it => {
+    // An earlier course on the same tooth is its own set of visits, exactly
+    // as the printed sheet gives it its own columns: a retreatment must not
+    // read as part of the original course.
+    const courses = (it.past || []).concat([it]);
+    courses.forEach(course => {
+      const log = (course.visits && course.visits.length) ? course.visits : [course];
+      log.forEach(v => {
+        const flat = {};
+        Object.keys(course).forEach(k => { if (k !== "visits" && k !== "past") flat[k] = course[k]; });
+        Object.keys(v).forEach(k => { if (k !== "visits" && k !== "past") flat[k] = v[k]; });
+        const row = {};
+        put(row, "UHID", rec.pId);
+        put(row, "Patient Name", rec.pName);
+        put(row, "Age", rec.age);
+        put(row, "Gender", rec.gender);
+        put(row, "Doctor", v.doctor || course.doctor || rec.doctor);
+        put(row, tabCfg.col, flat[idField]);
+        put(row, tabCfg.date, flat.date);
+        [...(cfg.fields || []), ...(cfg.itemFields || [])]
+          .forEach(([k, l]) => put(row, l, flat[k]));
+        // The case-wide answers belong on every one of its visits: a row
+        // that carries only what changed that day cannot be read on its own.
+        (cfg.topFields || []).forEach(([k, l]) => put(row, l, rec[k]));
+        // RCT keeps a length per canal, as an object. Flattened, or the
+        // column that matters most on an endodontic record stays empty.
+        if (cfg.wlKey && flat[cfg.wlKey] && typeof flat[cfg.wlKey] === "object") {
+          const wl = Object.keys(flat[cfg.wlKey])
+            .map(c => c + ": " + flat[cfg.wlKey][c])
+            .filter(x => !/:\s*$/.test(x)).join(" | ");
+          put(row, "Length Determination", wl);
+        }
+        // UHID, name, age and gender alone say nothing happened that day.
+        if (Object.keys(row).length > 4) rows.push(row);
+      });
+    });
+  });
+  if (!rows.length) return null;
+  // What makes two rows the same visit, so a re-save corrects its row
+  // instead of adding another. Every save re-sends the whole record.
+  const keyColumns = ["UHID"];
+  if (tabCfg.date) keyColumns.push(tabCfg.date);
+  if (tabCfg.col) keyColumns.push(tabCfg.col);
+  return { tabName: tabCfg.tab, rows: rows, keyColumns: keyColumns };
+}
+
 // ── Read-only saved-record viewer for RCT/Implant Surgery/Implant Prosthetic/Crown & Bridge ──
 function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
   const [loading, setLoading] = React.useState(true);
@@ -28747,6 +28836,71 @@ function ImplantBrandListEditor({ items, onAdd, onRemove, onEdit }) {
 // Both live here rather than in Code.gs because that file is pasted into
 // two script editors by hand. Each is a STARTING point: written to its
 // sheet on the button, and the sheet is the truth afterwards.
+// ── What the clinic examines ────────────────────────────────────────────
+// The Care Plan's examination was seventeen findings written into the page.
+// This is the same seventeen, in the same order, under the same keys -- the
+// starting point for a list the clinic owns rather than asks for.
+//
+// kind is how a finding is answered:
+//   "healthy"  Healthy, or an observation written instead  (Jaw Joints)
+//   "present"  Present, with a note of where             (Swelling)
+//
+// key is what a saved care plan stores the answer under. It is fixed when a
+// finding is created and a rename never touches it: a plan saved three
+// years ago must still read back.
+const CLINICAL_EXAM_SEED = [
+  ["Extra-Oral Check", "Jaw Joints",          "healthy", "jawJoints"],
+  ["Extra-Oral Check", "Lymph Nodes",         "healthy", "lymphNodes"],
+  ["Extra-Oral Check", "Swelling",            "present", "swelling"],
+  ["Extra-Oral Check", "Lip Competency",      "present", "lipCompetency"],
+  ["Extra-Oral Check", "Facial Asymmetry",    "present", "facialAsymmetry"],
+  ["Intra-Oral Check", "Tongue",              "healthy", "tongue"],
+  ["Intra-Oral Check", "Palate",              "healthy", "palate"],
+  ["Intra-Oral Check", "Floor of Mouth",      "healthy", "floorMouth"],
+  ["Intra-Oral Check", "Buccal Mucosa",       "healthy", "buccalMucosa"],
+  ["Gum Assessment",   "Bleeding on Probing", "present", "bleedingProbing"],
+  ["Gum Assessment",   "Gum Recession",       "present", "gumRecession"],
+  ["Gum Assessment",   "Furcation",           "present", "furcation"],
+  ["Gum Assessment",   "Mobility",            "present", "mobility"],
+  ["Wasting Disease",  "Abrasion",            "present", "abrasion"],
+  ["Wasting Disease",  "Attrition",           "present", "attrition"],
+  ["Wasting Disease",  "Abfraction",          "present", "abfraction"],
+  ["Wasting Disease",  "Erosion",             "present", "erosion"],
+  ["Parafunctional Habits", "Parafunctional",   "present", "parafunctional"],
+  ["Investigations Required", "IOPA",                "check", "iopa"],
+  ["Investigations Required", "OPG",                 "check", "opg"],
+  ["Investigations Required", "Lateral Cephalogram", "check", "latCeph"],
+  ["Investigations Required", "Digital Scan",        "check", "digScan"],
+  ["Investigations Required", "MRI",                 "check", "mri"],
+  ["Investigations Required", "T-Scan",              "check", "tScan"],
+  ["Investigations Required", "CBCT",                "check", "cbct"],
+  ["Investigations Required", "Intra Oral Pics",     "check", "intraOralPics"],
+  ["Investigations Required", "Extra Oral Pics",     "check", "extraOralPics"],
+  ["Post Radiograph Findings", "RCT",            "text", "rct"],
+  ["Post Radiograph Findings", "Implants",       "text", "implants"],
+  ["Post Radiograph Findings", "Shade of Teeth", "text", "shadeOfTeeth"]
+];
+// How a finding is answered. The first two are the examination proper; the
+// other two are the lists beside it -- what to investigate, and what the
+// radiograph showed -- which are the same kind of thing: a list the clinic
+// keeps, that was written into the page.
+const CLINICAL_EXAM_KINDS = [
+  ["healthy", "Healthy, or an observation"],
+  ["present", "Present, with a note"],
+  ["check",   "A tick, nothing to write"],
+  ["text",    "A line of text"]
+];
+// A finding the clinic adds needs a key of its own that will not collide
+// with one already in a saved plan, and will not change when it is renamed.
+function clinicalExamKey(finding, taken) {
+  const base = String(finding || "").trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ").trim().split(" ")
+    .map((w, i) => i ? w.charAt(0).toUpperCase() + w.slice(1) : w).join("") || "finding";
+  let k = base, n = 2;
+  while (taken && taken.indexOf(k) >= 0) k = base + n++;
+  return k;
+}
+
 const CLINICAL_NOTE_TEMPLATE_SEED = [
   ["RCT", "Access Opening", "Access opening done wrt {tooth} [under {LA}] [& {isolation} isolation]. {Pulp status} pulp extirpated, {canals} located.", "Access opening done wrt {tooth} under {anaesthesia} [and {isolation} isolation]. {Pulp status} pulp extirpated, {canals} [{configuration}] located. [Irrigated with {irrigants}.]"],
   ["RCT", "Working Length", "WL determined wrt {tooth} using {method}, {Canal}= ({WL}mm, {ref}) & \u2026. [{Dressing} placed.] [IOPA taken.]", "Working length determined wrt {tooth} using {method}, {Canal}= ({WL}mm, {reference}, IAF {size}) & \u2026. [{Dressing} placed.] [IOPA taken.]"],
@@ -29596,6 +29750,120 @@ function kbClinGroup(list, keyOf) {
     (groups[k] = groups[k] || []).push(x);
   });
   return { groups: groups, order: Object.keys(groups).sort() };
+}
+
+// ── Master → Clinical Configuration → Examination ──────────────────────
+// The findings the Care Plan asks about, and which section each sits under.
+// The Care Plan draws its examination from this, so a finding added here
+// appears on the next care plan and on its printed page.
+//
+// A finding's KEY is what a saved plan stores its answer under. It is set
+// when the finding is created and a rename never touches it, so renaming
+// "Swelling" to "Swelling / Oedema" relabels every plan rather than losing
+// the answers under the old name.
+function ClinicalExaminationEditor({ rows, onSave, saving, seed }) {
+  const txt = KB_CLIN_TXT;
+  const blank = { section:"", finding:"", kind:"present", key:"" };
+  const [form, setForm] = React.useState(blank);
+  const [editing, setEditing] = React.useState(null);
+  const [draft, setDraft] = React.useState(blank);
+
+  const all = rows || [];
+  if (!all.length) return React.createElement(KbClinEmpty, {
+    what: "No examination findings yet",
+    detail: "The Care Plan asks about seventeen findings across four sections. " +
+            "Load them here and they become yours to add to, rename and reorder.",
+    label: "Load the clinic's seventeen findings",
+    saving: saving,
+    onLoad: () => onSave(seed.map(r => ({ section:r[0], finding:r[1], kind:r[2], key:r[3] })))
+  });
+
+  const sections = [];
+  all.forEach(r => { const s2 = txt(r.section) || "Uncategorized";
+    if (sections.indexOf(s2) < 0) sections.push(s2); });
+  const { groups } = kbClinGroup(all, r => txt(r.section));
+  // In the clinic's own order, not alphabetical: an examination runs
+  // outside the mouth before inside it.
+  const order = sections;
+
+  const kindLabel = (k) => (CLINICAL_EXAM_KINDS.find(x => x[0] === k) || CLINICAL_EXAM_KINDS[1])[1];
+
+  const fld = (value, onChange, placeholder, opts) => React.createElement("input", {
+    value: value, onChange: e => onChange(e.target.value), placeholder: placeholder,
+    list: opts, style:{ ...inp, width:"100%" } });
+  const kindPick = (value, onChange) => React.createElement("select", {
+    value: value, onChange: e => onChange(e.target.value), style:{ ...inp, width:"100%" } },
+    CLINICAL_EXAM_KINDS.map(([v, l]) => React.createElement("option", { key:v, value:v }, l)));
+
+  const editor = (state, set, commit, cancel, label) => React.createElement("div", {
+    style:{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr auto", gap:8, alignItems:"center" } },
+    fld(state.section, v => set({ ...state, section:v }), "Section", "kbExamSections"),
+    fld(state.finding, v => set({ ...state, finding:v }), "Finding"),
+    kindPick(state.kind, v => set({ ...state, kind:v })),
+    React.createElement("div", { style:{ display:"flex", gap:8 } },
+      React.createElement("button", { onClick: commit, disabled: saving,
+        style:{ padding:"8px 16px", fontSize:13, fontWeight:700, border:"none", borderRadius:7,
+          cursor: saving ? "not-allowed" : "pointer", background: saving ? "#e3e3e3" : T,
+          color: saving ? "#444444" : "#fff" } }, saving ? "Saving…" : label),
+      cancel && React.createElement("button", { onClick: cancel,
+        style:{ padding:"8px 14px", fontSize:13, border:`1px solid ${BORDER}`, borderRadius:7,
+          cursor:"pointer", background:"#fff", color:"#2e2e2e" } }, "Cancel")));
+
+  const add = () => {
+    const finding = txt(form.finding).trim();
+    if (!finding) return;
+    const taken = all.map(r => txt(r.key));
+    onSave(all.concat([{ section: txt(form.section).trim() || "Other",
+      finding: finding, kind: form.kind || "present",
+      key: clinicalExamKey(finding, taken) }]));
+    setForm(blank);
+  };
+  const commitEdit = (i) => {
+    const finding = txt(draft.finding).trim();
+    if (!finding) return;
+    // The key is carried over untouched: a rename must not orphan the
+    // answers already saved against this finding.
+    onSave(all.map((r, n) => n === i
+      ? { section: txt(draft.section).trim() || "Other", finding: finding,
+          kind: draft.kind || "present", key: txt(r.key) || clinicalExamKey(finding, all.map(x => txt(x.key))) }
+      : r));
+    setEditing(null);
+  };
+
+  return React.createElement("div", null,
+    React.createElement("datalist", { id:"kbExamSections" },
+      sections.map(s2 => React.createElement("option", { key:s2, value:s2 }))),
+    React.createElement("div", { style:{ fontSize:13, color:"#444444", marginBottom:12, lineHeight:1.6, maxWidth:720 } },
+      "What the Care Plan asks about. A finding added here is on the next care plan and on its printed page. ",
+      React.createElement("b", null, "Healthy, or an observation"),
+      " gives a Healthy tick with a box to write what was seen instead; ",
+      React.createElement("b", null, "Present, with a note"),
+      " gives a Present tick with a box for where."),
+    React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:9,
+      padding:"12px 14px", marginBottom:18 } },
+      React.createElement("div", { style:{ fontSize:12, fontWeight:700, color:"#444444",
+        textTransform:"uppercase", letterSpacing:"0.04em", marginBottom:8 } }, "Add a finding"),
+      editor(form, setForm, add, null, "Add")),
+    React.createElement(KbClinGroups, { groups: groups, order: order,
+      render: (r) => {
+        const i = all.indexOf(r);
+        return React.createElement("div", { key: txt(r.key) || i,
+          style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:9, padding:"10px 13px" } },
+          editing === i
+            ? editor(draft, setDraft, () => commitEdit(i), () => setEditing(null), "Save")
+            : React.createElement("div", { style:{ display:"flex", alignItems:"baseline", gap:12 } },
+                React.createElement("div", { style:{ fontSize:13.5, fontWeight:700 } }, txt(r.finding)),
+                React.createElement("div", { style:{ fontSize:12.5, color:"#5a5a5a" } }, kindLabel(txt(r.kind))),
+                React.createElement(KbClinRowBtns, {
+                  onEdit: () => { setDraft({ section:txt(r.section), finding:txt(r.finding),
+                    kind:txt(r.kind) || "present", key:txt(r.key) }); setEditing(i); },
+                  onRemove: () => {
+                    if (!window.confirm("Remove \u201c" + txt(r.finding) + "\u201d from the examination?\n\n" +
+                      "Care plans already saved keep their answer; it simply stops being asked.")) return;
+                    onSave(all.filter((_, n) => n !== i));
+                  }
+                })));
+      } }));
 }
 
 // ── Master → Clinical Configuration → Clinical Note Templates ───────────
@@ -30742,7 +31010,7 @@ const MASTER_STRUCTURE = [
     { id:"departments",     label:"Departments" },
     // Held open, with nothing under it yet. A subtab marked this way says
     // so on its own page instead of opening blank.
-    { id:"examination",     label:"Examination", placeholder:true },
+    { id:"examination",     label:"Examination" },
     { id:"medInstructions", label:"Patient Instructions" },
     { id:"medNotes",        label:"Post op instructions" },
     { id:"implantBrands",   label:"Implant Brands & Sizes" }
@@ -32014,6 +32282,7 @@ function Master() {
   const [notePlan, setNotePlan] = React.useState([]);
   const [noteTemplates, setNoteTemplates] = React.useState([]);
   const [clinDepts, setClinDepts] = React.useState([]);
+  const [examFindings, setExamFindings] = React.useState([]);
   const [medicines, setMedicines] = React.useState([]);
   const [medDosages, setMedDosages] = React.useState([]);
   const [medFrequencies, setMedFrequencies] = React.useState([]);
@@ -32053,8 +32322,8 @@ function Master() {
       "getImplantBrandsList", "getPanelsList", "getWorkingDays", "getClinicTimings",
       "getSafetyFlagsList", "getOccupationsList",
       "getReferralSourcesList", "getPatientTypesList", "getClinicalNotePlan",
-      "getClinicalNoteTemplateLib", "getClinicalDepartmentsList"
-    ]).then(([t,d,e,c,m,tpl,ch,med,dos,freq,dur,instr,mn,ar,cp,dc,pl,ib,pnl,wd,ct,sf,oc,rs,pt,np,ntl,cd]) => {
+      "getClinicalNoteTemplateLib", "getClinicalDepartmentsList", "getClinicalExaminationList"
+    ]).then(([t,d,e,c,m,tpl,ch,med,dos,freq,dur,instr,mn,ar,cp,dc,pl,ib,pnl,wd,ct,sf,oc,rs,pt,np,ntl,cd,ex]) => {
       setLoading(false);
       if (t.success) setTreatments(t.treatments || []);
       // An older backend without this list simply leaves it empty, and the
@@ -32075,6 +32344,9 @@ function Master() {
       // A backend without this list leaves it empty, and the dropdowns fall
       // back to the built-in departments until it is saved.
       if (cd && cd.success) setClinDepts(cd.departments || []);
+      // An older backend without this list leaves it empty, and the Care
+      // Plan keeps the seventeen findings it was built with.
+      if (ex && ex.success) setExamFindings(ex.findings || []);
       if (ch.success) setChairsList(ch.chairs || []);
       if (med.success) setMedicines(med.medicines || []);
       if (dos.success) setMedDosages(dos.dosages || []);
@@ -32143,6 +32415,7 @@ function Master() {
   const saveNotePlan = (arr) => persist("saveClinicalNotePlan", { rows: JSON.stringify(arr) }, arr, setNotePlan, notePlan);
   const saveNoteTemplates = (arr) => persist("saveClinicalNoteTemplateLib", { rows: JSON.stringify(arr) }, arr, setNoteTemplates, noteTemplates);
   const saveClinDepts = (arr) => persist("saveClinicalDepartmentsList", { departments: JSON.stringify(arr) }, arr, setClinDepts, clinDepts);
+  const saveExamFindings = (arr) => persist("saveClinicalExaminationList", { findings: JSON.stringify(arr) }, arr, setExamFindings, examFindings);
   const saveChairs = (arr) => persist("saveChairsList", { chairs: JSON.stringify(arr) }, arr, setChairsList, chairsList);
   const saveMedicines = (arr) => persist("saveMedicinesMaster", { medicines: JSON.stringify(arr) }, arr, setMedicines, medicines);
   const saveImplantBrands = (arr) => persist("saveImplantBrandsList", { brands: JSON.stringify(arr) }, arr, setImplantBrands, implantBrands);
@@ -32265,6 +32538,12 @@ function Master() {
     }),
     // The name is the key in three places -- the templates, both plans and
     // each form's own definition -- so this does more than add a word.
+    // What the Care Plan asks about. The Care Plan reads the same list, so
+    // a finding added here is on the next examination and on its printout.
+    examination: () => React.createElement(ClinicalExaminationEditor, {
+      rows: examFindings, onSave: saveExamFindings, saving: loading,
+      seed: CLINICAL_EXAM_SEED
+    }),
     departments: () => React.createElement(ClinicalDepartmentEditor, {
       departments: clinDepts, templates: noteTemplates, plan: notePlan,
       builtIn: CLINICAL_TEMPLATE_CATEGORIES, saving: loading,
@@ -32486,6 +32765,18 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
   const [activeForm, setActiveForm] = React.useState(null);
   const [uhidInput, setUhidInput] = React.useState("");
   const [pendingForm, setPendingForm] = React.useState(null);
+  // Which form's work done sheet is open under the Work Done Sheet tab. The
+  // sheets used to be reachable only from inside a form, on its Summary; they
+  // are documents about the patient, so they belong beside the forms rather
+  // than inside them.
+  const [sheetFor, setSheetFor] = React.useState(null);
+  // "sheet" is the work done sheet; "teeth" the tooth-by-tooth report, for
+  // the six forms that keep their records per site.
+  const [sheetView, setSheetView] = React.useState("sheet");
+  // The one-off that fills the clinic's own tabs from the records saved
+  // before anything wrote flat rows. Held here rather than in a component of
+  // its own so that leaving the tab mid-run does not lose the report.
+  const [backfill, setBackfill] = React.useState(null);
   const [notFound, setNotFound] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const iframeRef = React.useRef(null);
@@ -32569,7 +32860,6 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
         gender: pat.gender || "",
         doctor: getDoctors()[0] || ""
       }, "*");
-      sendDoctorsToForm(pat.uhid || "");
     }
   };
 
@@ -32743,7 +33033,18 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
     if (globalPat && globalPat.uhid) {
       await openForm(formId, globalPat);
     } else {
-      setPendingForm(formId);
+      setPendingForm({ id: formId, open: "form" });
+      setUhidInput("");
+      setNotFound(false);
+    }
+  };
+
+  // The same card, opening the sheet instead of the form. A sheet is about a
+  // patient, so it asks for one the same way a form does.
+  const handleSheetCardClick = (formId) => {
+    if (globalPat && globalPat.uhid) { setSheetView("sheet"); setSheetFor(formId); }
+    else {
+      setPendingForm({ id: formId, open: "sheet" });
       setUhidInput("");
       setNotFound(false);
     }
@@ -32758,7 +33059,9 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
     if (res.success && res.patient) {
       const pat = { ...res.patient, uhid, name: res.patient["Full Name"] || res.patient.name || uhid };
       setGlobalPat(pat);
-      openForm(pendingForm, pat);
+      const want = pendingForm && typeof pendingForm === "object" ? pendingForm : { id: pendingForm, open: "form" };
+      if (want.open === "sheet") setSheetFor(want.id);
+      else openForm(want.id, pat);
       setPendingForm(null);
     } else {
       setNotFound(true);
@@ -32836,7 +33139,17 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
               src: form ? form.getUrl() : "",
               style:{ width:"100%", flex:1, border:"none", display:"block" },
               title: form ? form.subtitle : "",
-              onLoad: () => { if (globalPat && globalPat.uhid) { sendPatientToForm(globalPat); sendRecordToForm(form.id, globalPat); } sendTemplatesToForm(); }
+              // The doctors are sent whether or not a patient is loaded.
+              // They used to be pushed from inside sendPatientToForm, which
+              // returns early with no patient -- so a form opened blank, or
+              // opened before a patient was picked, never got the master
+              // list and kept the one or two names in its own markup. Who
+              // works at the clinic does not depend on who is in the chair.
+              onLoad: () => {
+                if (globalPat && globalPat.uhid) { sendPatientToForm(globalPat); sendRecordToForm(form.id, globalPat); }
+                sendDoctorsToForm((globalPat && globalPat.uhid) || "");
+                sendTemplatesToForm();
+              }
             })
       );
     }
@@ -32910,7 +33223,12 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
 
   // UHID prompt — no active patient
   if (pendingForm) {
-    const form = FORMS.find(f => f.id === pendingForm);
+    // pendingForm became { id, open } when the sheets started using this same
+    // box. Matching it against f.id found nothing, so the prompt lost the
+    // icon and the name of whatever had been clicked and came up as a bare
+    // clipboard over a page with everything else hidden behind it.
+    const form = FORMS.find(f => f.id === (pendingForm.id || pendingForm));
+    const wantsSheet = pendingForm.open === "sheet";
     return React.createElement("div", null,
       React.createElement(ClinicHeader, null),
       React.createElement("div", {
@@ -32921,10 +33239,17 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
           form ? form.label.split(" ")[0] : "📋"
         ),
         React.createElement("div", { style:{ fontSize:15, fontWeight:700, textAlign:"center", marginBottom:4 } },
-          form ? form.label.slice(form.label.indexOf(" ")+1) : ""
+          (form ? form.label.slice(form.label.indexOf(" ")+1) : "")
+            + (wantsSheet ? " \u2014 Work Done Sheet" : "")
         ),
         React.createElement("div", { style:{ fontSize:13, color:"#444444", textAlign:"center", marginBottom:24 } },
-          "Enter patient UHID to auto-fill, or open blank"
+          // The same box asks for a patient whether a form or a sheet was
+          // picked, and the two want different things said. A form can be
+          // opened blank and filled in; a work done sheet is a reading of
+          // one patient's record, so there is nothing to open blank.
+          wantsSheet
+            ? "Enter patient UHID to open the work done sheet"
+            : "Enter patient UHID to auto-fill, or open blank"
         ),
         React.createElement("div", { style:{ marginBottom:14 } },
           React.createElement("label", {
@@ -32951,8 +33276,10 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
           )
         ),
         React.createElement("div", { style:{ display:"flex", gap:8 } },
-          React.createElement("button", {
-            onClick: () => { openForm(pendingForm, null); setPendingForm(null); },
+          // Offered for a form only: a blank sheet would be a letterhead with
+          // nobody's name on it and no record under it.
+          wantsSheet ? null : React.createElement("button", {
+            onClick: () => { openForm(pendingForm && pendingForm.id, null); setPendingForm(null); },
             style:{ flex:1, padding:"9px", fontSize:13, fontWeight:600, border:`1px solid ${BORDER}`,
               borderRadius:8, cursor:"pointer", background:"#fff", color:"#2e2e2e" }
           }, "Open Blank Form"),
@@ -32967,6 +33294,67 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
   }
 
   // Hub view
+  // ── History into the sheet tabs ──────────────────────────────────────
+  // The four wizard forms save as one cell of JSON per patient, and only
+  // since 11 Nov 2026 do they ALSO write each visit out flat into the tab the
+  // clinic reads. Everything saved before that is whole and unreadable: the
+  // "RCT" tab shows new visits and none of the history.
+  //
+  // This walks those records and projects each one through
+  // csFlatRowsFromRecord -- the same function a save uses, not a second copy
+  // of the rules -- then sends the rows to appendClinicalRecordRows, which is
+  // idempotent on UHID, visit date and site. So a visit already written is
+  // corrected rather than repeated, and the whole thing is safe to run twice.
+  const runBackfill = async () => {
+    const lines = [];
+    setBackfill({ running: true, lines: [], note: "Starting\u2026" });
+    for (const [sheetType, formId] of Object.entries(CS_FORM_BY_SHEET_TYPE)) {
+      const tab = (CS_RECORD_TAB[formId] || {}).tab || sheetType;
+      let offset = 0, seen = 0, rows = 0, fixed = 0, nothing = 0, failed = 0, total = null, stop = "";
+      // A guard, not a limit: paging stops on next === null. This only keeps
+      // a backend that answered oddly from looping the browser forever.
+      for (let page = 0; page < 500; page++) {
+        let res;
+        try { res = await api("listClinicalSheetRecords", { sheetType, offset, limit: 8 }); }
+        catch (e) { stop = (e && e.message) || String(e); break; }
+        if (!res || !res.success) { stop = (res && res.error) || "the sheet did not answer"; break; }
+        if (total === null) total = res.total || 0;
+        for (const rec of (res.records || [])) {
+          seen++;
+          setBackfill({ running: true, lines: lines.slice(),
+            note: tab + " \u00b7 " + seen + (total ? " of " + total : "") + " patient(s) read" });
+          const flat = csFlatRowsFromRecord(formId, rec.allTeeth);
+          if (!flat) { nothing++; continue; }
+          try {
+            const r = await apiPost("appendClinicalRecordRows", {
+              tabName: flat.tabName,
+              rows: JSON.stringify(flat.rows),
+              keyColumns: JSON.stringify(flat.keyColumns)
+            });
+            if (r && r.success) { rows += r.written || 0; fixed += r.updated || 0; }
+            else failed++;
+          } catch (e) { failed++; }
+        }
+        if (res.next === null || res.next === undefined) break;
+        offset = res.next;
+      }
+      lines.push({
+        tab: tab,
+        text: stop
+          ? "could not be read \u2014 " + stop
+          : total === 0
+            ? "no records on file"
+            : seen + " patient(s) read \u00b7 " + rows + " row(s) added \u00b7 " + fixed +
+              " already there and corrected" +
+              (nothing ? " \u00b7 " + nothing + " with nothing to write out" : "") +
+              (failed ? " \u00b7 " + failed + " could not be written" : ""),
+        bad: !!(stop || failed)
+      });
+      setBackfill({ running: true, lines: lines.slice(), note: "" });
+    }
+    setBackfill({ running: false, lines: lines, note: "" });
+  };
+
   return React.createElement("div", null,
     React.createElement("div", { style:{ fontSize:18, fontWeight:700, marginBottom:4 } }, "📁 Clinical Records"),
     React.createElement("div", { style:{ fontSize:13, color:"#444444", marginBottom:16 } },
@@ -32982,7 +33370,7 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
       React.createElement("span", { style:{ color:"#059669", fontSize:12, fontWeight:600 } }, "✓ Will auto-fill")
     ),
     React.createElement("div", { style:{ display:"flex", gap:4, background:BGS, borderRadius:8, padding:4, marginBottom:20, width:"fit-content" } },
-      [{id:"forms",label:"📋 Forms"},{id:"sheets",label:"📊 Sheets"}].map(s =>
+      [{id:"forms",label:"📋 Forms"},{id:"sheets",label:"📊 Work Done Sheet"}].map(s =>
         React.createElement("button", {
           key:s.id, onClick:()=>setSection(s.id),
           style:{ padding:"10px 28px", fontSize:14, fontWeight:section===s.id?700:400, border:"none",
@@ -33014,7 +33402,105 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
         ))
       )
     ),
-    section === "sheets" && React.createElement(ClinicalSheets, { key:(globalPat&&globalPat.uhid)||"x", globalPat:globalPat, setGlobalPat:setGlobalPat, embedded:true })
+  // ── Work Done Sheet ──────────────────────────────────────────────
+    // The same eighteen cards as Forms, opening the sheet rather than the
+    // form. A work done sheet is a document about the patient: it belongs
+    // beside the forms, not buried on a Summary step inside one of them.
+    section === "sheets" && (sheetFor
+      ? React.createElement("div", null,
+          React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:12, marginBottom:14 } },
+            React.createElement("button", {
+              onClick:()=>setSheetFor(null),
+              style:{ padding:"7px 16px", fontSize:13, fontWeight:700, border:`1px solid ${BORDER}`,
+                borderRadius:18, cursor:"pointer", background:"#fff", color:T, fontFamily:"inherit" }
+            }, "\u2190 All work done sheets"),
+            React.createElement("div", { style:{ fontSize:15, fontWeight:800, color:T } },
+              (FORMS.find(f => f.id === sheetFor) || {}).label || ""),
+            // Only where there is something to group by.
+            CS_PER_TOOTH_FORM[sheetFor] && React.createElement("div", {
+              style:{ display:"flex", gap:2, background:BGS, borderRadius:8, padding:2 } },
+              [["sheet", "\ud83d\udccb Work Done Sheet"], ["teeth", "\ud83e\uddb7 Tooth by Tooth"]].map(([v, l]) =>
+                React.createElement("button", { key:v, onClick:()=>setSheetView(v),
+                  style:{ padding:"5px 14px", fontSize:12.5, fontWeight:700, border:"none", borderRadius:6,
+                    cursor:"pointer", background: sheetView===v ? "#fff" : "transparent",
+                    color: sheetView===v ? T : "#5a5a5a" } }, l))),
+            globalPat && globalPat.name && React.createElement("div", { style:{ fontSize:13, color:"#444444" } },
+              "\u2014 " + globalPat.name + " \u00b7 " + globalPat.uhid)
+          ),
+          React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10,
+              padding: (sheetView === "teeth" && CS_PER_TOOTH_FORM[sheetFor]) ? "14px 18px" : 0 } },
+            (sheetView === "teeth" && CS_PER_TOOTH_FORM[sheetFor])
+              ? React.createElement(ClinicalSheets, {
+                  key: "teeth_" + sheetFor + "_" + ((globalPat && globalPat.uhid) || "x"),
+                  globalPat: globalPat, setGlobalPat: setGlobalPat,
+                  only: CS_PER_TOOTH_FORM[sheetFor]
+                })
+              : React.createElement(ClinicalSheetRecordView, {
+                  key: sheetFor + "_" + ((globalPat && globalPat.uhid) || "x"),
+                  formId: sheetFor,
+                  sheetType: (FORMS.find(f => f.id === sheetFor) || {}).sheetType,
+                  uhid: (globalPat && globalPat.uhid) || "",
+                  onNewEntry: () => { setSheetFor(null); handleFormCardClick(sheetFor); }
+                })
+          )
+        )
+      : React.createElement("div", null,
+          React.createElement("div", { style:{ fontSize:12, color:"#444444", marginBottom:14 } },
+            globalPat && globalPat.uhid
+              ? "Patient active \u2014 the sheet opens for " + (globalPat.name || globalPat.uhid)
+              : "No active patient \u2014 you can enter UHID when you pick a sheet"
+          ),
+          React.createElement("div", { style:{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 } },
+            FORMS.map(form => React.createElement("div", {
+              key:form.id,
+              onClick:()=>handleSheetCardClick(form.id),
+              style:{ padding:"16px 14px", border:`1px solid ${BORDER}`, borderTop:`3px solid ${form.color||T}`,
+                borderRadius:12, cursor:"pointer", background:"#fff", textAlign:"left", transition:"all .15s" },
+              onMouseEnter:e=>{ e.currentTarget.style.background = BGS; },
+              onMouseLeave:e=>{ e.currentTarget.style.background = "#fff"; }
+            },
+              React.createElement("div", { style:{ fontSize:24, marginBottom:6 } }, form.label.split(" ")[0]),
+              React.createElement("div", { style:{ fontSize:14, fontWeight:700, color:form.color||T, marginBottom:4, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" } },
+                form.label.slice(form.label.indexOf(" ")+1)
+              ),
+              React.createElement("div", { style:{ fontSize:13, color:"#444444" } }, "Work Done Sheet")
+            ))
+          ),
+          // The records that were saved before anything wrote a flat row.
+          // The clinic's own tabs cannot show them until they are written
+          // out, and nothing but a one-off can do that.
+          React.createElement("div", { style:{ marginTop:20, padding:"15px 17px", background:"#fff",
+              border:`1px solid ${BORDER}`, borderRadius:10 } },
+            React.createElement("div", { style:{ fontSize:14, fontWeight:800, color:T, marginBottom:5 } },
+              "\ud83d\uddc2 History into the sheet tabs"),
+            React.createElement("div", { style:{ fontSize:12.5, color:"#444444", lineHeight:1.55, marginBottom:11 } },
+              "RCT, Implant Surgery, Implant Prosthetic and Crown & Bridge keep each patient's whole " +
+              "course of treatment in one cell, and have only been writing it out visit by visit " +
+              "into the tabs you read since 11 Nov 2026. Everything recorded before that is safe but " +
+              "not in those columns. This writes it out \u2014 one row per visit, the same rows a save " +
+              "writes today. Safe to run again: a visit already there is corrected, not repeated."),
+            React.createElement("button", {
+              onClick: runBackfill,
+              disabled: !!(backfill && backfill.running),
+              style:{ padding:"9px 20px", fontSize:13, fontWeight:700, border:"none", borderRadius:8,
+                cursor: (backfill && backfill.running) ? "default" : "pointer",
+                background: (backfill && backfill.running) ? "#9bb8c7" : T, color:"#fff", fontFamily:"inherit" }
+            }, (backfill && backfill.running) ? "Working\u2026" : "Fill the sheet tabs from history"),
+            backfill && backfill.note && React.createElement("div", {
+              style:{ fontSize:12.5, color:T, marginTop:9, fontWeight:700 } }, backfill.note),
+            backfill && backfill.lines && backfill.lines.length
+              ? React.createElement("div", { style:{ marginTop:11 } },
+                  backfill.lines.map((l, i) => React.createElement("div", { key:i,
+                    style:{ fontSize:12.5, lineHeight:1.6, color: l.bad ? "#B3261E" : "#444444" } },
+                    React.createElement("span", { style:{ fontWeight:700, color: l.bad ? "#B3261E" : T } },
+                      l.tab + ": "), l.text)))
+              : null,
+            backfill && !backfill.running && backfill.lines && backfill.lines.length
+              ? React.createElement("div", { style:{ fontSize:12, color:"#5a5a5a", marginTop:9 } },
+                  "Open the tabs in the clinical records spreadsheet to see the rows.")
+              : null
+          )
+        ))
   );
 }
 
@@ -33098,7 +33584,6 @@ function Prescription({ globalPat }) {
         gender: globalPat.gender || "",
         doctor: getDoctors()[0] || ""
       }, "*");
-      sendDoctorsToForm(globalPat.uhid || "");
     }
   };
 
@@ -33205,7 +33690,12 @@ function Prescription({ globalPat }) {
       src: getPrescriptionFormUrl(),
       style:{ width:"100%", flex:1, border:"none", display:"block" },
       title: "Prescription",
-      onLoad: () => { sendPatientToForm(); sendTodaysProceduresToForm(); sendMedicinesToForm(); sendMedListsToForm(); sendPadMarginsToForm(); sendClinicNameToForm(); }
+      // The doctors go in on open, not from inside the patient push: the
+      // prescription pad is opened without a patient as often as with one,
+      // and who signs it is a master list either way.
+      onLoad: () => { sendPatientToForm(); sendDoctorsToForm((globalPat && globalPat.uhid) || "");
+        sendTodaysProceduresToForm(); sendMedicinesToForm(); sendMedListsToForm();
+        sendPadMarginsToForm(); sendClinicNameToForm(); }
     })
   );
 }
@@ -36031,6 +36521,11 @@ function App() {
   // held for the staff to check before it is written. Null when nothing is
   // waiting.
   const [pendingRegister, setPendingRegister] = useState(null);
+  // Said out loud when the readable copy of a record does not reach the tab
+  // the clinic reads. The record itself is safe either way, so this is a
+  // warning and not a failed save -- but a console message nobody opens is
+  // how the clinic came to have a year of work it could not see.
+  const [sheetCopyWarn, setSheetCopyWarn] = useState("");
 
   // Listen for save messages posted from the standalone iframe clinical forms (RCT/Implant/Crown-Bridge/Restoration/Orthodontics/Denture/Pedo/TMJoint)
   useEffect(() => {
@@ -36070,6 +36565,33 @@ function App() {
           // tab shows the visit just saved, without a reload.
           if (res && res.success && e.source) {
             e.source.postMessage({ type: "KB_CLINICAL_RECORD", record: merged }, "*");
+          }
+          // And write it out where the clinic reads it. The JSON row above is
+          // what the form resumes from; this is the same work in the columns
+          // the clinic set up, one row per visit. Without it the "RCT" tab
+          // never gains a row and the work looks lost, which is exactly how
+          // it was reported.
+          //
+          // Deliberately after the reply: the record is already safe, so a
+          // failure here must not tell the dentist the save failed. It is
+          // reported where it belongs -- in the console and on the save
+          // message -- rather than by discarding a good save.
+          if (res && res.success) {
+            const flat = csFlatRowsFromRecord(
+              CS_FORM_BY_SHEET_TYPE[String(d.sheetType || "").trim()] || "", merged);
+            if (flat) {
+              apiPost("appendClinicalRecordRows", {
+                tabName: flat.tabName,
+                rows: JSON.stringify(flat.rows),
+                keyColumns: JSON.stringify(flat.keyColumns)
+              }).then(r => {
+                if (!(r && r.success)) setSheetCopyWarn("The record is saved, but its readable copy " +
+                  "could not be written to the " + flat.tabName + " tab: " +
+                  ((r && r.error) || "the sheet did not answer") + ".");
+              }).catch(err => setSheetCopyWarn("The record is saved, but its readable copy " +
+                "could not be written to the " + flat.tabName + " tab: " +
+                ((err && err.message) || err) + "."));
+            }
           }
           // The work just recorded also belongs in the Daily Register — see
           // the note on registerPrefill below for why this is offered, not written.
@@ -36462,6 +36984,16 @@ function App() {
       "Endorsement, prescription and bill for a panel patient"),
     /*#__PURE__*/React.createElement(CghsRecords, { key:(globalPat&&globalPat.uhid)||"x", globalPat:globalPat })
   ), page === "crm" && /*#__PURE__*/React.createElement(CRMModule, null), page === "chatbot" && /*#__PURE__*/React.createElement(ChatbotModule, null), page === "master" && /*#__PURE__*/React.createElement(SimplePasswordGate, { verifyAction:"verifyMasterPassword", sessionKey:"kbdc_master_unlocked", message:"Enter the Master password to view this page." }, /*#__PURE__*/React.createElement(Master, null)), page === "followups" && /*#__PURE__*/React.createElement(FollowUps, { onNavigate: setPage }), page === "reports" && /*#__PURE__*/React.createElement(SimplePasswordGate, { verifyAction:"verifyReportsPassword", sessionKey:"kbdc_reports_unlocked", message:"Enter your password to view Reports (either of the two people's passwords works)." }, /*#__PURE__*/React.createElement(ReportsModule, null))),
+    sheetCopyWarn && /*#__PURE__*/React.createElement("div", {
+      style:{ position:"fixed", left:16, right:16, bottom:16, zIndex:9500, background:"#fff2f0",
+        border:"1px solid #e24b4a", borderRadius:10, padding:"11px 14px", fontSize:13.5,
+        color:"#a12e2e", boxShadow:"0 10px 30px rgba(0,0,0,.18)", display:"flex", gap:12,
+        alignItems:"flex-start" }
+    },
+      /*#__PURE__*/React.createElement("div", { style:{ flex:1 } }, "\u26A0 " + sheetCopyWarn),
+      /*#__PURE__*/React.createElement("button", { onClick: () => setSheetCopyWarn(""),
+        style:{ border:"none", background:"transparent", color:"#a12e2e", cursor:"pointer",
+          fontSize:16, fontWeight:700, lineHeight:1 } }, "\u00d7")),
     pendingRegister && /*#__PURE__*/React.createElement(RegisterConfirm, {
       entry: pendingRegister,
       onCancel: () => setPendingRegister(null),

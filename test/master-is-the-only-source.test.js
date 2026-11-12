@@ -46,7 +46,16 @@ ok('and the receipt radios too', /payModes\.map\(m =>/.test(html));
 // mid-flight.
 ok('the fetch is cached across components', /const KB_LIST_CACHE = \{\}/.test(html));
 ok('a cached list is used without refetching',
-  /if \(KB_LIST_CACHE\[action\]\) \{ setItems\(KB_LIST_CACHE\[action\]\); return; \}/.test(html));
+  /if \(KB_LIST_CACHE\[action\] && KB_LIST_CACHE\[action\]\.length\) \{/.test(html));
+// ...but an EMPTY list is not an answer. [] is truthy, so one read that
+// failed, or landed before the backend was ready, used to be kept for the
+// rest of the session and never tried again -- which is how the doctors
+// went missing from every form and each fell back to the names in its own
+// markup.
+ok('an empty answer is not kept as the answer',
+  /if \(list\.length\) KB_LIST_CACHE\[action\] = list;/.test(html));
+ok('and a failed read is not kept either, so the next screen tries again',
+  /\}\)\.catch\(\(\) => \{ \/\* not cached, so the next screen tries again \*\/ \}\);/.test(html));
 // An answer arriving after the component has gone must not set state on it.
 ok('a late answer does not land on an unmounted screen',
   /let alive = true;[\s\S]*if \(alive\) setItems\(list\);[\s\S]*alive = false;/.test(html));

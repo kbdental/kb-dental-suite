@@ -121,12 +121,34 @@ ok('RCT is left alone', !TAIL_FOR.rct && !BRIDGE_FOR.rct, '');
     await page.waitForTimeout(400);
     return { page, errs };
   };
+  // A single-page form now carries the wizards' step bar: the form, then a
+  // tick and Summary. The ending lives on the Summary step, as it does on
+  // RCT, so the form itself is not pushed down the page by it.
+  const toSummary = async (page) => {
+    const bar = await page.$('.kbwd-steps .tab[data-kbwd-step=summary]');
+    if (bar) { await bar.click(); await page.waitForTimeout(350); }
+    return !!bar;
+  };
   const textOf = (page, sel) =>
     page.$eval(sel, e => e.innerText.replace(/\s+/g, ' ').trim()).catch(() => '');
 
   // ── the fourteen that had nothing ─────────────────────────────────────
   for (const [name, fid, label, code] of FLAT) {
     const { page, errs } = await openAndFill(name, fid);
+
+    const steps = await page.$$eval('.kbwd-steps .tab', e => e.map(x => x.textContent.trim()));
+    ok(fid + ': has a step bar like the wizards',
+       steps.length === 2 && /Summary$/.test(steps[1]), JSON.stringify(steps));
+    ok(fid + ': whose first step is the form itself',
+       steps[0] && steps[0].indexOf(label + ' Record') >= 0, JSON.stringify(steps));
+    ok(fid + ': ending in a tick, not a number', /\u2713/.test(steps[1] || ''), JSON.stringify(steps));
+    // Entry is untouched: the form is what opens, not the summary.
+    ok(fid + ': the form is what opens',
+       await page.evaluate(() => {
+         const m = document.querySelector('.main'), k = document.getElementById('kbwd');
+         return !!m && m.style.display !== 'none' && !!k && k.style.display === 'none';
+       }), '');
+    ok(fid + ': and the Summary step opens the ending', await toSummary(page), '');
 
     const bar = await textOf(page, '.kbwd-bar');
     ok(fid + ': has the Complete header', /COMPLETE/.test(bar), bar);
@@ -136,8 +158,14 @@ ok('RCT is left alone', !TAIL_FOR.rct && !BRIDGE_FOR.rct, '');
     ok(fid + ': has both tabs',
        tabs.length === 2 && /Work Done Sheet/.test(tabs[0]) && /Work Done Summary/.test(tabs[1]),
        JSON.stringify(tabs));
-    eq(fid + ': there is a Print Work Done Sheet button',
-       await page.$$eval('[data-kbwd-print]', e => e.length > 0), true);
+    // Printing moved out of the form. A Summary is for looking at what has
+    // been entered; the sheet is printed from Clinical Records -> Work Done
+    // Sheet, where all eighteen sit beside the forms -- one place that
+    // prints, rather than a button on every form printing its own version.
+    eq(fid + ': the Summary does not print',
+       await page.$$eval('[data-kbwd-print]', e => e.length), 0);
+    ok(fid + ': and says where printing happens',
+       /Work Done Sheet/.test(await textOf(page, '.kbwd-note')), await textOf(page, '.kbwd-note'));
 
     const summary = await textOf(page, '#kbwdSummaryBody');
     ok(fid + ': the summary is the note, with the clinic on it',
@@ -150,6 +178,11 @@ ok('RCT is left alone', !TAIL_FOR.rct && !BRIDGE_FOR.rct, '');
     await page.click('.kbwd-tab[data-kbwd-tab=sheet]').catch(() => {});
     await page.waitForTimeout(250);
     const sheet = await textOf(page, '#kbwdSheetBody');
+    // RCT draws its sheet whether or not a word has been typed -- letterhead,
+    // title and every line -- which is what makes a blank one printable and
+    // fillable by hand. A sentence saying there is nothing yet is not that.
+    ok(fid + ': the sheet draws even before anything is typed',
+       /WORK-DONE SHEET/.test(sheet) && !/Nothing filled in yet/.test(sheet), sheet.slice(0, 200));
     ok(fid + ': the sheet is on the clinic letterhead',
        /C\. A\. R\. E\. S\./.test(sheet) && /DILSHAD GARDEN/.test(sheet), sheet.slice(0, 160));
     ok(fid + ': titled for this form',
@@ -157,6 +190,25 @@ ok('RCT is left alone', !TAIL_FOR.rct && !BRIDGE_FOR.rct, '');
     ok(fid + ': carrying its document code', sheet.indexOf('KBDC/FORMS/' + code) >= 0, sheet.slice(0, 220));
     ok(fid + ': with the patient on it', /Santosh Kumar/.test(sheet) && /AL1010/.test(sheet), sheet.slice(0, 200));
     ok(fid + ': and a signature line', /Signature of Attending Doctor/.test(sheet), '');
+
+    // The control the clinic looked for and did not find. RCT has a
+    // "Treatment complete" tick that records the course as finished; no
+    // other form had one, which is most of why they did not look alike.
+    const tick = await page.$('#kbwdDone');
+    ok(fid + ': has the Treatment complete tick', !!tick, '');
+    ok(fid + ': labelled the way RCT labels it',
+       /Treatment complete/.test(await textOf(page, '.kbwd-done-wrap')), '');
+    ok(fid + ': and the sheet says where the treatment stands',
+       /Treatment Status/.test(sheet) && /In progress/.test(sheet), sheet.slice(0, 240));
+    if (tick) {
+      await tick.check();
+      await page.waitForTimeout(250);
+      const after = await textOf(page, '#kbwdSheetBody');
+      ok(fid + ': ticking it says so on the sheet',
+         /Treatment complete/.test(after), after.slice(0, 240));
+      await tick.uncheck();
+      await page.waitForTimeout(150);
+    }
     // The emoji belong on screen, not on a sheet a panel may read.
     ok(fid + ': no emoji in the printed headings',
        !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(sheet), sheet.slice(0, 200));

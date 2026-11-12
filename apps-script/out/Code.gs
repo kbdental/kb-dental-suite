@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-08f";
+var BACKEND_BUILD = "2026-11-12";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -1115,6 +1115,10 @@ function route(p) {
       // ── Clinical Sheets ────────────────────────────────────
       case "getClinicalSheets":  return getClinicalSheets(p);
       case "saveClinicalSheets": return saveClinicalSheets(p);
+      case "appendClinicalRecordRows": return appendClinicalRecordRows(p);
+      case "listClinicalSheetRecords": return listClinicalSheetRecords(p);
+      case "getClinicalExaminationList":  return getClinicalExaminationList();
+      case "saveClinicalExaminationList": return saveClinicalExaminationList(p);
 
       // ── Daily Register ─────────────────────────────────────
       case "getDailyRegister":   return getDailyRegister(p);
@@ -2450,6 +2454,185 @@ function saveClinicalSheets(p) {
     if (stale > 0) shared.deleteRow(stale);
   }
   return { success: true };
+}
+
+// ── The readable copy of a wizard form's work ────────────────────────────
+// RCT, Implant Surgery, Implant Prosthetic and Crown & Bridge save through
+// saveClinicalSheets, which keeps ONE row per patient holding the whole
+// record as JSON. That is the right shape for the form to resume from and
+// the wrong shape for anybody to read: the clinic opens the "RCT" tab, sees
+// the columns it set up, and finds nothing new in them ever. The work was
+// never lost -- it was in a cell of JSON in another tab -- but a record
+// nobody can read is not much of a record.
+//
+// So the same save also writes the visit out flat, one row per visit, into
+// the tab the clinic actually reads. The caller sends rows keyed by COLUMN
+// LABEL and this matches them to whatever header that tab already has, so
+// the clinic can rename or reorder its columns and this follows.
+//
+// Writing is idempotent on the key columns -- normally UHID, the visit date
+// and the tooth or implant site. Saving the same visit twice corrects the
+// row instead of adding a second one, which matters because every save of
+// the form re-sends the whole record, not just what changed.
+function appendClinicalRecordRows(p) {
+  var tabName = String(p.tabName || "").trim();
+  if (!tabName) return { success: false, error: "tabName required" };
+
+  var rows = p.rows;
+  if (typeof rows === "string") {
+    try { rows = JSON.parse(rows); } catch (e) { return { success: false, error: "rows is not valid JSON" }; }
+  }
+  if (!rows || !rows.length) return { success: true, written: 0, updated: 0 };
+
+  var keyCols = p.keyColumns;
+  if (typeof keyCols === "string") {
+    try { keyCols = JSON.parse(keyCols); } catch (e) { keyCols = null; }
+  }
+  if (!keyCols || !keyCols.length) keyCols = ["UHID"];
+
+  var sh = getClinicalSheet(tabName);
+  var data = sh.getDataRange().getValues();
+  // A tab with no header row cannot be written into by column name, and
+  // guessing an order would scatter the record across the wrong columns.
+  if (!data.length || !String(data[0].join("")).trim())
+    return { success: false, error: 'The "' + tabName + '" tab has no header row to write against.' };
+
+  var headers = data[0];
+  var norm = function (v) {
+    return String(v == null ? "" : v).toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "");
+  };
+  var colOf = {};
+  for (var h = 0; h < headers.length; h++) {
+    var n = norm(headers[h]);
+    if (n && !(n in colOf)) colOf[n] = h;
+  }
+
+  var keyIdx = [];
+  for (var k = 0; k < keyCols.length; k++) {
+    var ki = colOf[norm(keyCols[k])];
+    if (ki !== undefined) keyIdx.push(ki);
+  }
+  if (!keyIdx.length) return { success: false, error: "none of the key columns are in that tab" };
+
+  var keyOfRow = function (arr) {
+    return keyIdx.map(function (i) { return norm(arr[i]); }).join("\u0000");
+  };
+  var existing = {};
+  for (var r = 1; r < data.length; r++) existing[keyOfRow(data[r])] = r + 1;   // 1-based sheet row
+
+  var width = headers.length;
+  ensureGridWidth_(sh, width);
+
+  var written = 0, updated = 0, skipped = 0;
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(20000); } catch (e) { return { success: false, error: "the sheet is busy, try again" }; }
+  try {
+    for (var i = 0; i < rows.length; i++) {
+      var src = rows[i] || {};
+      var out = new Array(width);
+      for (var c = 0; c < width; c++) out[c] = "";
+      var any = false;
+      for (var label in src) {
+        if (!Object.prototype.hasOwnProperty.call(src, label)) continue;
+        var ci = colOf[norm(label)];
+        if (ci === undefined) continue;          // a field this tab has no column for
+        var val = src[label];
+        if (val === null || val === undefined || String(val).trim() === "") continue;
+        out[ci] = val;
+        any = true;
+      }
+      if (!any) { skipped++; continue; }
+      var key = keyOfRow(out);
+      if (existing[key]) {
+        sh.getRange(existing[key], 1, 1, width).setValues([out]);
+        updated++;
+      } else {
+        sh.appendRow(out);
+        existing[key] = sh.getLastRow();
+        written++;
+      }
+    }
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+  return { success: true, written: written, updated: updated, skipped: skipped, tab: tabName };
+}
+
+
+// ── The history, handed back record by record ──
+// appendClinicalRecordRows writes each visit out flat as it is saved, so the
+// clinic's "RCT" tab fills from the day that shipped and no earlier. Every
+// record saved before it is still here, whole -- as JSON in a Clinical
+// Sheets tab -- because nothing wrote flat rows then. The history is not
+// lost; it is just not where the clinic reads.
+//
+// This hands those records back a page at a time so the app can project each
+// one through the SAME code a save uses and send the rows on to
+// appendClinicalRecordRows. Doing it that way, rather than re-deriving the
+// columns here, means the backfilled rows and tomorrow's rows cannot
+// disagree about what a visit looks like.
+//
+// It only reads. A page at a time because one of these cells holds a whole
+// course of treatment, and a clinic with years of them will not fit in one
+// answer.
+function listClinicalSheetRecords(p) {
+  var sheetType = String(p.sheetType || "").trim();
+  if (!sheetType) return { success: false, error: "sheetType required" };
+  var offset = Math.max(0, parseInt(p.offset, 10) || 0);
+  var limit = parseInt(p.limit, 10) || 8;
+  if (limit < 1) limit = 1;
+  if (limit > 25) limit = 25;
+
+  // The form's own tab first, then the shared one, the way getClinicalSheets
+  // reads -- so a record written before the tabs were split is still found,
+  // and the newer copy of it wins.
+  var names = [clinicalSheetTabName_(sheetType)];
+  if (names[0] !== CLINICAL_SHEETS_SHARED_TAB) names.push(CLINICAL_SHEETS_SHARED_TAB);
+
+  var sheets = {};
+  var openTab = function (name) {
+    if (!sheets[name]) sheets[name] = getClinicalSheet(name);
+    return sheets[name];
+  };
+
+  var keys = [], seen = {};
+  for (var n = 0; n < names.length; n++) {
+    var sh = openTab(names[n]);
+    var last = sh.getLastRow();
+    if (last < 2) continue;
+    var vals = sh.getRange(2, 1, last - 1, 3).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      var uhid = String(vals[i][0]).trim().toUpperCase();
+      if (!uhid) continue;
+      if (String(vals[i][2]).trim() !== sheetType) continue;
+      if (seen[uhid]) continue;
+      seen[uhid] = true;
+      keys.push({ tab: names[n], row: i + 2, uhid: uhid });
+    }
+  }
+  // A stable order, so paging through cannot skip a record or hand one back
+  // twice while the clinic goes on saving.
+  keys.sort(function (a, b) { return a.uhid < b.uhid ? -1 : a.uhid > b.uhid ? 1 : 0; });
+
+  var records = [];
+  for (var k = offset; k < keys.length && records.length < limit; k++) {
+    var row = openTab(keys[k].tab).getRange(keys[k].row, 1, 1, 5).getValues()[0];
+    records.push({
+      uhid: keys[k].uhid,
+      name: String(row[1] || ""),
+      sheetType: String(row[2] || ""),
+      allTeeth: safeParseJSON(row[3]),
+      savedAt: row[4] ? String(row[4]) : ""
+    });
+  }
+  var done = offset + records.length;
+  return {
+    success: true,
+    total: keys.length,
+    offset: offset,
+    next: done < keys.length ? done : null,
+    records: records
+  };
 }
 
 // ── One-off, safe to re-run ──────────────────────────────────────────────
@@ -5903,6 +6086,56 @@ function saveClinicalNoteTemplateLib(p) {
 // is why renaming one has to cascade, and why the page does the cascade
 // rather than this -- it holds all three lists already.
 var CLINICAL_DEPT_SHEET = "Clinical Departments";
+
+// ── What the clinic examines ─────────────────────────────────────────────
+// The Care Plan's examination was seventeen findings written into the page:
+// which sections there are, what is checked under each, and whether a
+// finding is answered "healthy, or this observation" or "present, with a
+// note". A clinic that wants to start checking the tonsils had to ask for a
+// release. It is a list, so it belongs in Master with the other lists.
+//
+// Key is what a saved care plan stores the answer under. It is written once,
+// when a finding is created, and never changed by a rename -- a plan saved
+// three years ago must still read back under the name it was saved with.
+var CLINICAL_EXAM_SHEET = "Clinical Examination";
+var CLINICAL_EXAM_HEADERS = ["Section", "Finding", "Kind", "Key", "Updated At"];
+
+function getClinicalExaminationList() {
+  var sh = getSheet(CLINICAL_EXAM_SHEET);
+  var data = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < data.length; i++) {
+    var finding = String(data[i][1] || "").trim();
+    if (!finding) continue;
+    items.push({
+      section: String(data[i][0] || "").trim(),
+      finding: finding,
+      kind:    String(data[i][2] || "").trim() || "present",
+      key:     String(data[i][3] || "").trim()
+    });
+  }
+  return { success: true, findings: items };
+}
+
+function saveClinicalExaminationList(p) {
+  var arr = parseList_(p.findings, "clinical examination");
+  if (arr && arr.__bad) return { success: false, error: arr.__bad };
+  var sh = getSheet(CLINICAL_EXAM_SHEET);
+  sh.clearContents();
+  ensureGridWidth_(sh, CLINICAL_EXAM_HEADERS.length);
+  sh.appendRow(CLINICAL_EXAM_HEADERS);
+  var now = new Date().toISOString();
+  var block = [];
+  for (var i = 0; i < arr.length; i++) {
+    var r = arr[i] || {};
+    var finding = String(r.finding || "").trim();
+    if (!finding) continue;
+    block.push([String(r.section || "").trim(), finding,
+                String(r.kind || "present").trim(), String(r.key || "").trim(), now]);
+  }
+  if (block.length) sh.getRange(2, 1, block.length, CLINICAL_EXAM_HEADERS.length).setValues(block);
+  return { success: true, saved: block.length };
+}
 
 function getClinicalDepartmentsList() {
   var sh = getSheet(CLINICAL_DEPT_SHEET);
