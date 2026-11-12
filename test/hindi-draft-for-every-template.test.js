@@ -5,10 +5,20 @@
 // and loaded into the sheet in one press, so the toggle has something to
 // say on every template rather than on the handful somebody got round to.
 //
-// Drafted as WHAT THE PATIENT IS TOLD HAPPENED. The English notes are
-// clinical shorthand -- irrigant names, file sizes, canal lengths -- which
-// is the medico-legal record and means nothing read out to a patient. The
-// tooth and the counts are kept; the instrument minutiae are not.
+// The first drafts were written as WHAT THE PATIENT IS TOLD HAPPENED, on
+// the reasoning that the English is clinical shorthand. Read back, that
+// was the wrong trade: "BMP completed wrt {tooth} in {canals} with
+// {system}, {Canal}= ({WL}/{MAF}), irrigated with {irrigants} {n} \u00d7 {min}
+// min" came out as "the canals were cleaned and medicine was put in", and
+// everything that makes it a note was gone. Three of them had also
+// invented a token the English does not have, which prints as a blank
+// line on the patient's own sheet because nothing fills it.
+//
+// So the rule is now: the Hindi is the CONCISE line, in Hindi. Same facts
+// in the same order, the same {tokens} and no others, the same [optional
+// parts] in the same places. The wording is the Hindi a dentist speaks --
+// Devanagari with the dental terms as they are said at the chair -- not
+// terms translated into words nobody uses.
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -53,23 +63,71 @@ eq('every draft is actually in Hindi', notHindi, []);
 const tooShort = Object.keys(HI).filter(k => String(HI[k]).trim().length < 12);
 eq('and none of them is a stub', tooShort, []);
 
-// Which tooth, which arch, and for how long: without those the patient is
-// told something was done to nothing in particular, or is sent home with no
-// idea how long to keep doing it. Canal counts, file sizes, irrigants and
-// the date are deliberately not in this list -- they are the record's
-// business, not the patient's, and the date is printed on the sheet.
-const KEEP = ['tooth', 'teeth', 'arch', 'quadrant', 'region', 'days', 'hours'];
+// \u2500\u2500 the Hindi carries the concise line, and only it \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Only {simpleTokens} are filled in at print time; a brace group with
+// spaces or slashes in it is a choice for the dentist to edit and is left
+// alone. So those are what must line up.
+const simple = (v) => [...String(v || '').matchAll(/\{(\w+)\}/g)].map(m => m[1]);
+
+// A token in the Hindi that the concise line has no value for prints as a
+// blank line on the patient's sheet. Three drafts did exactly this -- a
+// {days} on a root coverage and a suture removal, a {teeth} on the T-Scan
+// balancing -- and nothing on either screen would ever have shown it.
+const invented = [];
+SEED.forEach(r => {
+  const have = simple(r[2]);
+  const extra = simple(HI[r[1]]).filter(t => have.indexOf(t) < 0);
+  if (extra.length) invented.push(r[1] + ' ' + JSON.stringify(extra));
+});
+eq('no Hindi draft asks for something the English cannot fill in', invented, []);
+
+// And the other way: a token the concise fills in and the Hindi leaves out
+// is a fact the Hindi reader is not told.
 const dropped = [];
 SEED.forEach(r => {
-  const want = [];
-  String(r[2] + ' ' + r[3]).replace(/\{([^}]+)\}/g, (m, t) => {
-    if (KEEP.indexOf(String(t).trim().toLowerCase()) >= 0 && want.indexOf(m) < 0) want.push(m);
-    return m;
-  });
-  const lost = want.filter(t => String(HI[r[1]] || '').indexOf(t) < 0);
+  const hi = simple(HI[r[1]]);
+  const lost = simple(r[2]).filter(t => hi.indexOf(t) < 0);
   if (lost.length) dropped.push(r[1] + ' ' + JSON.stringify(lost));
 });
-eq('which tooth, which arch and for how long survive into the Hindi', dropped, []);
+eq('and none of them drops one the English fills in', dropped, []);
+
+// The square brackets mark the parts to delete when they do not apply.
+// They have to mark the same parts in both, or deleting one on the sheet
+// leaves the other language saying it happened.
+const brackets = [];
+SEED.forEach(r => {
+  const n = (v) => (String(v || '').match(/\[/g) || []).length;
+  if (n(r[2]) !== n(HI[r[1]])) brackets.push(r[1] + ' EN ' + n(r[2]) + ' / HI ' + n(HI[r[1]]));
+});
+eq('the optional parts are the same parts in both languages', brackets, []);
+
+// Nothing left unclosed: a stray brace reaches the paper as a brace.
+const unbalanced = Object.keys(HI).filter(k => {
+  const c = (ch) => (HI[k].match(new RegExp('\\' + ch, 'g')) || []).length;
+  return c('{') !== c('}') || c('[') !== c(']');
+});
+eq('every brace and bracket is closed', unbalanced, []);
+
+// The terms a dentist reads out as letters stay as letters, in both.
+const acronyms = [];
+SEED.forEach(r => {
+  ['IOPA', 'OPG', 'CBCT', 'HPE', 'DSRP', 'TENS'].forEach(a => {
+    if (new RegExp('\\b' + a + '\\b').test(r[2]) && String(HI[r[1]]).indexOf(a) < 0)
+      acronyms.push(r[1] + ' ' + a);
+  });
+});
+eq('IOPA is still IOPA in the Hindi', acronyms, []);
+
+// The clinical content is the point of the rewrite. These are the lines
+// that lost the most, so they are the ones worth naming.
+[['BMP', ['{canals}', '{system}', '{WL}', '{MAF}', '{irrigants}', '{min}', '{dressing}', 'IOPA']],
+ ['Composite \u2013 Posterior', ['{class}', '{surfaces}', '{matrix}', '{liner}', '{composite}', '{shade}', '{technique}']],
+ ['Single Visit RCT', ['{canals}', '{method}', '{system}', '{MAF}', '{irrigants}', '{sealer}', 'IOPA']],
+ ['Implant Placement', ['{brand}', '{size}', '{guide}', '{torque}']]
+].forEach(([name, parts]) => {
+  const missingParts = parts.filter(p => String(HI[name] || '').indexOf(p) < 0);
+  eq('the Hindi for ' + name + ' says what was actually done', missingParts, []);
+});
 
 // ── and it can be got into the sheet ───────────────────────────────────
 const editor = cut('function ClinicalTemplateLibEditor(', 'function ClinicalPlanEditor(');
