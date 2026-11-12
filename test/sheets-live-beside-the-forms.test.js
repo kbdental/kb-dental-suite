@@ -45,10 +45,20 @@ ok('the loader knows which of the two was wanted',
    /if \(want\.open === "sheet"\) setSheetFor\(want\.id\);/.test(records), '');
 ok('and there is a way back to the other seventeen',
    /All work done sheets/.test(records), '');
-// The per-tooth report the old tab held covered six forms. It is no longer
-// wired to anything; the sheet view it was replaced by covers all eighteen.
-ok('the old six-form report is no longer reachable',
-   !/React\.createElement\(ClinicalSheets, /.test(html), '');
+// The per-tooth report the old tab held covered six forms, and moving the
+// sheets in front of it took it off the screen entirely. It was asked for
+// back: it answers a different question -- what has been done to THIS tooth,
+// across every visit -- which the visit-by-visit sheet cannot. So on the six
+// forms that keep records per site it is a second view of the same sheet,
+// chosen by a switch beside the title, rather than a tab of its own.
+ok('the per-tooth report is reachable again',
+   /React\.createElement\(ClinicalSheets, \{/.test(records), '');
+ok('on the six forms whose records are kept per site',
+   /const CS_PER_TOOTH_FORM = \{/.test(html), '');
+ok('as a second view of the sheet, not a tab of its own',
+   /\[\["sheet", "[^"]*Work Done Sheet"\], \["teeth", "[^"]*Tooth by Tooth"\]\]/.test(records), '');
+ok('and it draws one form\'s teeth, not a tab bar of six',
+   /only: CS_PER_TOOTH_FORM\[sheetFor\]/.test(records), '');
 
 // ── a form's Summary shows, it does not print ───────────────────────────
 const tail = (() => {
@@ -69,10 +79,12 @@ const fix = (() => {
 })();
 ok('RCT\'s own sheet prints are hidden too',
    /"printClin", "printLet"/.test(fix), '');
-// The single-page forms' own Print prints the form they are on. Different
-// thing, and it stays -- hiding it by name would have taken that too.
-ok('but not the forms\' own Print, which prints the form',
-   !/"printBtn"/.test(fix), '');
+// And the forms' own Print goes with them. It was left in at first, on the
+// grounds that it prints the FORM rather than the sheet -- but a form's
+// Summary is for looking at what has been entered, and two print buttons a
+// few inches apart that print different documents is the thing that was
+// asked to stop. Printing happens in one place: Work Done Sheet.
+ok('and so is the form\'s own Print', /"printBtn"/.test(fix), '');
 
 const bridge = (() => {
   const a = html.indexOf('const KB_FORM_BRIDGE = ');

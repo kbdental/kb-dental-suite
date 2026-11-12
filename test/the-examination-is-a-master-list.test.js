@@ -5,9 +5,17 @@
 // answered. A clinic that wanted to start checking the tonsils had to ask
 // for a release. It is a list, so it belongs in Master with the other lists.
 //
-// Two shapes, which the page already had and the master keeps:
+// Four shapes. The first two are the examination proper, which the page
+// already had and the master keeps:
 //   healthy  a Healthy tick, or an observation written instead  (Jaw Joints)
 //   present  a Present tick, with a note of where               (Swelling)
+// The other two are the two lists beside it, which were written into the
+// page the same way and are the same kind of thing -- a list the clinic
+// keeps -- so they come off the master list too:
+//   check    a tick and nothing to write    (IOPA, under Investigations)
+//   text     a line of text                 (Shade of Teeth, post radiograph)
+// A clinic that stops taking lateral cephalograms, or starts recording the
+// shade on every plan, edits the list instead of asking for a release.
 //
 // The key is what a saved care plan stores the answer under. It is fixed
 // when a finding is created and a rename never touches it -- renaming
@@ -33,14 +41,17 @@ vm.runInContext(cut('const CLINICAL_EXAM_SEED = [', 'const CLINICAL_NOTE_TEMPLAT
   + '\nthis.SEED = CLINICAL_EXAM_SEED; this.KINDS = CLINICAL_EXAM_KINDS; this.keyOf = clinicalExamKey;', ctx);
 const { SEED, KINDS, keyOf } = ctx;
 
-eq('the seventeen findings are all there', SEED.length, 17);
-eq('under the four sections the page was built around',
+eq('every finding the page held is on the list', SEED.length, 30);
+eq('under the seven sections the page was built around',
    SEED.map(r => r[0]).filter((s, i, a) => a.indexOf(s) === i),
-   ['Extra-Oral Check', 'Intra-Oral Check', 'Gum Assessment', 'Wasting Disease']);
+   ['Extra-Oral Check', 'Intra-Oral Check', 'Gum Assessment', 'Wasting Disease',
+    'Parafunctional Habits', 'Investigations Required', 'Post Radiograph Findings']);
 eq('six are answered Healthy-or-observation', SEED.filter(r => r[2] === 'healthy').length, 6);
-eq('and eleven Present-with-a-note', SEED.filter(r => r[2] === 'present').length, 11);
-eq('only those two shapes exist',
-   KINDS.map(k => k[0]).sort(), ['healthy', 'present']);
+eq('twelve Present-with-a-note', SEED.filter(r => r[2] === 'present').length, 12);
+eq('nine are a tick and nothing else', SEED.filter(r => r[2] === 'check').length, 9);
+eq('and three a line of text', SEED.filter(r => r[2] === 'text').length, 3);
+eq('only those four shapes exist',
+   KINDS.map(k => k[0]).sort(), ['check', 'healthy', 'present', 'text']);
 // The keys are the ones saved care plans already use. A typo here loses a
 // column of answers on every plan in the sheet.
 ['jawJoints', 'lymphNodes', 'swelling', 'lipCompetency', 'facialAsymmetry', 'tongue',
@@ -49,8 +60,16 @@ eq('only those two shapes exist',
   ok('a plan saved under "' + k + '" still reads back', SEED.some(r => r[3] === k), ''));
 // And those keys must be the ones the stored plan actually uses.
 const defaults = cut('const emptyCP2 = {', '\n};');
-SEED.forEach(r => ok('the care plan has a slot for ' + r[3],
-  new RegExp('\\b' + r[3] + ':\\s*' + (r[2] === 'healthy' ? 'hp' : 'pp') + '\\(\\)').test(defaults), ''));
+// Where a slot lives depends on the shape: the examination proper keeps an
+// object per finding, a tick lives under inv, and a line of text is a plain
+// string. All three must already be there, or the answer has nowhere to go.
+SEED.forEach(r => {
+  const pat = r[2] === 'healthy' ? '\\b' + r[3] + ':\\s*hp\\(\\)'
+            : r[2] === 'present' ? '\\b' + r[3] + ':\\s*pp\\(\\)'
+            : r[2] === 'check'   ? '\\b' + r[3] + ':\\s*false'
+            :                      '\\b' + r[3] + ':\\s*""';
+  ok('the care plan has a slot for ' + r[3], new RegExp(pat).test(defaults), '');
+});
 
 // ── a new finding gets a key of its own, and a rename never moves it ───
 eq('a new finding is keyed from its name', keyOf('Mouth Breathing', []), 'mouthBreathing');
@@ -102,7 +121,7 @@ vm.runInContext(fn('getClinicalExaminationList') + fn('saveClinicalExaminationLi
 
 back.save({ findings: JSON.stringify(SEED.map(r => ({ section: r[0], finding: r[1], kind: r[2], key: r[3] }))) });
 let got = back.get().findings;
-eq('all seventeen come back', got.length, 17);
+eq('all thirty come back', got.length, 30);
 eq('with their section, shape and key', got[0],
    { section: 'Extra-Oral Check', finding: 'Jaw Joints', kind: 'healthy', key: 'jawJoints' });
 eq('the clinic\'s own order is kept, not sorted', got.map(r => r.finding)[16], 'Erosion');
@@ -119,12 +138,21 @@ eq('bad JSON is refused rather than thrown', back.save({ findings: '{nope' }).su
 // ── and the Care Plan draws from it, screen and paper ──────────────────
 const carePlan = cut('function CarePlan(', '\nfunction KbClin');
 ok('the care plan reads the master list', /const examList = useExaminationList\(\);/.test(carePlan), '');
-ok('and falls back to the seventeen when there is none',
+ok('and falls back to the list the page was built with when there is none',
    /CLINICAL_EXAM_SEED\.map\(r => \(\{ section:r\[0\]/.test(html), '');
 ok('each row is drawn by its shape',
    /const Row = healthy \? HRow : PRow;/.test(carePlan), '');
 ok('a finding with no answer yet does not crash the plan',
-   /p2\[r\.key\] \|\| \(healthy \? hp\(\) : pp\(\)\)/.test(carePlan), '');
+   /p2\[k\] \|\| \(healthy \? hp\(\) : pp\(\)\)/.test(carePlan), '');
+// The two new shapes are drawn, not ignored: a tick reads and writes
+// p2.inv, a line of text reads and writes p2 itself.
+ok('a tick is drawn as a tick', /if \(kind === "check"\)/.test(carePlan), '');
+ok('and ticks into the plan\'s own investigations', /p2\.inv\[k\]/.test(carePlan), '');
+ok('a line of text is drawn as a box', /if \(kind === "text"\)/.test(carePlan), '');
+// Renaming "Swelling" relabels old plans; it must not orphan the answer in
+// them, which is stored under area now and was stored under description.
+ok('an answer saved under the old field name still reads back',
+   /raw\.area \|\| raw\.description/.test(carePlan), '');
 ok('sections the clinic adds are drawn too', /examExtra\.map\(sec =>/.test(carePlan), '');
 // The printed page is the medico-legal record. If it still listed findings
 // by name, the paper and the screen would disagree the day one is added.
@@ -132,6 +160,18 @@ ok('the printed page is built from the same list', /const examCells = \(section\
 ['jawJoints', 'tongue', 'bleedingProbing', 'erosion'].forEach(k =>
   ok('the printed page no longer names ' + k + ' itself',
      !new RegExp('lbl">[^<]*</div><div class="val">\\$\\{(hf|pf)\\(p2\\.' + k + '\\)').test(carePlan), ''));
+// Nor the two lists beside it. These were the last blocks on the page that
+// still spelled out their own contents -- the nine investigations as a row
+// of chips, and the three post-radiograph lines as cells.
+ok('the investigation chips come off the list too',
+   /const examChips = \(section\) =>/.test(carePlan), '');
+// Page 3's "Radiograph Findings" is a different section -- what each film
+// showed, in words -- and is left alone. This is about page 2's chips.
+ok('and page 2 no longer holds a list of the nine itself',
+   !/const invKeys = /.test(carePlan), '');
+['rct', 'implants', 'shadeOfTeeth', 'parafunctional'].forEach(k =>
+  ok('the printed page no longer names ' + k + ' itself',
+     !new RegExp('\\$\\{p2\\.' + k + '(\\.| \\|\\|)').test(carePlan), ''));
 
 (async () => {
   const LOCAL = {
