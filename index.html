@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-12";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-12a";
+const KB_APP_BUILD = "2026-11-12b";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -444,6 +444,12 @@ function useMasterList(action, key) {
   return items;
 }
 const usePaymentModes = () => useMasterList("getPaymentModesList", "modes");
+// The clinical note library, and the plan that says which of its templates
+// each treatment is made of. Read by the CGHS prescription and by the daily
+// register, so they are cached like every other list rather than fetched
+// once per screen.
+const useNoteTemplates = () => useMasterList("getClinicalNoteTemplates", "templates");
+const useNotePlan = () => useMasterList("getClinicalNotePlan", "rows");
 // Master holds doctors as rows with phone, email and role; everywhere in the
 // app that offers a doctor wants the names.
 function useDoctors() {
@@ -7304,6 +7310,61 @@ function cghsBlankTokens(text) {
   return String(text === undefined || text === null ? "" : text).replace(/\{\w+\}/g, "__________");
 }
 
+// ── What the plan says a treatment is made of ──────────────────────
+// A treatment named on a sheet -- an endorsement line, a Procedure Done in
+// the register -- is looked up in the clinical note plan, and the templates
+// that plan names are offered to pick from, each at both lengths and in
+// Hindi where that has been written. The point is that the note is
+// SELECTED and not typed from memory.
+//
+// Shared because two screens need the same answer and would otherwise
+// drift: the CGHS prescription offers Plan CGHS, the daily register offers
+// Plan Normal, and the only difference between them is which plan.
+//
+// The rate card and the plan do not always word a treatment the same way --
+// "Flap Surgery- Per Tooth" against a plan filed under "Flap Surgery" -- so
+// an exact match is tried first, then a plan row whose name sits inside the
+// treatment. Nothing in the plan falls back to the template the name
+// matches, so a treatment the plan has not been filled in for still offers
+// something rather than an empty list.
+function clinicalNoteOptions(treatment, templates, plan, which, vals) {
+  const norm = (v) => String(v === undefined || v === null ? "" : v)
+    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const byName = {};
+  (templates || []).forEach(t => { if (t && t.situation) byName[norm(t.situation)] = t; });
+
+  const want = norm(treatment);
+  const rows = (plan || []).filter(r => r && String(r.plan) === which);
+  const row = !want ? null : (
+    rows.find(r => norm(r.treatment) === want)
+    || rows.find(r => want && norm(r.treatment) && (" " + want + " ").indexOf(" " + norm(r.treatment) + " ") >= 0)
+    || null);
+
+  const out = [];
+  const add = (label, text) => {
+    const t = String(text || "").trim();
+    if (!t) return;
+    const filled = cghsFillTokens(t, vals || {});
+    if (!out.some(o => o.text === filled)) out.push({ label: label, text: filled });
+  };
+  clinicalTemplateRefs(row ? row.templates : "").forEach(name => {
+    const t = byName[norm(name)];
+    if (!t) return;
+    add(name + " · Type 1 (Concise)", t.concise || t.text);
+    add(name + " · Type 2 (Comprehensive)", t.comprehensive || t.text);
+    add(name + " · Hindi", t.hindi);
+  });
+  if (!out.length) {
+    const t = cghsTemplateFor(treatment, templates);
+    if (t) {
+      add("Type 1 (Concise)", t.concise || t.text);
+      add("Type 2 (Comprehensive)", t.comprehensive || t.text);
+      add("Hindi", t.hindi);
+    }
+  }
+  return out;
+}
+
 function CghsPrescription({ pat, lines, plan }) {
   const pad = usePadMargins();
   // An endorsement comes back days after it went out, so the sheet is
@@ -7312,10 +7373,26 @@ function CghsPrescription({ pat, lines, plan }) {
   const [date, setDate] = React.useState(() => toISODate(new Date()));
   const [templates, setTemplates] = React.useState([]);
   const [tplMsg, setTplMsg] = React.useState("Reading the clinical note templates…");
+  // ── Sittings ─────────────────────────────────────────────────────────
+  // What is written under each endorsed treatment, and when it was done.
+  //
+  // A treatment is endorsed once and is not always carried out in one go.
+  // An RCT is three visits -- access opening, bio-mechanical preparation,
+  // obturation -- and the panel sheet has to say that the first was on the
+  // 7th, the second on the 9th and the last on the 14th. One paragraph with
+  // one date could only ever state one of the three.
+  //
+  // So each treatment holds a LIST: one sitting per visit, each with its
+  // own date and its own note. A treatment done in a single visit has one
+  // sitting and prints exactly as it always did.
+  //
+  // date: null means "follow the date at the top of the sheet", which is
+  // what a one-visit prescription wants -- nothing to fill in twice.
+  //
   // Keyed by the line, not by its position: the endorsed lines are reordered
   // by a tick elsewhere on the screen, and detail written against a flap
   // surgery must not end up under a scaling.
-  const [edits, setEdits] = React.useState({});
+  const [sits, setSits] = React.useState({});
 
   React.useEffect(() => {
     let dropped = false;
@@ -7384,112 +7461,80 @@ function CghsPrescription({ pat, lines, plan }) {
     });
   };
   // What Plan CGHS says this treatment is made of, as a list to pick from.
-  //
-  // The endorsement line names a rate-card treatment; Plan CGHS is keyed by
-  // the same names, so the plan row is found by name and its templates
-  // resolved against the library. Each one is offered at both lengths, and
-  // in Hindi where that has been written -- which is the ask: the detail
-  // comes from the plan and is SELECTED, not typed from memory.
-  const norm = (v) => String(v === undefined || v === null ? "" : v)
-    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  const byName = {};
-  (templates || []).forEach(t => { if (t && t.situation) byName[norm(t.situation)] = t; });
-
-  const planRow = (x) => {
-    const want = norm(nameOf(x));
-    if (!want) return null;
-    const rows = (plan || []).filter(r => r && String(r.plan) === "CGHS");
-    return rows.find(r => norm(r.treatment) === want)
-        || rows.find(r => want && norm(r.treatment) && (" " + want + " ").indexOf(" " + norm(r.treatment) + " ") >= 0)
-        || null;
-  };
-
-  const optionsFor = (x) => {
-    const row = planRow(x);
-    const out = [];
-    const vals = {
-      tooth: x.r.tooth, teeth: x.r.tooth, toothNumber: x.r.tooth,
-      code: x.code, units: x.qty, unit: x.qty, qty: x.qty,
-      procedure: nameOf(x), treatment: nameOf(x),
-      name: pat.name, patient: pat.name, uhid: pat.uhid,
-      date: fmtDMY(date) || TODAY, age: calcAge(pat.dob || pat.DOB)
-    };
-    const add = (label, text) => {
-      const t = String(text || "").trim();
-      if (!t) return;
-      const filled = cghsFillTokens(t, vals);
-      if (!out.some(o => o.text === filled)) out.push({ label: label, text: filled });
-    };
-    clinicalTemplateRefs(row ? row.templates : "").forEach(name => {
-      const t = byName[norm(name)];
-      if (!t) return;
-      add(name + " \u00b7 Type 1 (Concise)", t.concise || t.text);
-      add(name + " \u00b7 Type 2 (Comprehensive)", t.comprehensive || t.text);
-      add(name + " \u00b7 Hindi", t.hindi);
-    });
-    // Nothing in the plan for it: fall back to whatever the name matches,
-    // so a treatment the plan has not been filled in for still offers
-    // something rather than an empty list.
-    if (!out.length) {
-      const t = cghsTemplateFor(nameOf(x), templates);
-      if (t) {
-        add("Type 1 (Concise)", t.concise || t.text);
-        add("Type 2 (Comprehensive)", t.comprehensive || t.text);
-        add("Hindi", t.hindi);
-      }
-    }
-    return out;
-  };
-
-  const detailOf = (x) => {
-    const k = keyOf(x);
-    return edits[k] !== undefined ? edits[k] : suggested(x);
-  };
-  const setDetail = (x, v) => { const k = keyOf(x); setEdits(e => ({ ...e, [k]: v })); };
-
-  // ── The day each treatment was done ──────────────────────────────────
-  // One date at the top of the sheet is right for a single sitting and
-  // wrong for everything else. A course of treatment is endorsed once and
-  // carried out over weeks -- the flap surgery in one visit, the sutures
-  // out in the next, the crown a fortnight later -- and a prescription that
-  // dates all of it to the day it was printed says something that did not
-  // happen. So every treatment carries its own date.
-  //
-  // Untouched, a line follows the date at the top, which is what a sheet
-  // for one sitting needs and means nothing has to be filled in twice.
-  // Once a line is given a date of its own it keeps it, and can be put
-  // back to following the top date.
-  const [lineDates, setLineDates] = React.useState({});
-  const dateOf = (x) => {
-    const k = keyOf(x);
-    return lineDates[k] !== undefined ? lineDates[k] : date;
-  };
-  const ownDate = (x) => lineDates[keyOf(x)] !== undefined;
-  const setLineDate = (x, v) => setLineDates(d => ({ ...d, [keyOf(x)]: v }));
-  const clearLineDate = (x) => setLineDates(d => {
-    const out = { ...d };
-    delete out[keyOf(x)];
-    return out;
+  // Shared with the daily register, which asks the same of Plan Normal.
+  const optionsFor = (x) => clinicalNoteOptions(nameOf(x), templates, plan, "CGHS", {
+    tooth: x.r.tooth, teeth: x.r.tooth, toothNumber: x.r.tooth,
+    code: x.code, units: x.qty, unit: x.qty, qty: x.qty,
+    procedure: nameOf(x), treatment: nameOf(x),
+    name: pat.name, patient: pat.name, uhid: pat.uhid,
+    date: fmtDMY(date) || TODAY, age: calcAge(pat.dob || pat.DOB)
   });
+
+  // Never empty: a treatment with no sitting recorded still has one to
+  // write in, holding whatever the matching template suggests.
+  const sitsOf = (x) => {
+    const k = keyOf(x);
+    return (sits[k] && sits[k].length) ? sits[k] : [{ date: null, text: suggested(x) }];
+  };
+  // A sitting with no date of its own is on the day at the top of the sheet.
+  const dayOf = (sit) => (sit && sit.date) ? sit.date : date;
+  const editSits = (x, fn) => {
+    const k = keyOf(x);
+    setSits(prev => {
+      const list = (prev[k] && prev[k].length) ? prev[k] : [{ date: null, text: suggested(x) }];
+      const next = fn(list.map(si => ({ ...si })));
+      return { ...prev, [k]: next };
+    });
+  };
+  const setSitText = (x, i, v) => editSits(x, list => {
+    if (list[i]) list[i].text = v;
+    return list;
+  });
+  const setSitDate = (x, i, v) => editSits(x, list => {
+    if (list[i]) list[i].date = v || null;
+    return list;
+  });
+  // A new sitting starts on the day at the top rather than empty: a date
+  // box left blank on a panel document is worse than one that needs
+  // correcting, and the correcting is one click away.
+  const addSit = (x) => editSits(x, list => list.concat([{ date: date, text: "" }]));
+  // The first sitting is the treatment itself, so it stays.
+  const dropSit = (x, i) => editSits(x, list => list.length > 1 ? list.filter((si, n) => n !== i) : list);
   const matched = rows.filter(x => !!suggested(x)).length;
 
   const build = () => {
     const when = fmtDMY(date) || TODAY;
     const trs = rows.map((x, i) => {
-      const detail = cghsBlankTokens(detailOf(x)).trim();
+      const list = sitsOf(x);
+      const days = list.map(si => fmtDMY(dayOf(si)) || when);
+      // One visit: the date, as it has always printed. Several: the span,
+      // because the line is the endorsed treatment and the treatment ran
+      // from the first visit to the last. Each visit's own date is on its
+      // own line underneath.
+      const cell = days.length > 1 && days[0] !== days[days.length - 1]
+        ? days[0] + " – " + days[days.length - 1]
+        : days[0];
+      const written = list.map((si, n) => ({ day: days[n], text: cghsBlankTokens(si.text).trim() }))
+                          .filter(si => si.text);
+      const detail = written.length === 1 && list.length === 1
+        // A single sitting reads as a sentence about the treatment, so it
+        // needs no date in front of it: the row already carries it.
+        ? `<span style="white-space:pre-wrap">${cghsEsc(written[0].text)}</span>`
+        : written.map(si => `<div style="margin-bottom:1.5pt"><b>${cghsEsc(si.day)}</b>` +
+            ` — <span style="white-space:pre-wrap">${cghsEsc(si.text)}</span></div>`).join("");
       return `<tr><td class="c">${i + 1}</td>` +
         // Before the treatment, because that is the order it is read in:
         // on this day, this was done.
-        `<td class="c">${cghsEsc(fmtDMY(dateOf(x)) || when)}</td>` +
+        `<td class="c">${cghsEsc(cell)}</td>` +
         `<td class="c b">${cghsEsc(x.code) || "—"}</td>` +
         `<td>${cghsEsc(nameOf(x))}</td>` +
         `<td class="c b">${cghsEsc(x.r.tooth) || "—"}</td>` +
         `<td class="c">${x.qty}</td></tr>` +
-        // Under its own line rather than in a sixth column: the detail is
+        // Under its own line rather than in a seventh column: the detail is
         // sentences, and a column of sentences on a pad is unreadable.
         (detail
           ? `<tr><td></td><td colspan="5" style="padding-top:0;border-top:none;` +
-            `font-size:8.5pt;line-height:1.45;white-space:pre-wrap">${cghsEsc(detail)}</td></tr>`
+            `font-size:8.5pt;line-height:1.45">${detail}</td></tr>`
           : "");
     }).join("");
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>${cghsPadCss(pad)}</style></head><body>` +
@@ -7547,41 +7592,63 @@ function CghsPrescription({ pat, lines, plan }) {
             x.code ? React.createElement("span", { style:{ fontSize:12.5, fontWeight:700, color:T } }, x.code) : null,
             React.createElement("span", { style:{ fontSize:12.5, color:"#5a5a5a" } },
               (x.r.tooth ? x.r.tooth + " · " : "") + x.qty + (x.qty === 1 ? " unit" : " units")),
-            // The date this treatment was carried out, in front of it, the
-            // way it prints. A course of treatment runs over several
-            // visits; one date at the top cannot say when each was done.
-            React.createElement("span", { style:{ marginLeft:"auto", display:"flex",
-              gap:6, alignItems:"center" } },
+            React.createElement("button", { onClick: () => addSit(x),
+              title: "Another visit of this treatment, with its own date",
+              style:{ marginLeft:"auto", padding:"5px 12px", fontSize:12.5, fontWeight:700,
+                border:`1px solid ${BORDER}`, borderRadius:6, background:"#fff", color:T,
+                cursor:"pointer", fontFamily:"inherit" } }, "+ Add a sitting")),
+          // One block per sitting: the day it was done, what to write for
+          // it, and -- where the plan has steps -- which step it was. An
+          // RCT is three of these; a scaling is one.
+          sitsOf(x).map((si, si_i) => React.createElement("div", { key: si_i,
+            style:{ borderTop: si_i ? `1px solid ${BORDER}` : "none",
+                    paddingTop: si_i ? 9 : 0, marginTop: si_i ? 9 : 0 } },
+            React.createElement("div", { style:{ display:"flex", gap:7, alignItems:"center",
+              flexWrap:"wrap", marginBottom:6 } },
               React.createElement("span", { style:{ fontSize:12, fontWeight:700, color:"#444444",
-                textTransform:"uppercase", letterSpacing:".04em" } }, "Date done"),
-              React.createElement("input", { type:"date", value: dateOf(x),
+                textTransform:"uppercase", letterSpacing:".04em" } },
+                sitsOf(x).length > 1 ? "Sitting " + (si_i + 1) + " · date" : "Date done"),
+              React.createElement("input", { type:"date", value: dayOf(si),
                 "data-kb-line-date": nameOf(x),
-                onChange: e => setLineDate(x, e.target.value),
+                onChange: e => setSitDate(x, si_i, e.target.value),
                 style:{ ...inp, width:158, fontSize:12.5, padding:"5px 7px" } }),
-              ownDate(x)
-                ? React.createElement("button", { onClick: () => clearLineDate(x),
+              si.date
+                ? React.createElement("button", { onClick: () => setSitDate(x, si_i, ""),
                     title: "Follow the date at the top of the sheet",
                     style:{ padding:"4px 9px", fontSize:12, fontWeight:700, border:`1px solid ${BORDER}`,
                       borderRadius:6, background:"#fff", color:T, cursor:"pointer", fontFamily:"inherit" } },
                     "\u21ba Same as sheet")
-                : null)),
-          // What Plan CGHS lists for this treatment, to pick instead of type.
-          opts.length
-            ? React.createElement("select", {
-                value: "", "data-kb-plan-pick": nameOf(x),
-                onChange: e => {
-                  const o = opts[Number(e.target.value)];
-                  if (o) setDetail(x, o.text);
-                },
-                style:{ ...inp, width:"100%", marginBottom:6, cursor:"pointer" } },
-                React.createElement("option", { value:"" },
-                  "Pick from the plan (" + opts.length + ")…"),
-                opts.map((o, oi) => React.createElement("option", { key: oi, value: String(oi) }, o.label)))
-            : null,
-          React.createElement("textarea", {
-            value: detailOf(x), rows: 3, placeholder: "What is to be written under this treatment…",
-            onChange: e => setDetail(x, e.target.value),
-            style:{ ...inp, width:"100%", minHeight:62, resize:"vertical", lineHeight:1.5 } }));
+                : null,
+              // What Plan CGHS lists for this treatment, to pick instead of
+              // type. Per sitting, because the plan's steps ARE the
+              // sittings: access opening, then preparation, then obturation.
+              opts.length
+                ? React.createElement("select", {
+                    value: "", "data-kb-plan-pick": nameOf(x),
+                    onChange: e => {
+                      const o = opts[Number(e.target.value)];
+                      if (o) setSitText(x, si_i, o.text);
+                    },
+                    style:{ ...inp, flex:1, minWidth:230, cursor:"pointer", fontSize:12.5,
+                      padding:"5px 7px" } },
+                    React.createElement("option", { value:"" },
+                      "Pick from the plan (" + opts.length + ")…"),
+                    opts.map((o, oi) => React.createElement("option", { key: oi, value: String(oi) }, o.label)))
+                : null,
+              sitsOf(x).length > 1
+                ? React.createElement("button", { onClick: () => dropSit(x, si_i),
+                    title: "Remove this sitting",
+                    style:{ padding:"4px 10px", fontSize:12.5, fontWeight:700, border:`1px solid ${BORDER}`,
+                      borderRadius:6, background:"#fff", color:"#B3261E", cursor:"pointer",
+                      fontFamily:"inherit" } }, "✕")
+                : null),
+            React.createElement("textarea", {
+              value: si.text, rows: 3,
+              placeholder: sitsOf(x).length > 1
+                ? "What was done at this sitting…"
+                : "What is to be written under this treatment…",
+              onChange: e => setSitText(x, si_i, e.target.value),
+              style:{ ...inp, width:"100%", minHeight:62, resize:"vertical", lineHeight:1.5 } }))));
       })),
 
     React.createElement(CghsLines, { lines: rows, showAmount: false, onEdit: editLine }));
@@ -14586,6 +14653,13 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
   const [nToothNo, setNToothNo] = React.useState("");
   const [nProcedureDone, setNProcedureDone] = React.useState("");
   const [nWorkDone, setNWorkDone] = React.useState("");
+  // Typing the clinical note from memory, into a register entry made at the
+  // desk, is how the same treatment ends up worded five different ways. The
+  // notes are written once, in Master, and the plan says which of them each
+  // treatment uses -- so once the procedure is named, they are offered.
+  // This is Plan Normal: the CGHS prescription asks the same of Plan CGHS.
+  const noteTpls = useNoteTemplates();
+  const notePlan = useNotePlan();
   const nDoctors = useDoctors();
   const [nDoctor, setNDoctor] = React.useState("");
   // Master answers after the first render, so an initialiser would have left
@@ -14617,6 +14691,34 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
   const [nInitialAssessment, setNInitialAssessment] = React.useState("");
   const [nCarePlanDocumented, setNCarePlanDocumented] = React.useState("");
   const [nErrors, setNErrors] = React.useState({});
+  // What the plan offers for whatever has been named as the Procedure Done,
+  // with the tooth, date and patient already filled into it. Empty until a
+  // procedure is named, and empty for a procedure nothing matches, so the
+  // dropdown appears only when there is something in it to pick.
+  const noteOpts = React.useMemo(() => {
+    if (!String(nProcedureDone || "").trim()) return [];
+    return clinicalNoteOptions(nProcedureDone, noteTpls, notePlan, "Normal", {
+      tooth: nToothNo, teeth: nToothNo, toothNumber: nToothNo,
+      procedure: nProcedureDone, treatment: nProcedureDone,
+      name: (nPat && nPat.name) || "", patient: (nPat && nPat.name) || "",
+      uhid: (nPat && nPat.uhid) || nUhid || "",
+      date: fmtDMY(nDate) || TODAY, age: nAge || ""
+    });
+  }, [nProcedureDone, noteTpls, notePlan, nToothNo, nPat, nUhid, nDate, nAge]);
+  // Every treatment the plan or the library knows, to suggest while the
+  // procedure is being typed -- so what is typed matches what the plan is
+  // filed under, and the notes below actually appear.
+  const procSuggestions = React.useMemo(() => {
+    const seen = {}, out = [];
+    const put = (v) => {
+      const t = String(v || "").trim();
+      if (!t || seen[t.toLowerCase()]) return;
+      seen[t.toLowerCase()] = 1; out.push(t);
+    };
+    (notePlan || []).forEach(r => { if (r && String(r.plan) === "Normal") put(r.treatment); });
+    (noteTpls || []).forEach(t => put(t && t.situation));
+    return out;
+  }, [notePlan, noteTpls]);
   // Set after a save whose Procedure Done text looks like RCT/Crown &
   // Bridge/Implant work — offers to open that clinical form for the same
   // patient, since a register line alone doesn't capture the structured
@@ -14847,10 +14949,33 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
       ),
       React.createElement("div",{style:{marginBottom:12}},
         React.createElement(Lbl,{c:"Procedure Done *"}),
-        React.createElement("input",{style:{...inp,borderColor:nErrors.procedure?"#e24b4a":""},value:nProcedureDone,onChange:e=>setNProcedureDone(e.target.value),placeholder:"e.g. Restoration - Composite"})
+        React.createElement("input",{style:{...inp,borderColor:nErrors.procedure?"#e24b4a":""},
+          value:nProcedureDone,list:"kbRegProcedures",
+          onChange:e=>setNProcedureDone(e.target.value),placeholder:"e.g. Restoration - Composite"}),
+        React.createElement("datalist",{id:"kbRegProcedures"},
+          procSuggestions.map(p=>React.createElement("option",{key:p,value:p})))
       ),
       React.createElement("div",{style:{marginBottom:12}},
         React.createElement(Lbl,{c:"Work Done / Clinical Notes"}),
+        // The notes the plan lists for the procedure named above. Picking
+        // one writes it here; picking a second adds it on its own line, so
+        // two things done in one visit build the note up instead of one
+        // replacing the other, and nothing already typed is lost.
+        noteOpts.length
+          ? React.createElement("select",{
+              value:"","data-kb-reg-note":nProcedureDone,
+              onChange:e=>{
+                const o = noteOpts[Number(e.target.value)];
+                if (!o) return;
+                setNWorkDone(prev => String(prev || "").trim()
+                  ? String(prev).replace(/\s*$/, "") + "\n" + o.text
+                  : o.text);
+              },
+              style:{...inp,marginBottom:6,cursor:"pointer"}},
+              React.createElement("option",{value:""},
+                "Pick the note from the plan (" + noteOpts.length + ")…"),
+              noteOpts.map((o,oi)=>React.createElement("option",{key:oi,value:String(oi)},o.label)))
+          : null,
         React.createElement("textarea",{style:{...ta,minHeight:70},value:nWorkDone,onChange:e=>setNWorkDone(e.target.value),placeholder:"Describe what was done..."})
       ),
       React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}},
