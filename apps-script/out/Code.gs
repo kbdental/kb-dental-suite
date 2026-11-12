@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-11";
+var BACKEND_BUILD = "2026-11-12";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -1116,6 +1116,7 @@ function route(p) {
       case "getClinicalSheets":  return getClinicalSheets(p);
       case "saveClinicalSheets": return saveClinicalSheets(p);
       case "appendClinicalRecordRows": return appendClinicalRecordRows(p);
+      case "listClinicalSheetRecords": return listClinicalSheetRecords(p);
       case "getClinicalExaminationList":  return getClinicalExaminationList();
       case "saveClinicalExaminationList": return saveClinicalExaminationList(p);
 
@@ -2555,6 +2556,83 @@ function appendClinicalRecordRows(p) {
     try { lock.releaseLock(); } catch (e) {}
   }
   return { success: true, written: written, updated: updated, skipped: skipped, tab: tabName };
+}
+
+
+// ── The history, handed back record by record ──
+// appendClinicalRecordRows writes each visit out flat as it is saved, so the
+// clinic's "RCT" tab fills from the day that shipped and no earlier. Every
+// record saved before it is still here, whole -- as JSON in a Clinical
+// Sheets tab -- because nothing wrote flat rows then. The history is not
+// lost; it is just not where the clinic reads.
+//
+// This hands those records back a page at a time so the app can project each
+// one through the SAME code a save uses and send the rows on to
+// appendClinicalRecordRows. Doing it that way, rather than re-deriving the
+// columns here, means the backfilled rows and tomorrow's rows cannot
+// disagree about what a visit looks like.
+//
+// It only reads. A page at a time because one of these cells holds a whole
+// course of treatment, and a clinic with years of them will not fit in one
+// answer.
+function listClinicalSheetRecords(p) {
+  var sheetType = String(p.sheetType || "").trim();
+  if (!sheetType) return { success: false, error: "sheetType required" };
+  var offset = Math.max(0, parseInt(p.offset, 10) || 0);
+  var limit = parseInt(p.limit, 10) || 8;
+  if (limit < 1) limit = 1;
+  if (limit > 25) limit = 25;
+
+  // The form's own tab first, then the shared one, the way getClinicalSheets
+  // reads -- so a record written before the tabs were split is still found,
+  // and the newer copy of it wins.
+  var names = [clinicalSheetTabName_(sheetType)];
+  if (names[0] !== CLINICAL_SHEETS_SHARED_TAB) names.push(CLINICAL_SHEETS_SHARED_TAB);
+
+  var sheets = {};
+  var openTab = function (name) {
+    if (!sheets[name]) sheets[name] = getClinicalSheet(name);
+    return sheets[name];
+  };
+
+  var keys = [], seen = {};
+  for (var n = 0; n < names.length; n++) {
+    var sh = openTab(names[n]);
+    var last = sh.getLastRow();
+    if (last < 2) continue;
+    var vals = sh.getRange(2, 1, last - 1, 3).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      var uhid = String(vals[i][0]).trim().toUpperCase();
+      if (!uhid) continue;
+      if (String(vals[i][2]).trim() !== sheetType) continue;
+      if (seen[uhid]) continue;
+      seen[uhid] = true;
+      keys.push({ tab: names[n], row: i + 2, uhid: uhid });
+    }
+  }
+  // A stable order, so paging through cannot skip a record or hand one back
+  // twice while the clinic goes on saving.
+  keys.sort(function (a, b) { return a.uhid < b.uhid ? -1 : a.uhid > b.uhid ? 1 : 0; });
+
+  var records = [];
+  for (var k = offset; k < keys.length && records.length < limit; k++) {
+    var row = openTab(keys[k].tab).getRange(keys[k].row, 1, 1, 5).getValues()[0];
+    records.push({
+      uhid: keys[k].uhid,
+      name: String(row[1] || ""),
+      sheetType: String(row[2] || ""),
+      allTeeth: safeParseJSON(row[3]),
+      savedAt: row[4] ? String(row[4]) : ""
+    });
+  }
+  var done = offset + records.length;
+  return {
+    success: true,
+    total: keys.length,
+    offset: offset,
+    next: done < keys.length ? done : null,
+    records: records
+  };
 }
 
 // ── One-off, safe to re-run ──────────────────────────────────────────────
