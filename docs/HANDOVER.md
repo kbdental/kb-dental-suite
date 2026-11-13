@@ -1,5 +1,133 @@
 # Handover for the next tool (31 Oct 2026)
 
+## VM replication handoff — 13 November 2026
+
+Read `VM-REPLICATION.md` for Claude on Viveyk's VM. It separates GitHub source,
+migrations and scripts from the fresh clinical/analytics dumps, documents and
+private configuration needed outside Git. The current target is `launch-sync`
+on8350, not the older8300 review or synthetic demos. No VM access, restore,
+private transfer, source refresh or production cutover is performed by this handoff.
+Umami is configured for the older review profile; the latest launch-sync profile
+has no Umami connection configured. Connect and verify tracking explicitly on
+the VM. Keep the expired importer stopped. Applied migration bytes are preserved
+by repository attributes to prevent Windows newline conversion breaking checksums.
+Publication checks:75 backend tests pass in10 serialized files;49 Node tests pass
+across12 importer/UI files, with TypeScript and build passing. Reproduced and
+corrected two older test assumptions: HTML reads normalize Windows line endings,
+and the Master menu expectation includes the accepted Organization category.
+No full-suite, VM restore, fresh browser or print acceptance is claimed here.
+
+## Upstream update, fresh Sheets and integration tests — 12 November 2026
+
+Read `UPDATE-AND-SYNC-2026-11-12.md`. Integrated d8cd654 (includes main9300a96)
+as local88ff906 on saas/multi-clinic, preserving all prior dirty work. Added native
+examination configuration, clinical-sheet paging and idempotent readable-record
+adapters; imported new library/plan/examination/department configuration. Existing
+JSON storage covers the new fields: all38 migrations/checksums match, none needed.
+Five-book capture154 tabs/41,897 rows at12:00:40 IST; normalized refresh applied
+after a full private backup. Added patient1, appointments20, clinical records19,
+register rows10 and receipts4. Readable finance totals reconcile; cutoff Apr2024.
+Eight CRM conflicts are held (six previous contact records +two lead-inbox items),
+with app-side changes preserved. Twelve unreadable expense amounts remain held.
+This is one-off refresh; expired hourly worker remains stopped.
+Tests: config5, readable-copy4, pages7, transport1, existing clinical16 and CGHS2
+pass in serialized files; Node checks38/38, build, local/public14 checks each, and
+five actual API/DB comparisons pass. Browser gallery/patient-picker navigation
+rendered without new errors; no live clinical backfill or fake writes performed.
+Cloudflare rejected provisioning with429/error10000 three times, then recovered
+about11 minutes after first failure. New tunnel is live; private public-url.txt has
+the verified current URL. No credentials were changed or source Sheets written.
+Preservation stashes and uncommitted work remain; no GitHub push was made.
+
+## Latest upstream pull and Master/Reports review — 10 November 2026
+
+Authenticated follow-up completed after user sign-in: Master sections/configuration,
+clinic creation form, organization report table, clinic Summary/Doctor Details/
+Patient Details and history drill-down render; invalid report ranges are rejected,
+filters restored, no new browser errors. No live saves/seeds/permission changes.
+Review note now includes empty Normal/CGHS plan setup, uninitialized departments,
+remaining “sheet” copy, narrow-pane navigation/table fit, report identity/freshness,
+month-end default and prominent missing-registration-date coverage warnings. These
+are recommendations only; write/print acceptance remains unperformed.
+
+Read `MASTER-REPORTS-REVIEW-2026-11-10.md`. Merged upstream UI branch e451b3f
+(includes main6467d5b) as local c5c4f4e on saas/multi-clinic; main untouched.
+Preserved/restored all prior dirty tracked paths and left their work uncommitted;
+the named preservation stash remains. Untracked source/data files were untouched.
+Integrated new native template-library, Normal/CGHS plan and department APIs while
+preserving existing curated notes and explicit empty lists. Fixed/reproduced a
+blank-page CSP nonce rewrite of a literal script tag; actual script nonces remain.
+Tests: new config4/4, pages7/7, existing Master23/23, Reports17/17, report tabs5/5,
+frontend regressions11/11, report arithmetic113/113 and Master save checks17/17;
+build passes. Public/local verifiers14/14 each and Master/Reports reads39/39 pass.
+Browser now reaches Staff Sign In; authenticated visual review awaits user login.
+Server8350 and a new Quick Tunnel are running; read private public-url.txt for URL.
+No worker restart/expiry extension: last source capture7Nov13:50:59 IST, worker
+window ended8Nov10:28:35 IST. Corrected stale worker-state running flag to false.
+No clinical writes, live clinic creation, Apps Script publishing or GitHub push.
+Review recommendations are documented only; do not implement the department rename,
+report-password policy or broader UX changes before aligning scope with Viveyk.
+
+## Separate Sheets-synced verification site — 7 November 2026
+
+Latest correction: restored the Other Clinic destination as **Organization →
+Clinics**, backed by real native clinic creation rather than the legacy saved
+profile list. Managers with roles:manage + masters:write and a Master unlock can
+create a clinic in this organization. The narrow SECURITY DEFINER gate in0038
+creates its clinic/unit link, copies configured role definitions, and grants only
+the creating principal a corresponding account/clinic switch. No patients,
+visits, financial rows or other staff grants are copied. The selector refreshes
+after creation; code collisions are rejected. Shared patient identity remains
+organization-wide. Existing legacy Sheets mode keeps its original editor.
+0038 is applied only to the marked verification copy; its dedicated runtime role
+has execute permission on the new function, with no direct registry/grant writes.
+New creation tests2/2 and existing clinical-organization tests13/13 passed in
+serialized runs; build and navigation tests pass. Public checks14/14 and a real
+Master-gated read of its two linked clinics passed. No extra live clinic created.
+
+Screenshot follow-up: screen letterhead now has balanced columns/readable contact
+text; embedded Daily Register puts the shared letterhead before its tabs. Filter
+cards and appointment actions wrap responsively; sidebar navigation reserves the
+clinic/footer height. Intake has a compact responsive grid, no premature full-form
+step rail, and pending Refresh beside its heading. Finance password controls wrap.
+Clinic selection retains the pending choice; historical single-day register ranges
+no longer say Today. Three reproduced regressions now pass, with native-settings
+and session regressions11/11 total. Registration patient-type14/14, register columns
+14/14 and Master menu18/18 pass. The older panel-choice assertion about the legacy
+repair control also fails on HEAD (37 pass/1 fail); this work leaves it unchanged.
+Browser initialization still fails, so these are code/API checks, not visual
+acceptance. No clinical/source writes were made by this UI work.
+
+User's UI cleanup is live: one native Clinic category includes clinical templates;
+Roles & access appears only under Organization, with Passwords alongside it.
+Native Other Clinic (legacy profile-only creation) and Finance sheet selector are
+hidden. The verification banner is removed; trial/cutover status is unchanged.
+Four navigation/render regressions and 35 existing Master assertions pass; public
+verification again passes14/14 after the dedicated server restart.
+
+Read `LAUNCH-SHEETS-SYNC.md` for current operations. User confirmed a separate
+database-backed website with independent login; the original GitHub/Apps Script
+website stays unchanged. The earlier Sheets-backed bridge is abandoned. Native
+server8350, hourly read-only Sheets importer and temporary Cloudflare Quick Tunnel
+are running against a marked isolated copy. Public URL and fresh logins are private
+under `api/.organization-demo-runtime/launch-sync/`; never copy them into Git.
+The verification worker expires 8 November at10:28:35 IST. Actual launch-week
+dates and fixed-domain tunnel remain later work.
+
+Five-workbook conversion includes source histories and finances from April2024.
+The latest automatic refresh succeeded with one appointment update, zero conflicts
+and matched readable financial totals. Twelve unreadable expense amounts are held
+with source-row links in admin `/sync-review`; source identity/date/timing flags
+remain explicit. No Google writes are made by the importer. Use the old site for
+operational entries until cutover; test-copy edits do not return to Sheets.
+Migrations0035–0037 were applied only to this isolated copy. Dedicated app/owner
+roles and sessions are separate from the original review profile; do not rerun
+provisioning as a restart. Public API verification14/14, focused Node tests37/37
+and build pass; browser initialization failed, so manual visual/write acceptance
+remains. See the runbook for the earlier blank-probe-row incident and unexecuted
+guarded owner cleanup helper. No source write probes, GitHub deploy or old-site
+authentication changes are authorized as verification.
+
 ## UI integration, save reliability and local analytics — 7 November2026
 
 Read REVIEW-2026-11-07.md and LOCAL-ANALYTICS.md. Integrated Viveyk's UI snapshot

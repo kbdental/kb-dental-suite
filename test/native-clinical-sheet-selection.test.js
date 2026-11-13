@@ -1,0 +1,4 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const html=fs.readFileSync('index.html','utf8');const start=html.indexOf('function ClinicalSheets(');const source=html.slice(start,html.indexOf('\n}',start)+2);
+function selected(only){const states=[];const stop=new Error('Captured initial state');const React={useState:value=>{states.push(value);if(states.length===4)throw stop;return[value,()=>{}];}};const fn=vm.runInNewContext('('+source+')',{React});try{fn({globalPat:null,setGlobalPat:()=>{},only});}catch(e){if(e!==stop)throw e;}return states[3];}
+test('embedded tooth reports initialize to the requested sheet rather than always RCT',()=>{assert.equal(selected('implant_surgery'),'implant_surgery');assert.equal(selected('restoration'),'restoration');assert.equal(selected(null),'rct');});

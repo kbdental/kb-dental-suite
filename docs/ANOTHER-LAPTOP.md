@@ -1,5 +1,9 @@
 # Run both versions on another laptop
 
+For duplicating the current patient-backed verification website onto Viveyk's VM,
+start with [VM-REPLICATION.md](VM-REPLICATION.md). This guide below creates synthetic
+development/demo databases and does not restore the current clinical installation.
+
 31 October 2026. Windows/PowerShell instructions. No Docker required.
 Repository code includes both the familiar clinic suite and the organization demo.
 Real databases, patient spreadsheets/files, .env files and passwords are deliberately

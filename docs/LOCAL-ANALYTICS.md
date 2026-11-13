@@ -1,5 +1,10 @@
 # Local usage analytics
 
+For Viveyk's VM, see [VM-REPLICATION.md](VM-REPLICATION.md). Configuration inspection
+on13 November found this analytics connection in the older `realdata-review`
+profile only; the latest `launch-sync` profile needs its own explicit connection.
+Choose a fresh analytics install or a verified history restore before provisioning.
+
 Umami3.4.1 is a separate service on http://127.0.0.1:8091, with its own
 `kb_umami_review` database, restricted database role and private admin password.
 The clinical application emits named screens/actions; it does not install a

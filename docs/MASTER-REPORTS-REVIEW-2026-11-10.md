@@ -76,12 +76,48 @@ isolation boundary. Complete visit/treatment/material history remains separate w
 - Native navigation, screenshot regressions and session regression checks: 11/11.
 - Report arithmetic: 113/113; checked-Master-save assertions: 17/17; build passes.
 - Public and local verification: each 14/14. Master/Reports read probe: 39/39.
-- Browser tooling now starts and the repaired native page reaches Staff Sign In.
-  Authenticated visual walkthrough is pending the user signing into the opened tab.
-  No claim of a complete authenticated visual or print acceptance pass is made.
+- After the user signed in, a read-only authenticated browser walkthrough covered
+  Master category navigation, clinical configuration, clinic creation form,
+  organization reports, clinic Summary/Doctor Details/Patient Details and a patient
+  history drill-down. Reversed report dates were rejected and original filters
+  restored. No new browser errors appeared. Saving, permission changes, seed loading
+  and print/export acceptance were not exercised on the real dataset.
 - Data is still the last imported capture from **7 November, 13:50:59 IST**, applied
   at13:51:03. The hourly verification window expired **8 November, 10:28:35 IST**.
   The import worker was not restarted or extended by this server restart. No worker
   process was present; its stale state file flag was corrected to stopped.
 - The public URL is in the private runtime's `public-url.txt`. It changed because
   the earlier Quick Tunnel process had stopped. Existing credentials are unchanged.
+
+## Authenticated visual follow-up
+
+The user completed sign-in and Master unlock. At the current narrow browser pane,
+the main navigation and clinic footer remain visible, but Master category/subtab
+rows take substantial vertical space and the organization report table extends
+horizontally. Keep the accepted single Clinic destination; compact internal
+grouping and a clear horizontal-scroll cue would improve this layout.
+
+Additional observed improvements to align with Viveyk:
+
+- **Setup readiness:** Normal Plan and Plan CGHS are both empty in this database.
+  Both offer the same bulk loader for277 default treatments. Departments is also
+  uninitialized and offers14 defaults. Treat this as an explicit, previewable setup
+  operation: show which lists will change, unresolved template references and the
+  relationship to fee schedules. No defaults were loaded by the review.
+- **Native wording:** Departments still says “Save them to the sheet.” Replace
+  spreadsheet-specific copy with wording matching the native clinic configuration.
+- **Report identity and freshness:** Add a visible Reports heading, selected clinic
+  and source-capture time. The existing “Showing…” applied-range line is present
+  and helpful; retain it. Default To currently runs to the end of the month
+  (30November), rather than today (10November), so a month-to-date preset should
+  state its cutoff explicitly.
+- **Data-quality prominence:** The Summary shows2,110 patients without registration
+  dates in a small note below the monthly table. Promote this to a clear coverage
+  warning and offer a review path; do not invent dates or silently reclassify them.
+- **Placeholders:** Examination, Drug categories and Sales Tracker can be reached
+  alongside functioning sections. Mark their unavailable status in navigation.
+
+Doctor and patient report tabs have search, row actions and history/paging controls;
+the patient-history row action opened its detail table successfully. Patient values
+and staff contact details were not copied into this document. This follow-up adds
+observations only; no application configuration or clinical data was changed.

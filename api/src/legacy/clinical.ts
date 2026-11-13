@@ -7,7 +7,7 @@ import { can } from "../auth/permissions.js";
 import { callLimiter, complete, LlmError } from "../llm.js";
 import { RECORD_FORMS, RECORD_HEADINGS, RECORD_TABS } from "./clinical-forms.js";
 import { read, write, DeskError, type ActionTable, type Params } from "./types.js";
-import { jsonOf, nz, str, uhidOf } from "./util.js";
+import { jsonOf, nz, str, uhidOf, parseList } from "./util.js";
 import {checkVersion,currentVersion} from './versions.js';
 
 /** A form value as the sheet held it: text, whatever the screen sent. */
@@ -74,12 +74,49 @@ function soapPrompt(clinicName: string, p: Params): string {
 
 export const clinical: ActionTable = {
   ...formSaves,
+  appendClinicalRecordRows:write('clinical:write',async(p,{tx})=>{
+    const tab=str(p.tabName);
+    if(!RECORD_TABS.has(tab))throw new DeskError('Unknown clinical record type');
+    const rows=parseList(p.rows,'clinical rows');if(rows.length>2000)throw new DeskError('Too many clinical rows');
+    const norm=(value:unknown)=>str(value).toLowerCase().replace(/&/g,'and').replace(/[^a-z0-9]+/g,'');
+    const headings=RECORD_HEADINGS[tab]??[];
+    const names=new Map(headings.map(heading=>[norm(heading),heading]));
+    const keys=(p.keyColumns===undefined?['UHID']:parseList(p.keyColumns,'clinical row keys')).map(key=>names.get(norm(key)));
+    if(keys.some(key=>!key)||!keys.includes('UHID'))throw new DeskError('Clinical row keys must include UHID and known columns');
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(app_clinic_id()::text||':readable-records:'||${tab},0))`.execute(tx);
+    let written=0,updated=0,skipped=0;
+    for(const raw of rows){
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new DeskError('Invalid clinical row');
+      const fields:Record<string,string>=Object.fromEntries(headings.map(heading=>[heading,'']));
+      for(const [label,value]of Object.entries(raw)){const heading=names.get(norm(label));if(heading)fields[heading]=cell(value);}
+      if(!Object.values(fields).some(Boolean)){skipped++;continue;}
+      const uhid=uhidOf(fields.UHID);if(!uhid)throw new DeskError('Choose the patient this record is for');fields.UHID=uhid;
+      const existing=(await sql<{id:string;fields:Record<string,string>}>`SELECT id,fields FROM clinical_records WHERE tab_name=${tab} AND upper(uhid)=${uhid} FOR UPDATE`.execute(tx)).rows;
+      const matching=existing.filter(row=>keys.every(key=>norm(row.fields[key!])===norm(fields[key!])));
+      if(matching.length>1)throw new DeskError('More than one clinical record matches; review before updating');
+      if(matching[0]){
+        await sql`UPDATE clinical_records SET fields=${JSON.stringify(fields)}::jsonb WHERE id=${matching[0].id} AND fields IS DISTINCT FROM ${JSON.stringify(fields)}::jsonb`.execute(tx);updated++;
+      }else{
+        const patient=(await sql<{id:string}>`SELECT id FROM patients WHERE uhid=${uhid}`.execute(tx)).rows[0];
+        await sql`INSERT INTO clinical_records(tab_name,uhid,patient_id,fields) VALUES(${tab},${uhid},${patient?.id??null},${JSON.stringify(fields)}::jsonb)`.execute(tx);written++;
+      }
+    }
+    return {success:true,written,updated,skipped};
+  }),
+  listClinicalSheetRecords:read(async(p,{tx})=>{
+    const type=str(p.sheetType);if(!type)throw new DeskError('Sheet type required');
+    const number=(value:unknown,fallback:number)=>{const n=Number(value);return Number.isFinite(n)?Math.floor(n):fallback;};
+    const offset=Math.max(0,number(p.offset,0)),limit=Math.min(25,Math.max(1,number(p.limit,8)));
+    const total=Number((await sql<{n:string}>`SELECT count(*) AS n FROM clinical_sheets WHERE sheet_type=${type}`.execute(tx)).rows[0]!.n);
+    const rows=(await sql<{uhid:string;name:string|null;sheet_type:string;all_teeth:unknown;saved:string}>`SELECT uhid,patient_name AS name,sheet_type,all_teeth,to_char(updated_at AT TIME ZONE 'UTC',${ISO_MS}) AS saved FROM clinical_sheets WHERE sheet_type=${type} ORDER BY uhid,id OFFSET ${offset} LIMIT ${limit}`.execute(tx)).rows;
+    return {success:true,total,offset,next:offset+rows.length<total?offset+rows.length:null,records:rows.map(row=>({uhid:row.uhid,name:row.name??'',sheetType:row.sheet_type,allTeeth:row.all_teeth,savedAt:row.saved}))};
+  },'clinical:read'),
 
   getClinicalRecords: read(async (p, { tx }) => {
     const tab = str(p.tabName), uhid = uhidOf(p.uhid);
     if (!tab || !uhid) return { success: false, error: "tabName and uhid required" };
     if (!RECORD_TABS.has(tab)) return { success: false, error: `Unknown record type: ${tab}` };
-    const r = await sql<{ row_index: number; ts: string; fields: Record<string, unknown>; total: number }>`
+    const r = await sql<{ row_index: number; ts: string|null; fields: Record<string, unknown>; total: number }>`
       SELECT * FROM (
         SELECT (row_number() OVER (ORDER BY recorded_at, id) + 1)::int AS row_index, upper(uhid) AS u,
                to_char(recorded_at AT TIME ZONE 'UTC', ${ISO_MS}) AS ts, fields, count(*) OVER ()::int AS total
@@ -91,7 +128,7 @@ export const clinical: ActionTable = {
     }
     const headers = ["Timestamp", ...(RECORD_HEADINGS[tab] ?? [])];
     const records = r.rows.map((row) => {
-      const rec: Record<string, unknown> = { _rowIndex: row.row_index, Timestamp: row.ts };
+      const rec: Record<string, unknown> = { _rowIndex: row.row_index, Timestamp: row.ts??"" };
       for (const [k, v] of Object.entries(row.fields)) {
         if (k !== "Timestamp") rec[k] = cell(v);
         if (!headers.includes(k)) headers.push(k);

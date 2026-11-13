@@ -26,6 +26,14 @@ describe('latest native Master clinical configuration contract',()=>{
   expect((await exec(w,admin,'getClinicalDepartmentsList')).departments).toEqual(['Example','Other']);
   const second=await execLogin(w,'beta','b-admin');expect((await exec(w,second,'getClinicalNotePlan')).rows).toEqual([]);
  });
+ it('persists examination findings with stable keys and refuses duplicate keys',async()=>{
+  const findings=[{section:'Extraoral',finding:'Example finding',kind:'present',key:'example_finding'}];
+  expect((await exec(w,admin,'saveClinicalExaminationList',{findings})).success).toBe(true);
+  expect((await exec(w,admin,'getClinicalExaminationList')).findings).toEqual(findings);
+  expect((await exec(w,desk,'saveClinicalExaminationList',{findings:[]})).success).toBe(false);
+  expect((await exec(w,admin,'saveClinicalExaminationList',{findings:[...findings,...findings]})).success).toBe(false);
+  expect((await exec(w,admin,'getClinicalExaminationList')).findings).toEqual(findings);
+ });
  it('keeps an explicitly emptied library empty instead of reseeding old notes',async()=>{
   expect((await exec(w,admin,'saveClinicalNoteTemplateLib',{rows:[]})).success).toBe(true);
   expect((await exec(w,admin,'getClinicalNoteTemplateLib')).rows).toEqual([]);

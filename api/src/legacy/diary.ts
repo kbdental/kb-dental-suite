@@ -57,6 +57,7 @@ const STEPS = ["Scheduled", "Checked In", "In Chair", "Completed"] as const;
 const STAMPS = ["", "checkin_at", "engaged_at", "checkout_at"] as const;
 
 interface ApptRow {
+  source_timing?: {checkinTime?:string;engagedTime?:string;checkoutTime?:string;requiresReview?:boolean};
   id: string; legacy_id: string | null; date: string; time: string; uhid: string | null; patient_name: string;
   reason: string; sub_type: string | null; doctor: string | null; chair: string | null; mobile: string | null;
   notes: string | null; status: string; checkin: string | null; engaged: string | null; checkout: string | null;
@@ -68,8 +69,8 @@ function apptOut(a: ApptRow) {
   return {
     id: a.legacy_id ?? a.id, date: a.date, uhid: a.uhid ?? "", patientName: a.patient_name, time: a.time,
     type: a.reason, subType: a.sub_type ?? "", doctor: a.doctor ?? "", chair: a.chair ?? "", mobile: a.mobile ?? "",
-    notes: a.notes ?? "", status: a.status, checkinTime: a.checkin ?? "", engagedTime: a.engaged ?? "",
-    checkoutTime: a.checkout ?? "", cancelReason: a.cancel_reason ?? "", caseId: a.case_ref ?? "",
+    notes: a.notes ?? "", status: a.status, checkinTime: a.checkin ?? a.source_timing?.checkinTime ?? "", engagedTime: a.engaged ?? a.source_timing?.engagedTime ?? "",
+    checkoutTime: a.checkout ?? a.source_timing?.checkoutTime ?? "", sourceTimingRequiresReview:!!a.source_timing?.requiresReview, cancelReason: a.cancel_reason ?? "", caseId: a.case_ref ?? "",
     procedureCode: a.procedure_code ?? "", procedureName: a.procedure_name ?? "", familyCode: a.family_code ?? "",
     plannedStages: a.planned_stages ?? [], completedStages: a.completed_stages ?? [], visitCounter: a.visit_counter ?? ""
   };
@@ -97,7 +98,7 @@ export const diary: ActionTable = {
     const r = await sql<ApptRow>`
       SELECT a.id, a.legacy_id, ${day}::text AS date, to_char(a.starts_at AT TIME ZONE ${tz}, 'HH24:MI') AS time,
              p.uhid, a.patient_name, a.reason, a.sub_type, coalesce(d.name, a.doctor_name) AS doctor,
-             coalesce(c.name, a.chair_name) AS chair, a.mobile, a.notes, a.status,
+             coalesce(c.name, a.chair_name) AS chair, a.mobile, a.notes, a.status,a.source_timing,
              ${hm("a.checkin_at")} AS checkin, ${hm("a.engaged_at")} AS engaged, ${hm("a.checkout_at")} AS checkout,
              a.cancel_reason, a.case_ref, a.procedure_code, a.procedure_name, a.family_code, a.planned_stages,
              a.completed_stages, a.visit_counter

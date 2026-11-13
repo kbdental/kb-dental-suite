@@ -83,9 +83,9 @@ ok('and it really is patient advice, which is why it sits here',
    /const INSTRUCTION_CATEGORIES = \["Oral Hygiene"/.test(html));
 
 // ── nothing was displaced on the way ────────────────────────────────────
-eq('the other categories are where they were',
+eq('organization controls precede the existing categories',
    MENU.map(t => t.id),
-   ["clinic", "schedule", "patient", "clinicalConfig", "prescriptions",
+   ["organization", "clinic", "schedule", "patient", "clinicalConfig", "prescriptions",
     "accounts", "security", "sales"]);
 eq('the prescription lists are untouched',
    subs("prescriptions"), ["drugCategories", "medicines", "medDosages",

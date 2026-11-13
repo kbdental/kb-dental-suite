@@ -192,6 +192,16 @@ function clinicalRows(value:unknown,label:string,fields:string[],required:string
 }
 
 Object.assign(masters,{
+  getClinicalExaminationList:read(async(_p,{tx})=>({success:true,findings:await getSetting(tx,'clinical_examination')??[]})),
+  saveClinicalExaminationList:write('masters:write',async(p,{tx})=>{
+    const findings=clinicalRows(p.findings,'clinical examination',['section','finding','kind','key'],['finding','key']);
+    const seen=new Set<string>();
+    for(const row of findings){
+      if(!['healthy','present','check','text'].includes(row.kind!)||seen.has(row.key!))throw new DeskError('Invalid examination kind or duplicate key');
+      seen.add(row.key!);
+    }
+    await putSetting(tx,'clinical_examination',findings);return {success:true,saved:findings.length};
+  }),
   getClinicalNoteTemplateLib:read(async(p,ctx)=>{
     const {tx}=ctx;
     const saved=await getSetting<ClinicalLibraryRow[]>(tx,'clinical_note_template_library');

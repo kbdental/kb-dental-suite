@@ -2,7 +2,7 @@ import { sql } from "kysely";
 import { createHash } from "node:crypto";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import type { Actor, Tx } from "../db/index.js";
-import { read, write, type ActionTable } from "./types.js";
+import { read, write, type ActionTable, type Result } from "./types.js";
 import { parseObject, str } from "./util.js";
 
 const fingerprint = (value: string | null) => createHash("sha256").update(value ?? "unset").digest("hex");
@@ -32,6 +32,15 @@ async function allowed(tx: Tx, actor: Actor) {
 }
 
 export const organizationActions: ActionTable = {
+  getOrganizationClinics: read(async (_p, { tx, actor }) => {
+    const denied = await allowed(tx, actor); if (denied) return denied;
+    return (await sql<{ result: Result }>`SELECT clinical_manage_clinics(${actor.sessionHash!}) AS result`.execute(tx)).rows[0]!.result;
+  }, "masters:write"),
+  createOrganizationClinic: write("masters:write", async (p, { tx, actor }) => {
+    const denied = await allowed(tx, actor); if (denied) return denied;
+    const details = JSON.stringify({ code:str(p.code), name:str(p.name), timezone:str(p.timezone) || actor.timezone });
+    return (await sql<{ result: Result }>`SELECT clinical_manage_clinics(${actor.sessionHash!},${details}::jsonb) AS result`.execute(tx)).rows[0]!.result;
+  }),
   getWorkingClinics: read(async (_p, { tx, actor }) => {
     const state = (await sql<{ state: Record<string, unknown> }>`SELECT clinical_clinics(${actor.sessionHash!}) AS state`.execute(tx)).rows[0]!.state;
     return { success: true, ...state };

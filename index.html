@@ -13,6 +13,31 @@
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow:hidden}
 input,select,textarea,button{font-family:inherit}
 input:focus,select:focus,textarea:focus{outline:2px solid #0078B4;outline-offset:1px}
+.clinic-letterhead{display:grid;grid-template-columns:58px minmax(0,1fr) 58px;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #0078B4}
+.clinic-letterhead img{width:58px;height:58px;object-fit:contain;border-radius:50%;display:block;mix-blend-mode:multiply}
+.clinic-letterhead-copy{text-align:center;min-width:0;line-height:1.5;overflow-wrap:anywhere}
+.clinic-letterhead-title{font-size:18px;font-weight:800;color:#c0392b;letter-spacing:.12em;text-decoration:underline}
+.clinic-letterhead-tagline{font-size:11px;font-weight:700;color:#0078B4;letter-spacing:.03em}
+.clinic-letterhead-contact{font-size:11px;color:#383838}
+.ui-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ui-toolbar input,.ui-toolbar select,.ui-toolbar button,.ui-toolbar textarea{min-height:40px}
+.ui-toolbar button{white-space:nowrap;flex-shrink:0}
+.ui-filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,175px),1fr));gap:12px;align-items:end;background:#fff;border:1px solid #ddd;border-radius:10px;padding:16px;margin-bottom:16px}
+.ui-filter-grid>div{min-width:0}
+.ui-register-filters{grid-template-columns:repeat(4,minmax(0,1fr)) auto}
+.ui-filter-actions{display:flex;gap:8px;flex-wrap:wrap}
+.appointment-sidebar{width:220px;flex-shrink:0;min-width:0}
+.appointment-action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.appointment-sidebar button{min-height:38px}
+.registration-intake{width:100%;max-width:900px}
+.registration-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px}
+.registration-intake input,.registration-intake select{min-height:40px}
+.registration-intake textarea{min-height:72px}
+.settings-card{width:100%;max-width:640px}
+@media(max-width:1100px){.ui-register-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.ui-register-filters{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:900px){.appointment-layout{flex-wrap:wrap}.appointment-sidebar{width:100%}.appointment-sidebar>select{max-width:320px}.app-main{padding:18px!important}}
+@media(max-width:600px){.clinic-letterhead{grid-template-columns:40px minmax(0,1fr);gap:10px}.clinic-letterhead img{width:40px;height:40px}.clinic-letterhead-title{font-size:16px}.clinic-letterhead-tagline,.clinic-letterhead-contact{font-size:10px}.registration-fields{grid-template-columns:minmax(0,1fr)}.app-sidebar{width:156px!important}.ui-toolbar{gap:8px}.ui-toolbar>div{max-width:100%}}
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}
@@ -484,8 +509,11 @@ function setSessionToken(t) { try { t ? sessionStorage.setItem(scopedKey(KB_TOKE
 // backend reports the session is missing or expired.
 let _onAuthRequired = null;
 function setAuthRequiredHandler(fn) { _onAuthRequired = fn; }
-function handleAuthFailure(res) {
+function handleAuthFailure(res, requestToken) {
   if (res && res.success === false && res.authRequired) {
+    // A read sent before sign-in may finish after staffLogin has issued a new
+    // token. Its rejection belongs to the old session, not the new one.
+    if (arguments.length > 1 && requestToken !== getSessionToken()) return res;
     setSessionToken("");
     if (_onAuthRequired) _onAuthRequired();
   }
@@ -561,7 +589,7 @@ async function apiDirect(action, data = {}) {
           ? await fetch(SCRIPT_URL, { method: "POST", headers: Object.assign({ "Content-Type": "text/plain;charset=utf-8" }, authHeader || {}), body })
           : await fetch(url, authHeader ? { headers: authHeader } : undefined);
         if (!r.ok) throw Object.assign(new Error("HTTP " + r.status), { status: r.status });
-        return handleAuthFailure(sayIfBackendIsOld(await r.json()));
+        return handleAuthFailure(sayIfBackendIsOld(await r.json()), tok);
       } catch (e) {
         lastErr = e;
         // A read is retried whatever went wrong. A WRITE is retried only on a
@@ -612,6 +640,7 @@ function flushBatch() {
 
   for (let i = 0; i < queue.length; i += KB_BATCH_MAX) {
     const chunk = queue.slice(i, i + KB_BATCH_MAX);
+    const requestToken = getSessionToken();
     apiDirect("batch", { actions: JSON.stringify(chunk.map(q => q.entry)) }).then(res => {
       if (res && res.success && res.results) {
         // A backend deployed before entries carried parameters sees each one as
@@ -633,7 +662,7 @@ function flushBatch() {
           // reached the sign-in screen at all -- the read simply came back
           // empty. Opening a patient's Documents did exactly that: no
           // password asked, and a folder that looked empty.
-          else q.resolve(handleAuthFailure(r));
+          else q.resolve(handleAuthFailure(r, requestToken));
         });
         return;
       }
@@ -1574,59 +1603,13 @@ function ToothChart({
     }, rangeMsg) : null);
 }
 function ClinicHeader() {
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 12,
-      marginBottom: 14,
-      paddingBottom: 12,
-      borderBottom: `2px solid ${T}`
-    }
-  }, /*#__PURE__*/React.createElement("img", {
-    src: window.LOGO_B64,
-    alt: "KB Dental",
-    style: {
-      width: 58,
-      height: 58,
-      objectFit: "contain",
-      mixBlendMode: "multiply",
-      flexShrink: 0
-    }
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      textAlign: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 16,
-      fontWeight: 800,
-      color: "#C0392B",
-      letterSpacing: "0.14em",
-      textDecoration: "underline",
-      marginBottom: 1
-    }
-  }, "C. A. R. E. S."), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      fontWeight: 700,
-      color: T,
-      letterSpacing: "0.04em",
-      marginBottom: 1
-    }
-  }, "COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: "#2e2e2e",
-      marginBottom: 1
-    }
-  }, "BLOCK R - 74 B, DILSHAD GARDEN, DELHI - 110095"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: "#2e2e2e"
-    }
-  }, "Ph.: 011-22131942 \xA0 Mob: 7866939786, 9319990912 \xA0 kbdentaldelhi@gmail.com")));
+  return React.createElement("header", {className:"clinic-letterhead"},
+    React.createElement("img", {src:window.LOGO_B64,alt:"KB Dental"}),
+    React.createElement("div", {className:"clinic-letterhead-copy"},
+      React.createElement("div", {className:"clinic-letterhead-title"}, "C. A. R. E. S."),
+      React.createElement("div", {className:"clinic-letterhead-tagline"}, "COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY"),
+      React.createElement("div", {className:"clinic-letterhead-contact"}, "BLOCK R - 74 B, DILSHAD GARDEN, DELHI - 110095"),
+      React.createElement("div", {className:"clinic-letterhead-contact"}, "Ph.: 011-22131942 · Mob: 7866939786, 9319990912 · kbdentaldelhi@gmail.com")));
 }
 // The clinic's safety flags, read once per page and shared, the way the
 // clinic timings are. Registration offers them; the banner shows the ones a
@@ -2681,7 +2664,7 @@ function Registration({
     style: { border: `1px solid ${BORDER}`, borderRadius: 10, padding: "16px 18px", marginBottom: 22, background: "#fff" }
   },
     ceQ(Sec, { t: "Quick Registration — Generate UHID" }),
-    ceQ("div", { style: { fontSize: 13, color: "#383838", marginBottom: 14 } },
+    ceQ("div", { style: { fontSize: 13, color: "#383838", marginBottom: 14, maxWidth:"76ch", lineHeight:1.6 } },
       patientType === "panel"
         ? "The panel, the card and whether the holder is serving or a pensioner are needed for the claim, and are easiest to take while the card is in hand. The rest is the same as any other patient — the full form can be filled on the iPad on this or any later visit, and updates the same UHID."
         : "For a walk-in who is only being examined or given a prescription. These four details are enough to open a record and issue a UHID — the full form can be filled on the iPad on this or any later visit, and updates the same UHID."),
@@ -2693,7 +2676,7 @@ function Registration({
       style: { border: "1px solid #7C3AED", background: "#faf5ff", borderRadius: 9,
         padding: "14px 16px", marginBottom: 16 }
     },
-      ceQ("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" } },
+      ceQ("div", { className:"registration-fields" },
         qField("Panel *", "panel", ceQ("select", {
           style: { ...inp, borderColor: qErrors.panel ? "#e24b4a" : BORDER },
           value: panel, disabled: qBusy,
@@ -2724,7 +2707,7 @@ function Registration({
       }, "No panels have been set up yet. Add them in ",
          ceQ("strong", null, "Master \u2192 Accounts \u2192 Panels"),
          " \u2014 that list is the only place panels are kept.")),
-    ceQ("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" } },
+    ceQ("div", { className:"registration-fields" },
       qField("Full Name *", "name"),
       qField("Date of Birth *", "dob", ceQ(DOBInput, { value: q.dob, onChange: v => setQ(prev => ({ ...prev, dob: v })) })),
       qField("Mobile Number *", "mobile", ceQ("input", {
@@ -2733,7 +2716,7 @@ function Registration({
         onChange: e => setQ(prev => ({ ...prev, mobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))
       })),
       qField("Chief Complaint *", "complaint", ceQ("textarea", {
-        style: { ...ta, borderColor: qErrors.complaint ? "#e24b4a" : BORDER, minHeight: 34 },
+        style: { ...ta, borderColor: qErrors.complaint ? "#e24b4a" : BORDER, minHeight: 72 },
         value: q.complaint, disabled: qBusy, placeholder: "e.g. Pain in lower right back tooth since 2 days",
         onChange: e => setQ(prev => ({ ...prev, complaint: e.target.value }))
       }))),
@@ -2774,9 +2757,7 @@ function Registration({
   // two extra fields was clicks the front desk did not need, and the holding
   // screen saved nothing at all.
 
-  if (step === 0) return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(ClinicHeader, null), /*#__PURE__*/React.createElement(StepBar, {
-    cur: 0
-  }), patientType && ceQ("div", {
+  if (step === 0) return /*#__PURE__*/React.createElement("div", {className:"registration-intake"}, /*#__PURE__*/React.createElement(ClinicHeader, null), React.createElement("h2", {style:{fontSize:20,marginBottom:16}}, "Patient Registration"), patientType && ceQ("div", {
     style: { fontSize: 13, color: patientType === "panel" ? "#7C3AED" : "#555", marginBottom: 10, display: "flex", gap: 10, alignItems: "center" }
   }, ceQ("span", {
     // Recorded against the patient so the CRM can separate panel from
@@ -2852,13 +2833,43 @@ function Registration({
       color: "#fff",
       fontWeight: 600
     }
-  }, "Open Existing Record \u2014 ", dup.uhid))), /*#__PURE__*/React.createElement("div", {
+  }, "Open Existing Record \u2014 ", dup.uhid))), React.createElement("div", {className:"ui-toolbar",style:{justifyContent:"space-between",marginBottom:8}}, React.createElement("h3",{style:{fontSize:16}},"Pending Registrations"),/*#__PURE__*/React.createElement("button", {
+    disabled: loadingList,
+    onClick: () => {
+      setLoadingList(true);
+      api("getPending").then(res => {
+        if (res.success) setPending((res.pending || []).map(p => ({
+          id: p.ID,
+          name: p.Name || "",
+          dob: p.DOB || "",
+          gender: p.Gender || "",
+          mobile: p.Mobile || "",
+          whatsapp: p.WhatsApp || "",
+          email: p.Email || "",
+          address: p.Address || "",
+          bloodGroup: p["Blood Group"] || "",
+          occupation: p.Occupation || "",
+          maritalStatus: p["Marital Status"] || "",
+          conditions: (p["Medical Conditions"] || "").split(", ").filter(Boolean),
+          medicines: p.Medicines || "",
+          allergies: (p.Allergies || "").split(", ").filter(Boolean),
+          habits: p.Habits || "",
+          complaint: p["Chief Complaint"] || ""
+        })));
+        setLoadingList(false);
+      });
+    },
     style: {
-      fontSize: 15,
-      fontWeight: 700,
-      marginBottom: 4
+      fontSize: 13,
+      padding: "6px 16px",
+      border: `1px solid ${BORDER}`,
+      borderRadius: 6,
+      cursor: "pointer",
+      background: "#fff",
+      color: "#2e2e2e",
+      minHeight: 40
     }
-  }, "Pending Registrations"), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDD04 Refresh")), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: "#444444",
@@ -2871,7 +2882,7 @@ function Registration({
       color: "#444444",
       fontSize: 14
     }
-  }, "\u23F3 Loading from Google Sheets..."), !loadingList && pending.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, window.KB_SCRIPT_URL_OVERRIDE ? "Loading pending registrations..." : "\u23F3 Loading from Google Sheets..."), !loadingList && pending.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       background: BGS,
       borderRadius: 8,
@@ -2934,42 +2945,7 @@ function Registration({
       cursor: "pointer",
       fontWeight: 700
     }
-  }, "Process \u2192"))), /*#__PURE__*/React.createElement("button", {
-    onClick: () => {
-      setLoadingList(true);
-      api("getPending").then(res => {
-        if (res.success) setPending((res.pending || []).map(p => ({
-          id: p.ID,
-          name: p.Name || "",
-          dob: p.DOB || "",
-          gender: p.Gender || "",
-          mobile: p.Mobile || "",
-          whatsapp: p.WhatsApp || "",
-          email: p.Email || "",
-          address: p.Address || "",
-          bloodGroup: p["Blood Group"] || "",
-          occupation: p.Occupation || "",
-          maritalStatus: p["Marital Status"] || "",
-          conditions: (p["Medical Conditions"] || "").split(", ").filter(Boolean),
-          medicines: p.Medicines || "",
-          allergies: (p.Allergies || "").split(", ").filter(Boolean),
-          habits: p.Habits || "",
-          complaint: p["Chief Complaint"] || ""
-        })));
-        setLoadingList(false);
-      });
-    },
-    style: {
-      fontSize: 13,
-      padding: "6px 16px",
-      border: `1px solid ${BORDER}`,
-      borderRadius: 6,
-      cursor: "pointer",
-      background: "#fff",
-      color: "#2e2e2e",
-      marginTop: 6
-    }
-  }, "\uD83D\uDD04 Refresh"));
+  }, "Process \u2192"))));
   if (step === 1) return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(ClinicHeader, null), /*#__PURE__*/React.createElement(StepBar, {
     cur: 1
   }), Object.keys(errors).length > 0 && /*#__PURE__*/React.createElement("div", {
@@ -7344,7 +7320,9 @@ function CghsPrescription({ pat, lines, plan }) {
       if (dropped) return;
       const list = (res && res.success && res.templates) || [];
       setTemplates(list);
-      setTplMsg(list.length ? "" : "No clinical note templates yet — add them in Master → Clinical Configuration → Clinical Note Templates and they will fill in here.");
+      setTplMsg(list.length ? "" : window.KB_SCRIPT_URL_OVERRIDE
+        ? "No clinical note templates yet — add them in Master → Clinic → Clinical Note Templates and they will fill in here."
+        : "No clinical note templates yet — add them in Master → Clinical Configuration → Clinical Note Templates and they will fill in here.");
     }).catch(() => { if (!dropped) setTplMsg("The clinical note templates could not be read. The detail can still be typed."); });
     return () => { dropped = true; };
   }, []);
@@ -9103,7 +9081,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
   };
 
   // ── Sidebar ────────────────────────────────────────────────────
-  const renderSidebar = () => React.createElement("div", { style:{ width:220, flexShrink:0 } },
+  const renderSidebar = () => React.createElement("div", { className:"appointment-sidebar" },
     React.createElement(MiniCalendar, { selDate, onSelect:setSelDate }),
     React.createElement("select", { value:doctorFilter, onChange:e=>setDoctorFilter(e.target.value),
       style:{ ...inp, marginBottom:12, fontWeight:700, color:T } },
@@ -9126,11 +9104,11 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
       React.createElement("input", { type:"checkbox", checked:hoverDetails, onChange:e=>setHoverDetails(e.target.checked) }),
       "Appointment Details on hover"
     ),
-    React.createElement("div", { style:{ display:"flex", gap:8, marginBottom:10 } },
+    React.createElement("div", { className:"appointment-action-grid" },
       React.createElement("button", { onClick:refreshAll, style:{ flex:1, padding:"7px", fontSize:12.5, border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:T, fontWeight:700 } }, "🔄 Refresh"),
       React.createElement("button", { onClick:printSchedule, style:{ flex:1, padding:"7px", fontSize:12.5, border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:T, fontWeight:700 } }, "🖨 Print")
     ),
-    React.createElement("div", { style:{ display:"flex", gap:8, marginBottom:10 } },
+    React.createElement("div", { className:"appointment-action-grid" },
       React.createElement("button", { onClick:downloadSchedulePDF, disabled:schedBusy,
         style:{ flex:1, padding:"7px", fontSize:12.5, border:`1px solid ${BORDER}`, borderRadius:6, cursor:schedBusy?"wait":"pointer", background:"#fff", color:T, fontWeight:700, opacity:schedBusy?0.6:1 } },
         schedBusy ? "Working\u2026" : "📄 PDF"),
@@ -9155,7 +9133,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
           : viewMode==="month" ? (MONTHS[new Date(selDate+"T00:00:00").getMonth()]+" "+new Date(selDate+"T00:00:00").getFullYear())
           : dateLabel(selDate))
       ),
-      React.createElement("div", { style:{ display:"flex", gap:8, alignItems:"center" } },
+      React.createElement("div", { className:"ui-toolbar" },
         React.createElement("div", {style:{width:160}}, React.createElement(DMYDate, { style:{fontSize:14}, value:selDate, onChange:setSelDate })),
         React.createElement("button", { onClick:()=>setSelDate(todayISO),
           style:{ padding:"7px 14px", fontSize:13, border:`1px solid ${BORDER}`, borderRadius:6, cursor:"pointer", background:"#fff", color:"#2e2e2e" } }, "Today"),
@@ -9204,7 +9182,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
         style:{ padding:"7px 12px", fontSize:13, border:"1px solid #f59e0b", borderRadius:7,
                 cursor:"pointer", background:"#fff", color:"#92400e", fontWeight:600 } }, "Not now")),
 
-    React.createElement("div", { style:{ display:"flex", gap:16, alignItems:"flex-start" } },
+    React.createElement("div", { className:"appointment-layout", style:{ display:"flex", gap:16, alignItems:"flex-start" } },
       renderSidebar(),
       React.createElement("div", { style:{ flex:1, minWidth:0 } },
 
@@ -9824,10 +9802,11 @@ function Daysheet({ globalPat, setGlobalPat, openPatientAt }) {
           border:`1px solid ${tab===k?T:BORDER}`, background:tab===k?T:"#fff", color:tab===k?"#fff":"#555" } }, label))
   );
 
-  // No ClinicHeader here — DailyRegister renders its own, and two would stack.
+  // Both desk tabs share one letterhead before their navigation.
   if (tab === "register") return React.createElement("div", null,
+    React.createElement(ClinicHeader, null),
     tabBar,
-    React.createElement(DailyRegister, { globalPat, setGlobalPat })
+    React.createElement(DailyRegister, { globalPat, setGlobalPat, showHeader:false })
   );
 
   return React.createElement("div", null,
@@ -9841,7 +9820,7 @@ function Daysheet({ globalPat, setGlobalPat, openPatientAt }) {
         style:{ padding:"8px 16px", fontSize:13.5, border:"none", borderRadius:7, cursor:"pointer", background:T, color:"#fff", fontWeight:700 } }, "+ Add Walk-in")
     ),
 
-    React.createElement("div", { style:{ display:"flex", gap:14, alignItems:"flex-end", flexWrap:"wrap", marginBottom:16 } },
+    React.createElement("div", { className:"ui-filter-grid ui-toolbar" },
       React.createElement("div", null, React.createElement(Lbl,{c:"Visit Date"}),
         React.createElement(DMYDate, { value:visitDate, onChange:setVisitDate })),
       React.createElement("div", null, React.createElement(Lbl,{c:"Attending Doctor"}),
@@ -14680,7 +14659,12 @@ function matchClinicalFormPrompt(text) {
   return null;
 }
 
-function DailyRegister({ globalPat, setGlobalPat, setPage }) {
+function registerRangeLabel(fromDate, toDate, today) {
+  if (fromDate === toDate) return fromDate === today ? "Today" : fmtDMY(fromDate);
+  return fmtDMY(fromDate) + " → " + fmtDMY(toDate);
+}
+
+function DailyRegister({ globalPat, setGlobalPat, setPage, showHeader = true }) {
   const todayISO = clinicISODate();
   const [fromDate, setFromDate] = React.useState(todayISO);
   const [toDate, setToDate] = React.useState(todayISO);
@@ -14909,7 +14893,7 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
   const doctors = [...new Set(entries.map(e=>e.operatingDoctor).filter(Boolean))];
 
   return React.createElement("div",null,
-    React.createElement(ClinicHeader,null),
+    showHeader && React.createElement(ClinicHeader,null),
     React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:8}},
       React.createElement("div",null,
         React.createElement("div",{style:{fontSize:17,fontWeight:700,marginBottom:4}},"📋 Daily Register"),
@@ -15033,8 +15017,8 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
     ),
 
     // Filter bar
-    React.createElement("div",{style:{background:"#fff",border:`1px solid ${BORDER}`,borderRadius:8,padding:"12px 14px",marginBottom:14}},
-      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr auto",gap:10,alignItems:"flex-end"}},
+    React.createElement("div",null,
+      React.createElement("div",{className:"ui-filter-grid ui-toolbar ui-register-filters"},
         React.createElement("div",null,
           React.createElement(Lbl,{c:"From Date"}),
           React.createElement(DMYDate,{value:fromDate,onChange:setFromDate})
@@ -15054,7 +15038,7 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
             doctors.map(d=>React.createElement("option",{key:d,value:d},d))
           )
         ),
-        React.createElement("div",{style:{display:"flex",gap:6}},
+        React.createElement("div",{className:"ui-filter-actions"},
           React.createElement("button",{onClick:()=>{loadEntries();loadApptTimes();},style:{padding:"8px 14px",fontSize:13,border:`1px solid ${BORDER}`,borderRadius:6,cursor:"pointer",background:"#fff",color:"#2e2e2e"}},"🔄 Refresh"),
           React.createElement("button",{onClick:doPrint,style:{padding:"8px 16px",fontSize:13,border:"none",borderRadius:6,cursor:"pointer",background:T,color:"#fff",fontWeight:700}},"🖨 Print")
         )
@@ -15066,7 +15050,7 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
 
     // Stats
     React.createElement("div",{style:{display:"flex",gap:10,marginBottom:14}},
-      [{l:"Total Entries",v:filtered.length,c:T},{l:"Date Range",v:fromDate===toDate?"Today":fromDate+" → "+toDate,c:"#059669"}]
+      [{l:"Total Entries",v:filtered.length,c:T},{l:"Date Range",v:registerRangeLabel(fromDate,toDate,clinicISODate()),c:"#059669"}]
         .map((s,i)=>React.createElement("div",{key:i,style:{background:"#fff",border:`1px solid ${BORDER}`,borderTop:`3px solid ${s.c}`,borderRadius:8,padding:"10px 14px"}},
           React.createElement("div",{style:{fontSize:9,fontWeight:700,color:"#2e2e2e",textTransform:"uppercase",letterSpacing:".04em",marginBottom:2}},s.l),
           React.createElement("div",{style:{fontSize:i===0?22:13,fontWeight:700,color:s.c}},s.v)
@@ -31034,6 +31018,19 @@ const MASTER_STRUCTURE = [
   { id:"sales", label:"Sales Tracker", subtabs:null }
 ];
 
+function masterNavigation(nativeBackend) {
+  if (!nativeBackend) return MASTER_STRUCTURE;
+  const clinical = MASTER_STRUCTURE.find(group => group.id === "clinicalConfig").subtabs;
+  return MASTER_STRUCTURE.filter(group => group.id !== "clinicalConfig" && group.id !== "security").map(group => {
+    if (group.id === "organization") return { ...group, subtabs:[group.subtabs[0], {id:"otherClinic",label:"Clinics"}, ...group.subtabs.slice(1), {id:"security",label:"Passwords"}] };
+    if (group.id === "clinic") return { ...group, label:"Clinic", subtabs:[
+      ...group.subtabs.filter(tab => tab.id !== "otherClinic").map(tab => tab.id === "clinicProfile" ? {...tab,label:"Clinic Details"} : tab),
+      ...clinical
+    ] };
+    return group;
+  });
+}
+
 // The panel's rate card, kept whole and separate from the clinic's own fee
 // schedule. A panel bills by ITS code — CGHS calls an RCT on a single-rooted
 // tooth DP030 — and a wrong code is a rejected claim, so nothing here is
@@ -32084,6 +32081,58 @@ function ClinicProfileEditor({ profile, onSave }) {
   );
 }
 
+function OrganizationClinicsEditor() {
+  const [clinics,setClinics]=useState([]),[busy,setBusy]=useState(false),[locked,setLocked]=useState(false);
+  const [error,setError]=useState(""),[notice,setNotice]=useState(""),[password,setPassword]=useState("");
+  const [draft,setDraft]=useState({name:"",code:"",timezone:window.KB_CLINIC_TIMEZONE || "Asia/Kolkata"});
+  const button={padding:"9px 16px",border:0,borderRadius:7,background:T,color:"#fff",fontWeight:700,cursor:"pointer"};
+  const load=async()=>{
+    setBusy(true);setError("");
+    try{const res=await api("getOrganizationClinics");setLocked(!!res.locked);
+      if(res.success)setClinics(res.clinics);else setError(res.error || "Could not load clinics");
+    }catch(_){setError("Could not reach the server. Please retry.");}finally{setBusy(false);}
+  };
+  useEffect(()=>{load();},[]);
+  const unlock=async e=>{
+    e.preventDefault();setBusy(true);setError("");
+    try{const res=await api("verifyMasterPassword",{password});setPassword("");
+      if(res.success&&res.correct)await load();else setError(res.error || "Incorrect Master password");
+    }catch(_){setError("Could not unlock clinics. Please retry.");}finally{setBusy(false);}
+  };
+  const create=async e=>{
+    e.preventDefault();if(busy)return;setBusy(true);setError("");setNotice("");
+    try{const res=await api("createOrganizationClinic",draft);setLocked(!!res.locked);
+      if(res.success){setClinics(res.clinics);setNotice(res.created.name+" added. Choose it from the Clinic selector to open it.");
+        setDraft({...draft,name:"",code:""});window.dispatchEvent(new Event("kb-clinics-changed"));
+      }else setError(res.error || "Could not add clinic");
+    }catch(_){setError("The request could not be confirmed. Refresh the clinic list before trying again.");}finally{setBusy(false);}
+  };
+  const field=(label,key,props={})=>React.createElement("label",{style:{display:"grid",gap:6,fontSize:13}},label,
+    React.createElement("input",{...props,style:inp,value:draft[key],disabled:busy,onChange:e=>setDraft({...draft,[key]:e.target.value})}));
+  return React.createElement("section",{style:{maxWidth:760}},
+    React.createElement("h3",{style:{fontSize:18,marginBottom:8}},"Clinics"),
+    React.createElement("p",{style:{fontSize:13,lineHeight:1.6,marginBottom:16}},"Add clinics within this organization. Patients share one directory; visits, appointments and financial records belong to the clinic providing care."),
+    error&&React.createElement("p",{role:"alert",style:{color:"#b42318",marginBottom:12}},error),
+    notice&&React.createElement("p",{role:"status",style:{color:"#067647",marginBottom:12}},notice),
+    locked?React.createElement("form",{onSubmit:unlock,className:"ui-toolbar"},
+      React.createElement("label",null,"Master password",React.createElement("input",{type:"password",autoComplete:"current-password",required:true,value:password,disabled:busy,style:inp,onChange:e=>setPassword(e.target.value)})),
+      React.createElement("button",{style:button,disabled:busy},"Unlock Clinics")):
+    React.createElement(React.Fragment,null,
+      React.createElement("div",{style:{overflowX:"auto",background:"#fff",border:`1px solid ${BORDER}`,borderRadius:10,marginBottom:20}},
+        React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:13}},
+          React.createElement("thead",null,React.createElement("tr",null,["Clinic","Code","Timezone","Status"].map(label=>React.createElement("th",{key:label,style:{textAlign:"left",padding:12}},label)))),
+          React.createElement("tbody",null,clinics.map(clinic=>React.createElement("tr",{key:clinic.id},[clinic.name,clinic.code,clinic.timezone,clinic.active?"Active":"Inactive"].map((value,i)=>React.createElement("td",{key:i,style:{padding:12,borderTop:`1px solid ${BORDER}`}},value))))))),
+      React.createElement("form",{onSubmit:create,style:{background:"#fff",border:`1px solid ${BORDER}`,borderRadius:10,padding:20}},
+        React.createElement("h4",{style:{fontSize:16,marginBottom:12}},"Add Clinic"),
+        React.createElement("div",{className:"registration-fields",style:{gap:14,marginBottom:14}},
+          field("Clinic name","name",{required:true,maxLength:120,placeholder:"e.g. East Clinic"}),
+          field("Clinic code","code",{required:true,minLength:2,maxLength:32,pattern:"[a-z0-9][a-z0-9-]{1,31}",placeholder:"e.g. east-clinic"}),
+          field("Timezone","timezone",{required:true,maxLength:100})),
+        React.createElement("p",{style:{fontSize:12,color:"#555",lineHeight:1.6,marginBottom:14}},"The new clinic starts without copied visits or finances. Your administrator account can open it; other staff need an explicit access grant."),
+        React.createElement("div",{className:"ui-toolbar"},React.createElement("button",{style:button,disabled:busy},busy?"Please wait…":"Add Clinic"),
+          React.createElement("button",{type:"button",style:{...button,background:"#fff",color:T,border:`1px solid ${BORDER}`},disabled:busy,onClick:load},"Refresh clinics")))));
+}
+
 function OrganizationProfileEditor() {
   const btnS = { padding:"8px 16px", border:"none", borderRadius:6, background:T, color:"#fff", cursor:"pointer", fontWeight:600 };
   const [data, setData] = useState(null), [profile, setProfile] = useState({}), [error, setError] = useState("");
@@ -32270,6 +32319,7 @@ function PanelBookRepair() {
 }
 
 function Master() {
+  const MASTER_STRUCTURE = masterNavigation(!!window.KB_SCRIPT_URL_OVERRIDE);
   const [topTab, setTopTab] = React.useState("clinic");
   const [subTab, setSubTab] = React.useState("doctors");
   const [treatments, setTreatments] = React.useState([]);
@@ -32664,7 +32714,7 @@ function Master() {
       onEdit:(i,v)=>saveDocCategories(docCategories.map((x,idx)=>idx===i?v:x))
     }),
     security: () => React.createElement("div", null,
-      React.createElement(DocumentsPasswordChanger, null),
+      !window.KB_SCRIPT_URL_OVERRIDE && React.createElement(DocumentsPasswordChanger, null),
       React.createElement(MasterPasswordChanger, null)),
     sales: () => React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10, padding:"20px 24px", maxWidth:560 } },
       React.createElement("div", { style:{ fontSize:14, fontWeight:700, marginBottom:4 } }, "📊 Sales Tracker"),
@@ -32680,7 +32730,7 @@ function Master() {
       profile: clinicProfile,
       onSave: saveClinicProfile
     }),
-    otherClinic: () => React.createElement(OtherClinicEditor, {
+    otherClinic: () => window.KB_SCRIPT_URL_OVERRIDE ? React.createElement(OrganizationClinicsEditor, null) : React.createElement(OtherClinicEditor, {
       profile: clinicProfile,
       onSave: saveClinicProfile
     })
@@ -32711,7 +32761,7 @@ function Master() {
       MASTER_STRUCTURE.map(t => React.createElement("button", { key:t.id, onClick:()=>selectTop(t),
         style:{ padding:"8px 18px", fontSize:13.5, fontWeight:700, borderRadius:18, cursor:"pointer",
           border:`1.5px solid ${topTab===t.id?T:BORDER}`, background:topTab===t.id?T:"#fff", color:topTab===t.id?"#fff":"#555",
-          textTransform: t.id==="clinic" ? "uppercase" : "none", letterSpacing: t.id==="clinic" ? "0.03em" : "normal" } }, t.label))
+          textTransform: "none", letterSpacing: "normal" } }, t.label))
     ),
 
     currentTop.subtabs && React.createElement("div", { style:{ display:"flex", gap:6, marginBottom:16, flexWrap:"wrap", paddingBottom:12, borderBottom:`1px solid ${BORDER}` } },
@@ -35182,7 +35232,7 @@ function FinanceSettingsSubTab() {
   };
 
   return React.createElement("div", null,
-    React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10, padding:"20px 24px", maxWidth:560, marginBottom:16 } },
+    !window.KB_SCRIPT_URL_OVERRIDE && React.createElement("div", { className:"settings-card", style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10, padding:"20px 24px", maxWidth:640, marginBottom:16 } },
       React.createElement("div", { style:{ fontSize:14, fontWeight:700, marginBottom:4 } }, "🔗 Finance Google Sheet"),
       React.createElement("div", { style:{ fontSize:12.5, color:"#444444", marginBottom:14 } },
         "The Finance module (Receipts, Payments, Collection, Outstanding, P&L) reads its data from this Google Sheet. Paste the sheet's URL or ID below to point it elsewhere."),
@@ -35201,14 +35251,14 @@ function FinanceSettingsSubTab() {
             )
           )
     ),
-    React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10, padding:"20px 24px", maxWidth:560 } },
+    React.createElement("div", { className:"settings-card", style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:10, padding:"20px 24px", maxWidth:640 } },
       React.createElement("div", { style:{ fontSize:14, fontWeight:700, marginBottom:4 } }, "🔒 Receipt & P&L Password"),
       React.createElement("div", { style:{ fontSize:12.5, color:"#444444", marginBottom:14 } },
         pwSet
           ? "A password is currently set. Enter a new one below to change it — this will require everyone to unlock again."
           : "No password set yet — the Receipt and P&L tabs are currently open to anyone. Set one below to require it."),
-      React.createElement("div", { style:{ display:"flex", gap:10, alignItems:"center" } },
-        React.createElement("input", { type:"password", style:{...inp, maxWidth:220}, value:newPw, placeholder:"New password",
+      React.createElement("div", { className:"ui-toolbar" },
+        React.createElement("input", { type:"password", style:{...inp, maxWidth:300, flex:"1 1 180px"}, value:newPw, placeholder:"New password",
           onChange:e=>setNewPw(e.target.value), onKeyDown:e=>e.key==="Enter" && savePassword() }),
         React.createElement("button", { onClick:savePassword, disabled:pwSaving || !newPw.trim(),
           style:{ padding:"9px 22px", fontSize:14, border:"none", borderRadius:7, cursor:"pointer", background:T, color:"#fff", fontWeight:700, opacity:(pwSaving||!newPw.trim())?0.6:1 } },
@@ -36095,8 +36145,8 @@ function WorkingClinicSelector() {
   useEffect(() => {
     let alive = true;
     const load = () => api("getWorkingClinics").then(res => { if (alive && res.success) setState(res); });
-    load(); window.addEventListener("kb-signed-in", load);
-    return () => { alive = false; window.removeEventListener("kb-signed-in", load); };
+    load(); window.addEventListener("kb-signed-in", load); window.addEventListener("kb-clinics-changed", load);
+    return () => { alive = false; window.removeEventListener("kb-signed-in", load); window.removeEventListener("kb-clinics-changed", load); };
   }, []);
   const change = async () => {
     const clinicId = pendingClinic;
@@ -36116,7 +36166,7 @@ function WorkingClinicSelector() {
   };
   return React.createElement("div", null,
     React.createElement("label", { style:{ display:"block", color:"#444444", fontSize:11, marginBottom:5 } }, "Clinic",
-      React.createElement("select", { "aria-label":"Working clinic", value:state ? state.clinic_id : "",
+      React.createElement("select", { "aria-label":"Working clinic", value:pendingClinic || (state ? state.clinic_id : ""),
         disabled:busy || !state || state.clinics.length < 2, onChange:e=>setPendingClinic(e.target.value),
         style:{ display:"block", width:"100%", marginTop:4, padding:"6px 4px", border:`1px solid ${BORDER}`, borderRadius:5, background:"#fff", color:"#444444", opacity:1, fontSize:12 }
       }, state ? state.clinics.map(c => React.createElement("option", { key:c.id, value:c.id }, c.name))
@@ -36711,14 +36761,17 @@ function App() {
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      height: "100vh",
+      height: "100dvh",
       background: BGS,
       fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
       overflow: "hidden"
     }
   }, /*#__PURE__*/React.createElement("div", {
+    className:"app-sidebar",
     style: {
       width: 196,
+      minHeight: 0,
+      overflow: "hidden",
       background: "#fff",
       borderRight: `1px solid ${BORDER}`,
       display: "flex",
@@ -36802,6 +36855,7 @@ function App() {
   }, "📁 Tap to change section")), /*#__PURE__*/React.createElement("nav", {
     style: {
       padding: "8px 0",
+      minHeight: 0,
       flex: 1,
       overflowY: "auto"
     }
@@ -36833,6 +36887,7 @@ function App() {
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "10px 14px",
+      flexShrink: 0,
       borderTop: `1px solid ${BORDER}`,
       fontSize: 10,
       color: "#0c0",
@@ -36848,8 +36903,10 @@ function App() {
     // what "not functioning" looks like from the front desk: a blank area
     // and nothing to read. Named so a test can see it.
     "data-kb-page": page,
+    className:"app-main",
     style: {
       flex: 1,
+      minWidth: 0,
       overflowY: page === "crm" || page === "chatbot" ? "hidden" : "auto",
       padding: page === "crm" || page === "chatbot" ? "0" : "28px 32px",
       display: "flex",

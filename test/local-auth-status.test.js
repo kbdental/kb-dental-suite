@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const html=fs.readFileSync('index.html','utf8');
-const source=html.slice(html.indexOf('function handleAuthFailure(res) {'),html.indexOf('\n}',html.indexOf('function handleAuthFailure(res) {'))+2);
+const source=html.slice(html.indexOf('function handleAuthFailure('),html.indexOf('\n}',html.indexOf('function handleAuthFailure('))+2);
 test('auth status metadata does not recursively reopen sign-in',()=>{
  const ctx={cleared:0,opened:0}; vm.createContext(ctx);
  vm.runInContext('function setSessionToken(){cleared++}; var _onAuthRequired=()=>opened++;'+source,ctx);

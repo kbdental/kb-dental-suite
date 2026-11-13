@@ -10,7 +10,7 @@
 const fs = require("fs");
 const path = require("path");
 const REPO = path.resolve(__dirname, "..");
-const HTML = fs.readFileSync(path.join(REPO, "index.html"), "utf8");
+const HTML = fs.readFileSync(path.join(REPO, "index.html"), "utf8").replace(/\r\n/g, "\n");
 const GS = fs.readFileSync(path.join(REPO, "apps-script/out/Code.gs"), "utf8");
 let pass = 0, fail = 0;
 const ok = (name, cond, detail) => {

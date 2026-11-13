@@ -81,7 +81,8 @@ export async function findPatient(tx: Tx, uhid: string): Promise<Row | undefined
       LEFT JOIN org_patients identity ON identity.id=identity_link.organization_patient_id
       LEFT JOIN panels pn ON pn.id = p.panel_id
       LEFT JOIN LATERAL (
-        SELECT * FROM patient_registrations x WHERE x.patient_id = p.id ORDER BY x.collected_at DESC LIMIT 1
+        SELECT * FROM patient_registrations x WHERE x.patient_id = p.id ORDER BY x.collected_at DESC NULLS LAST,
+          CASE WHEN x.form->>'source_order' ~ '^[0-9]+$' THEN (x.form->>'source_order')::bigint ELSE 0 END DESC,x.id DESC LIMIT 1
       ) r ON true
      WHERE p.uhid = ${uhid} AND p.deleted_at IS NULL`.execute(tx);
   return r.rows[0];
@@ -243,7 +244,7 @@ export const patients: ActionTable = {
       SELECT p.uhid, p.full_name AS name, p.gender, p.date_of_birth::text AS dob, p.mobile, pn.name AS panel,
              p.panel_category, p.card_id, p.referred_by, p.referred_by_type, p.registered_on,p.import_provenance,
              (coalesce(o.import_review_required,false) OR p.import_provenance->>'review_required'='true') IS TRUE AS import_review_required,
-             (SELECT r.form->>'reg_date_source' FROM patient_registrations r WHERE r.patient_id=p.id ORDER BY r.collected_at DESC LIMIT 1) AS registration_date_source
+             (SELECT r.form->>'reg_date_source' FROM patient_registrations r WHERE r.patient_id=p.id ORDER BY r.collected_at DESC NULLS LAST,r.id DESC LIMIT 1) AS registration_date_source
         FROM patients p LEFT JOIN panels pn ON pn.id = p.panel_id
         LEFT JOIN org_clinical_patient_links l ON l.patient_id=p.id AND l.clinic_id=p.clinic_id
         LEFT JOIN org_patients o ON o.id=l.organization_patient_id
