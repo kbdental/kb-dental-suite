@@ -2,6 +2,11 @@
 
 ## VM replication handoff — 13 November 2026
 
+The user requested access from Viveyk's `kbdental/kb-dental-suite` repository.
+Publish the same `saas/multi-clinic` branch there and in the fork, keeping `main`
+unchanged. This updates the source branch of existing PR138; merging is separate.
+The VM and fresh-machine clone instructions now use the `kbdental` repository.
+
 Read `VM-REPLICATION.md` for Claude on Viveyk's VM. It separates GitHub source,
 migrations and scripts from the fresh clinical/analytics dumps, documents and
 private configuration needed outside Git. The current target is `launch-sync`

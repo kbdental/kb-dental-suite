@@ -33,10 +33,11 @@ still follow-on work; the admin demo does not prove that feature is complete.
 
 ## What GitHub contains
 
-Use the fork `MJ-06/kb-dental-suite`, branch `saas/multi-clinic`:
+Use Viveyk's repository `kbdental/kb-dental-suite`, branch `saas/multi-clinic`.
+The same application branch is also mirrored in `MJ-06/kb-dental-suite`:
 
 ```powershell
-git clone --branch saas/multi-clinic --single-branch https://github.com/MJ-06/kb-dental-suite.git
+git clone --branch saas/multi-clinic --single-branch https://github.com/kbdental/kb-dental-suite.git
 cd kb-dental-suite
 git status --short
 git rev-parse HEAD

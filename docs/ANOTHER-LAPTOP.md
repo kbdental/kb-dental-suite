@@ -16,7 +16,7 @@ PostgreSQL service and retain the local `postgres` password you chose at install
 Use PostgreSQL18: migrations use uuidv7 and version-specific database features.
 
 ```powershell
-git clone --branch saas/multi-clinic --single-branch https://github.com/MJ-06/kb-dental-suite.git
+git clone --branch saas/multi-clinic --single-branch https://github.com/kbdental/kb-dental-suite.git
 cd kb-dental-suite
 cd api
 npm ci
