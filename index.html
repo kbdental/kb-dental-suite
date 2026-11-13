@@ -218,7 +218,7 @@ const KB_BACKEND_IS_APPS_SCRIPT = /script\.google\.com/.test(SCRIPT_URL);
 // nicer is the boy who cried wolf, and it sat across a working screen for an
 // afternoon. This goes up again the next time the app genuinely cannot work
 // without a new Code.gs.
-const KB_BACKEND_BUILD_REQUIRED = "2026-11-12";
+const KB_BACKEND_BUILD_REQUIRED = "2026-11-13";
 // WHICH APP THIS IS.
 //
 // There was no way to tell. The sidebar said which BACKEND was answering
@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-12";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-12c";
+const KB_APP_BUILD = "2026-11-13";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -4113,9 +4113,38 @@ const emptyCP1 = {
 // a clinic that wanted to start checking the tonsils had to ask for a
 // release. The seed below is what the page used to hold, so an older
 // backend, or a list not filled in yet, examines exactly what it always did.
+// The Care Plan's own sections, drawn from the clinic's list where the
+// clinic has them and from the page where it does not.
+//
+// Investigations Required, Parafunctional Habits and Post Radiograph
+// Findings were written into the page until they joined the list. A clinic
+// that had already pressed "Load the clinic's findings" has a stored list
+// from before that, with no row in any of those three sections -- and the
+// stored list wins over the seed, so all three blocks simply vanished from
+// the examination and from its printout, headings still printing above
+// empty space. Nothing on either screen said why.
+//
+// A section the stored list has no row for at all is therefore filled from
+// the page's own list. Per section, not per finding: a finding the clinic
+// deleted stays deleted, while a section it has never seen still appears.
+// The Master editor is given the same list, so the clinic's next save
+// there writes them in and this stops doing anything.
+function examWithBuiltInSections(list) {
+  if (!list || !list.length) return list;
+  const have = {};
+  list.forEach(r => { have[String((r && r.section) || "")] = true; });
+  const out = list.slice();
+  CP_EXAM_SECTIONS.forEach(sec => {
+    if (have[sec]) return;
+    CLINICAL_EXAM_SEED.forEach(r => {
+      if (r[0] === sec) out.push({ section:r[0], finding:r[1], kind:r[2], key:r[3] });
+    });
+  });
+  return out;
+}
 function useExaminationList() {
   const master = useMasterList("getClinicalExaminationList", "findings");
-  return React.useMemo(() => (master && master.length) ? master
+  return React.useMemo(() => (master && master.length) ? examWithBuiltInSections(master)
     : CLINICAL_EXAM_SEED.map(r => ({ section:r[0], finding:r[1], kind:r[2], key:r[3] })),
     [master]);
 }
@@ -7507,13 +7536,18 @@ function CghsPrescription({ pat, lines, plan }) {
     const trs = rows.map((x, i) => {
       const list = sitsOf(x);
       const days = list.map(si => fmtDMY(dayOf(si)) || when);
-      // One visit: the date, as it has always printed. Several: the span,
-      // because the line is the endorsed treatment and the treatment ran
-      // from the first visit to the last. Each visit's own date is on its
-      // own line underneath.
-      const cell = days.length > 1 && days[0] !== days[days.length - 1]
-        ? days[0] + " – " + days[days.length - 1]
-        : days[0];
+      // One visit: the date, as it has always printed. Several: the span
+      // the treatment ran over, because the line is the endorsed treatment
+      // and each visit's own date is on its own line underneath.
+      //
+      // Earliest to latest, NOT first-typed to last-typed. A dentist
+      // writing up a finished course often enters the obturation first and
+      // adds the earlier sittings after it; taken in the order they were
+      // typed, the panel sheet said the course began on the day it ended.
+      const span = list.map(si => dayOf(si)).filter(Boolean).sort();
+      const first = span.length ? (fmtDMY(span[0]) || when) : when;
+      const last = span.length ? (fmtDMY(span[span.length - 1]) || when) : when;
+      const cell = first !== last ? first + " – " + last : (days[0] || when);
       const written = list.map((si, n) => ({ day: days[n], text: cghsBlankTokens(si.text).trim() }))
                           .filter(si => si.text);
       const detail = written.length === 1 && list.length === 1
@@ -14420,11 +14454,20 @@ function mapPedoData(records) {
 }
 
 // ── Main ClinicalSheets Component (read-only report over Forms' saved data) ──
-function ClinicalSheets({ globalPat, setGlobalPat }) {
+// `only` draws one form's teeth instead of the six-tab report: the Work
+// Done Sheet already says which form it is showing, so the header, the
+// patient banner and the tab bar are left out and the tab is fixed.
+//
+// It was read three times in the body and never declared here, so every
+// render threw "only is not defined" -- and with no error boundary in the
+// app that took the whole page down the moment Tooth by Tooth was pressed.
+function ClinicalSheets({ globalPat, setGlobalPat, only }) {
   const [uhidInput, setUhidInput] = React.useState(globalPat?.uhid||"");
   const [pat, setPat] = React.useState(globalPat||null);
   const [notFound, setNotFound] = React.useState(false);
-  const [tab, setTab] = React.useState("rct");
+  // Embedded, the tab is the form that was opened -- not RCT, whatever was
+  // clicked.
+  const [tab, setTab] = React.useState(only || "rct");
   const [apiMsg, setApiMsg] = React.useState("");
   const [storedSigs, setStoredSigs] = React.useState({});
   // teeth: { rct:[{toothNo,visits:[]}], implant_surgery:[...], ... }
@@ -29791,11 +29834,16 @@ function ClinicalExaminationEditor({ rows, onSave, saving, seed }) {
   const [draft, setDraft] = React.useState(blank);
 
   const all = rows || [];
+  // Counted off the seed, not written out in words: it said seventeen
+  // across four sections for a release that shipped thirty across seven.
+  const seedRows = seed || [];
+  const seedSections = seedRows.map(r => r[0]).filter((v, i, a) => a.indexOf(v) === i);
   if (!all.length) return React.createElement(KbClinEmpty, {
     what: "No examination findings yet",
-    detail: "The Care Plan asks about seventeen findings across four sections. " +
+    detail: "The Care Plan asks about " + seedRows.length + " findings across " +
+            seedSections.length + " sections. " +
             "Load them here and they become yours to add to, rename and reorder.",
-    label: "Load the clinic's seventeen findings",
+    label: "Load the clinic's " + seedRows.length + " findings",
     saving: saving,
     onLoad: () => onSave(seed.map(r => ({ section:r[0], finding:r[1], kind:r[2], key:r[3] })))
   });
@@ -32487,7 +32535,10 @@ function Master() {
     // What the Care Plan asks about. The Care Plan reads the same list, so
     // a finding added here is on the next examination and on its printout.
     examination: () => React.createElement(ClinicalExaminationEditor, {
-      rows: examFindings, onSave: saveExamFindings, saving: loading,
+      // The same list the Care Plan draws, so Master is not showing
+      // seventeen findings while the examination shows thirty -- and so
+      // saving here writes the missing sections in for good.
+      rows: examWithBuiltInSections(examFindings), onSave: saveExamFindings, saving: loading,
       seed: CLINICAL_EXAM_SEED
     }),
     departments: () => React.createElement(ClinicalDepartmentEditor, {

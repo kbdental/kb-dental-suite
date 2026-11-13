@@ -59,6 +59,16 @@ ok('as a second view of the sheet, not a tab of its own',
    /\[\["sheet", "[^"]*Work Done Sheet"\], \["teeth", "[^"]*Tooth by Tooth"\]\]/.test(records), '');
 ok('and it draws one form\'s teeth, not a tab bar of six',
    /only: CS_PER_TOOTH_FORM\[sheetFor\]/.test(records), '');
+// Passing a prop the component never declared is not a typo the source
+// shows: `only` was read three times in the body and left out of the
+// signature, so every render threw "only is not defined". With no error
+// boundary in this app that took the whole page down the moment the switch
+// was pressed -- and the checks above all passed, because they read the
+// call site rather than rendering it.
+ok('and the component actually takes that prop',
+   /function ClinicalSheets\(\{ globalPat, setGlobalPat, only \}\)/.test(html), '');
+ok('and opens on the form that was clicked, not always on RCT',
+   /React\.useState\(only \|\| "rct"\)/.test(html), '');
 
 // ── a form's Summary shows, it does not print ───────────────────────────
 const tail = (() => {
@@ -189,6 +199,27 @@ const LOCAL = {
   // A blank sheet would be a letterhead with nobody's name on it.
   ok('with no blank option, because a sheet reads one patient\'s record',
      !/Open Blank Form/.test(sheetPrompt), sheetPrompt.slice(0, 220));
+
+  // ── the switch, pressed ──────────────────────────────────────────────
+  // Rendered, not read: this is the check that was missing.
+  const drawn = await page.evaluate(() => {
+    const d = document.createElement('div');
+    document.body.appendChild(d);
+    try {
+      ReactDOM.render(React.createElement(ClinicalSheets, {
+        globalPat: { uhid: 'AL1010', name: 'Santosh Kumar' },
+        setGlobalPat: () => {}, only: 'implant_surgery'
+      }), d);
+      const t = d.innerText.replace(/\s+/g, ' ');
+      return { threw: null, text: t,
+               tabs: d.querySelectorAll('button').length };
+    } catch (e) { return { threw: String((e && e.message) || e) }; }
+  });
+  eq('the tooth-by-tooth view renders at all', drawn.threw, null);
+  ok('and it is the form that was opened, not RCT',
+     /Implant Surgery/.test(drawn.text || ''), (drawn.text || '').slice(0, 160));
+  ok('with no tab bar of its own, because the page already says which sheet',
+     !/\u{1F52C} RCT/u.test(drawn.text || ''), (drawn.text || '').slice(0, 160));
 
   eq('nothing threw', errors, []);
   await browser.close();

@@ -37,6 +37,7 @@ const fn = (name) => {
 // A tab is a list of rows. Only getRange and getLastRow are needed, and
 // every write is counted so it can be shown that none happened.
 let writes = 0;
+const created = [];
 const makeTab = (rows) => ({
   _rows: rows.map(r => r.slice()),
   getLastRow() { return this._rows.length; },
@@ -65,6 +66,10 @@ const TABS = {
   'Clinical Sheets - RCT': makeTab([
     ['UHID', 'Patient Name', 'Sheet Type', 'All Teeth Data', 'Saved At'],
     rec('KB0003', 'C', 'RCT', '2026-07-01', course('46')),
+    // KB0001 twice in one tab. findClinicalRow_ scans from the BOTTOM, so
+    // the last row is the record every save reads and rewrites; the first
+    // is a leftover the pre-split migration can have left behind.
+    rec('KB0001', 'A', 'RCT', '2026-01-01', course('STALE')),
     rec('KB0001', 'A', 'RCT', '2026-06-01', course('36'))
   ]),
   // The shared tab as it was before the split: one record never re-saved
@@ -80,6 +85,12 @@ const TABS = {
   'Clinical Sheets - Crown Bridge': makeTab([])
 };
 const back = {
+  // Mirrors the real pair: one creates a missing tab, one does not.
+  SpreadsheetApp: { openById: () => ({
+    getSheetByName: (n) => TABS[n] || null,
+    insertSheet: (n) => { created.push(n); TABS[n] = makeTab([]); return TABS[n]; }
+  }) },
+  getClinicalSheetId: () => 'id',
   getClinicalSheet: (name) => TABS[name] || makeTab([]),
   safeParseJSON: (v) => { try { return JSON.parse(v); } catch (e) { return null; } },
   String, Object, Array, JSON, Math, parseInt, console
@@ -87,7 +98,7 @@ const back = {
 vm.createContext(back);
 vm.runInContext(
   gs.slice(gs.indexOf('var CLINICAL_SHEETS_SHARED_TAB'), gs.indexOf('function clinicalSheetTabName_'))
-  + fn('clinicalSheetTabName_') + fn('listClinicalSheetRecords')
+  + fn('clinicalSheetTabName_') + fn('getClinicalSheetIfExists_') + fn('listClinicalSheetRecords')
   + '\nthis.list = listClinicalSheetRecords;', back);
 
 let r = back.list({ sheetType: 'RCT', offset: 0, limit: 2 });
@@ -99,6 +110,13 @@ eq('in a fixed order, so paging cannot skip or repeat a patient',
 ok('the record comes back parsed, whole', r.records[0].allTeeth &&
    r.records[0].allTeeth.entries && r.records[0].allTeeth.entries[0].tooth === '36',
    JSON.stringify(r.records[0].allTeeth));
+// Where one tab holds a patient twice, the LAST row is the record -- the
+// one findClinicalRow_ finds and every save rewrites. Reading the first
+// would hand back a superseded course and the backfill, being idempotent
+// on UHID + date + site, would write it over rows the live record had
+// already written correctly.
+eq('a patient written twice in one tab reads back as the live row, not the stale one',
+   r.records[0].allTeeth.entries[0].tooth, '36');
 // Both tabs hold KB0001. The form's own tab is the one the form saves to.
 ok('where both tabs hold a patient, the form\'s own tab is the one read',
    r.records[0].allTeeth.entries[0].tooth === '36', '');
@@ -113,6 +131,14 @@ eq('and is found under its own type',
 eq('a request with no type is refused rather than guessed at',
    back.list({}).success, false);
 eq('reading the history writes nothing', writes, 0);
+// And creates nothing. getClinicalSheet inserts a missing tab, which is
+// right for a save and wrong for a read: a clinic that has never done an
+// implant prosthetic case would get empty, header-less tabs in its
+// spreadsheet from pressing a button whose whole job is to read.
+const none = back.list({ sheetType: 'Implant Prosthetic' });
+eq('a sheet type with no tab at all still answers', none.success, true);
+eq('with nothing in it', none.total, 0);
+eq('and reading it creates no tab', created, []);
 // One cell can hold years of treatment, so a page is small and bounded.
 eq('a page is bounded however much is asked for',
    back.list({ sheetType: 'RCT', limit: 9999 }).records.length <= 25, true);
