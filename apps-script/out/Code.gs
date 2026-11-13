@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-12";
+var BACKEND_BUILD = "2026-11-13";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -2589,25 +2589,41 @@ function listClinicalSheetRecords(p) {
   var names = [clinicalSheetTabName_(sheetType)];
   if (names[0] !== CLINICAL_SHEETS_SHARED_TAB) names.push(CLINICAL_SHEETS_SHARED_TAB);
 
+  // Opened read-only, and remembered even when absent, so a tab that does
+  // not exist is not created and not asked for twice.
   var sheets = {};
   var openTab = function (name) {
-    if (!sheets[name]) sheets[name] = getClinicalSheet(name);
+    if (!Object.prototype.hasOwnProperty.call(sheets, name))
+      sheets[name] = getClinicalSheetIfExists_(name);
     return sheets[name];
   };
 
   var keys = [], seen = {};
   for (var n = 0; n < names.length; n++) {
     var sh = openTab(names[n]);
+    if (!sh) continue;
     var last = sh.getLastRow();
     if (last < 2) continue;
     var vals = sh.getRange(2, 1, last - 1, 3).getValues();
+    // Within one tab the LAST row for a UHID is the record, because that
+    // is the one findClinicalRow_ finds and every save rewrites. Taking
+    // the first instead would hand back a superseded course of treatment
+    // and the backfill would write it over rows the live record had
+    // already written correctly.
+    var local = {}, order = [];
     for (var i = 0; i < vals.length; i++) {
       var uhid = String(vals[i][0]).trim().toUpperCase();
       if (!uhid) continue;
       if (String(vals[i][2]).trim() !== sheetType) continue;
-      if (seen[uhid]) continue;
-      seen[uhid] = true;
-      keys.push({ tab: names[n], row: i + 2, uhid: uhid });
+      if (!Object.prototype.hasOwnProperty.call(local, uhid)) order.push(uhid);
+      local[uhid] = i + 2;
+    }
+    // Across tabs the FIRST tab wins: the form's own tab is read before the
+    // shared one, and a record still in the shared tab is the older copy.
+    for (var u = 0; u < order.length; u++) {
+      if (seen[order[u]]) continue;
+      seen[order[u]] = true;
+      keys.push({ tab: names[n], row: local[order[u]], uhid: order[u] });
     }
   }
   // A stable order, so paging through cannot skip a record or hand one back
@@ -2616,7 +2632,9 @@ function listClinicalSheetRecords(p) {
 
   var records = [];
   for (var k = offset; k < keys.length && records.length < limit; k++) {
-    var row = openTab(keys[k].tab).getRange(keys[k].row, 1, 1, 5).getValues()[0];
+    var src = openTab(keys[k].tab);
+    if (!src) continue;
+    var row = src.getRange(keys[k].row, 1, 1, 5).getValues()[0];
     records.push({
       uhid: keys[k].uhid,
       name: String(row[1] || ""),
@@ -6687,6 +6705,16 @@ function getClinicalSheetId() {
 
 // Kept for setupClinicalRecordTabs, which opens the clinical file by this name.
 var CLINICAL_SHEET_ID = getClinicalSheetId();
+
+// The same file, WITHOUT creating the tab: returns null when it is not
+// there. getClinicalSheet inserts a missing tab, which is right for a save
+// and wrong for a read -- a read that creates five empty, header-less tabs
+// in the clinic's spreadsheet is a read that changed something, and a
+// header-less tab is exactly what appendClinicalRecordRows then refuses to
+// write into.
+function getClinicalSheetIfExists_(tabName) {
+  return SpreadsheetApp.openById(getClinicalSheetId()).getSheetByName(tabName);
+}
 
 function getClinicalSheet(tabName) {
   var ss = SpreadsheetApp.openById(getClinicalSheetId());

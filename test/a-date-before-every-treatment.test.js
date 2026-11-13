@@ -248,6 +248,39 @@ const fnOf = (name) => {
       ['09/11/2026', 'BMP done wrt 36.'],
       ['14/11/2026', 'Obturation completed wrt 36.']]);
 
+  // ── written up out of order ───────────────────────────────
+  // A dentist writing up a finished course often enters the obturation
+  // first and adds the earlier sittings after it. Taken in the order they
+  // were typed, the span said the course began on the day it ended -- on
+  // a document that goes to the panel.
+  await page.locator('input[data-kb-line-date]').nth(0).fill('2026-11-14');
+  await page.locator('input[data-kb-line-date]').nth(1).fill('2026-11-07');
+  await page.locator('input[data-kb-line-date]').nth(2).fill('2026-11-20');
+  await page.waitForTimeout(200);
+  await page.locator('button', { hasText: /Print Prescription/ }).first().click();
+  await page.waitForTimeout(250);
+  const outOfOrder = await page.evaluate(() => window.__printed || '');
+  const cellOf = (h) => {
+    const m = /<tr><td class="c">1<\/td><td class="c">([^<]*)<\/td>/.exec(h);
+    return m ? m[1] : '';
+  };
+  eq('the span runs from the earliest visit to the latest, not first-typed to last',
+     cellOf(outOfOrder), '07/11/2026 \u2013 20/11/2026');
+  // Two sittings, the later one typed first: the range must not read
+  // backwards.
+  await page.locator('button', { hasText: /^\u2715$/ }).last().click();
+  await page.waitForTimeout(200);
+  await page.locator('button', { hasText: /Print Prescription/ }).first().click();
+  await page.waitForTimeout(250);
+  eq('and never backwards', cellOf(await page.evaluate(() => window.__printed || '')),
+     '07/11/2026 \u2013 14/11/2026');
+  // Put the third back for the checks below.
+  await page.locator('button', { hasText: /Add a sitting/ }).first().click();
+  await page.waitForTimeout(150);
+  await page.locator('input[data-kb-line-date]').nth(2).fill('2026-11-14');
+  await page.locator('select[data-kb-plan-pick]').nth(2).selectOption({ index: 5 });
+  await page.waitForTimeout(200);
+
   // A sitting added by mistake can go.
   await page.locator('button', { hasText: /^\u2715$/ }).last().click();
   await page.waitForTimeout(200);

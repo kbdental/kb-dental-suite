@@ -71,6 +71,57 @@ SEED.forEach(r => {
   ok('the care plan has a slot for ' + r[3], new RegExp(pat).test(defaults), '');
 });
 
+// ── a clinic whose list predates the three new sections ──────────
+// Investigations Required, Parafunctional Habits and Post Radiograph
+// Findings were written into the page until they joined this list. A
+// clinic that had already pressed "Load the clinic's findings" has a
+// stored list from before that, and the stored list wins over the seed --
+// so all three blocks vanished from the examination and from its printed
+// page, headings still printing above empty space, and nothing said why.
+//
+// A section the stored list has no row for at all is filled from the
+// page's own list. Per SECTION, not per finding: a finding the clinic
+// deleted stays deleted.
+{
+  const ctx3 = { String, Object, Array, console };
+  vm.createContext(ctx3);
+  vm.runInContext(cut('const CLINICAL_EXAM_SEED = [', 'const CLINICAL_NOTE_TEMPLATE_SEED')
+    + cut('const CP_EXAM_SECTIONS = [', '\nconst emptyCP2')
+    + cut('function examWithBuiltInSections(', 'function useExaminationList()')
+    + '\nthis.fill = examWithBuiltInSections; this.SECTIONS = CP_EXAM_SECTIONS;', ctx3);
+
+  const SEVENTEEN = SEED.slice(0, 17).map(r => ({ section:r[0], finding:r[1], kind:r[2], key:r[3] }));
+  eq('the list a clinic loaded before this release has four sections',
+     SEVENTEEN.map(r => r.section).filter((v, i, a) => a.indexOf(v) === i).length, 4);
+
+  const filled = ctx3.fill(SEVENTEEN);
+  const sectionsIn = (l) => l.map(r => r.section).filter((v, i, a) => a.indexOf(v) === i);
+  eq('the three sections it has never seen are drawn from the page',
+     sectionsIn(filled), ctx3.SECTIONS);
+  eq('and every finding under them is there',
+     filled.filter(r => r.section === 'Investigations Required').length, 9);
+  eq('the parafunctional one too',
+     filled.filter(r => r.section === 'Parafunctional Habits').length, 1);
+  eq('and the three post-radiograph lines',
+     filled.filter(r => r.section === 'Post Radiograph Findings').length, 3);
+  eq('nothing the clinic already had is touched',
+     filled.slice(0, 17).map(r => r.key), SEVENTEEN.map(r => r.key));
+
+  // A finding deleted inside a section the clinic HAS is not resurrected:
+  // the fallback is per section, so a section with one row left alone.
+  const trimmed = SEVENTEEN.filter(r => r.key !== 'palate')
+    .concat([{ section:'Investigations Required', finding:'OPG', kind:'check', key:'opg' }]);
+  const f2 = ctx3.fill(trimmed);
+  ok('a finding deleted from a section the clinic has stays deleted',
+     !f2.some(r => r.key === 'palate'), '');
+  eq('and a section the clinic has keeps only what it put there',
+     f2.filter(r => r.section === 'Investigations Required').map(r => r.key), ['opg']);
+
+  // An empty list is the empty state, not thirty rows nobody asked for.
+  eq('an empty list is left empty, so Master still offers to load them',
+     ctx3.fill([]).length, 0);
+}
+
 // ── a new finding gets a key of its own, and a rename never moves it ───
 eq('a new finding is keyed from its name', keyOf('Mouth Breathing', []), 'mouthBreathing');
 eq('punctuation and case do not matter', keyOf('Floor of Mouth!', []), 'floorOfMouth');
@@ -81,6 +132,12 @@ const editor = cut('function ClinicalExaminationEditor(', '// ── Master → 
 ok('a rename carries the old key over, so old answers are relabelled not lost',
    /key: txt\(r\.key\) \|\| clinicalExamKey/.test(editor), '');
 ok('and says so where it is done', /must not orphan the\s*\/\/ *answers/.test(editor), '');
+// It said "seventeen findings across four sections" for a release that
+// shipped thirty across seven. Counted, not written out in words.
+ok('the empty state counts the seed rather than naming a number',
+   /seedRows\.length \+ " findings across "/.test(editor), '');
+ok('and its button does too', /"Load the clinic\'s " \+ seedRows\.length \+ " findings"/.test(editor), '');
+ok('with the sections counted too', /seedSections\.length \+ " sections\. "/.test(editor), '');
 
 // ── the backend keeps it ────────────────────────────────────────────────
 ok('the backend offers the list', /case "getClinicalExaminationList":/.test(gs), '');
@@ -138,6 +195,12 @@ eq('bad JSON is refused rather than thrown', back.save({ findings: '{nope' }).su
 // ── and the Care Plan draws from it, screen and paper ──────────────────
 const carePlan = cut('function CarePlan(', '\nfunction KbClin');
 ok('the care plan reads the master list', /const examList = useExaminationList\(\);/.test(carePlan), '');
+ok('through the fill, so a section it has never seen still draws',
+   /examWithBuiltInSections\(master\)/.test(html), '');
+// Master must show the same list, or it offers seventeen findings while
+// the examination draws thirty -- and saving there would write the
+// seventeen back.
+ok('and Master is given the same list', /rows: examWithBuiltInSections\(examFindings\)/.test(html), '');
 ok('and falls back to the list the page was built with when there is none',
    /CLINICAL_EXAM_SEED\.map\(r => \(\{ section:r\[0\]/.test(html), '');
 ok('each row is drawn by its shape',
