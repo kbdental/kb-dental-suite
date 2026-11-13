@@ -9,9 +9,9 @@ import {randomUUID} from 'node:crypto';
 import pg from 'pg';
 import {SheetsSource, digest, registrationInventory, tableRows} from './source.mjs';
 import {sourceSummary} from './compare.mjs';
+import {root as privateRoot} from './runtime.mjs';
 
 const apiRoot = fileURLToPath(new URL('../../', import.meta.url));
-const privateRoot = join(apiRoot, '.organization-demo-runtime', 'launch-sync');
 const quote = value => '"' + value.replaceAll('"', '""') + '"';
 const literal = value => "'" + value.replaceAll("'", "''") + "'";
 export const validCopyName = value => /^kb_launch_sync_test_[0-9]{8}_[0-9]{6}_[a-f0-9]{6}$/.test(value);
@@ -223,7 +223,8 @@ export async function main(args = process.argv.slice(2)) {
     if (!validCopyName(copy.database)) throw new Error('Invalid isolated database target');
     const runtimeFile=join(privateRoot,'runtime-state.json');
     const runtime=existsSync(runtimeFile)?JSON.parse(readFileSync(runtimeFile,'utf8')):null;
-    copy.adminConfig = {host: '127.0.0.1', port: 5432, user: runtime?.complete?runtime.owner:'postgres',
+    if(copy.installMode==='fresh'&&(!runtime?.complete||runtime.installMode!=='fresh'||runtime.database!==copy.database||runtime.marker!==copy.marker))throw new Error('Fresh runtime state is incomplete or inconsistent');
+    copy.adminConfig = {host: copy.host??'127.0.0.1', port: copy.port??5432, user: runtime?.complete?runtime.owner:'postgres',
       password: runtime?.complete?runtime.ownerPassword:readFileSync(join(homedir(), '.kb-pms/postgres-superuser.txt'), 'utf8').trim()};
   }
   const target = new pg.Client({...copy.adminConfig, database: copy.database});

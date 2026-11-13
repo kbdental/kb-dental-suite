@@ -8,6 +8,7 @@ import {copyConnection,loadCapture,root,quote} from './runtime.mjs';
 import {project} from './model.mjs';
 import {sourceIdentities} from './compare.mjs';
 import {hash,businessData,identity,decision} from './engine.mjs';
+import {privateJson,postgresBinary} from './private-files.mjs';
 
 const order=['panels','doctors','chairs','staff','treatments','medicines','implant_brands','appointment_reasons','pick_lists','panel_rates','procedure_library','holidays','clinic_settings',
  'patients','patient_registrations','clinical_records','clinical_sheets','care_plans','treatment_plans','treatment_cases','daily_register','appointments','receipts','expenses','cghs_bills','crm_records','crm_lead_inbox','pending_registrations'];
@@ -26,7 +27,7 @@ export async function main(args=process.argv.slice(2)) {
   if(!acquired)throw new Error('Another launch import is running');
   phase='migration';
   const {migrate}=await import('../../src/migrator.ts');
-  const url=new URL('postgresql://127.0.0.1:5432/'+state.database);url.username=config.user;url.password=config.password;
+  const url=new URL('postgresql://localhost/'+state.database);url.hostname=config.host;url.port=String(config.port);url.username=config.user;url.password=config.password;
   await migrate(url.href,()=>{},{applyGrants:false});
   await db.query(`CREATE TABLE IF NOT EXISTS launch_sync.links (
    id uuid PRIMARY KEY,target_table text NOT NULL,target_id uuid NOT NULL,source_key text NOT NULL,
@@ -38,10 +39,24 @@ export async function main(args=process.argv.slice(2)) {
    happened_at timestamptz NOT NULL DEFAULT now(),UNIQUE(link_id,source_hash,target_hash,kind))`);
   await db.query('CREATE TABLE IF NOT EXISTS launch_sync.import_runs(id uuid PRIMARY KEY,capture_id uuid NOT NULL,completed_at timestamptz NOT NULL DEFAULT now(),report jsonb NOT NULL)');
   const initial=!(await db.query('SELECT 1 FROM launch_sync.links LIMIT 1')).rowCount;
-  if(initial){
+  if(initial&&state.installMode==='fresh'){
+   // This is the only no-backup exception: the marked, newly created installation
+   // must contain no imported/native business records before its first import.
+   phase='empty fresh installation guard';
+   const runtime=JSON.parse(readFileSync(join(root,'runtime-state.json'),'utf8'));
+   if(runtime.importReady)throw new Error('Fresh installation already accepted data without import baselines');
+   const clinic=runtime.primaryClinicId,org=(await db.query('SELECT id FROM org_identity')).rows[0]?.id;
+   await db.query('BEGIN READ ONLY');
+   try{
+    await db.query("SELECT set_config('app.clinic_id',$1,true),set_config('app.organization_id',$2,true)",[clinic,org]);
+    for(const table of [...new Set([...replace,'patients','patient_documents','org_patients','org_documents'])])
+     if((await db.query(`SELECT 1 FROM ${quote(table)} LIMIT 1`)).rowCount)throw new Error('Fresh first import requires an empty installation');
+    await db.query('COMMIT');
+   }catch(error){await db.query('ROLLBACK');throw error;}
+  }else if(initial){
    phase='private rollback backup';const file=join(root,'before-normalized-import.dump');
-   if(!existsSync(file))execFileSync(join(process.env.KB_PG_BIN??'C:/Program Files/PostgreSQL/18/bin','pg_dump.exe'),
-    ['--format=custom','--file='+file,state.database],{env:{...process.env,PGHOST:'127.0.0.1',PGPORT:'5432',PGUSER:config.user,PGPASSWORD:config.password},
+   if(!existsSync(file))execFileSync(postgresBinary('pg_dump'),
+    ['--format=custom','--file='+file,state.database],{env:{...process.env,PGHOST:config.host,PGPORT:String(config.port),PGUSER:config.user,PGPASSWORD:config.password},
       windowsHide:true,stdio:['ignore','pipe','pipe'],maxBuffer:8*1024*1024});
   }
   phase='transaction';await db.query('BEGIN');await db.query("SET LOCAL TIME ZONE 'UTC'");
@@ -219,6 +234,10 @@ export async function main(args=process.argv.slice(2)) {
   writeFileSync(join(root,'import-summary.json'),JSON.stringify(report,null,2),{mode:0o600});
   const issueRows=(await db.query('SELECT target_table,reason,source_ref FROM launch_sync.issues WHERE capture_id=$1',[run.id])).rows;
   writeFileSync(join(root,'source-issues.json'),JSON.stringify(issueRows,null,2),{mode:0o600});
+  if(state.installMode==='fresh'&&report.readyForVerification&&report.actual.patients>0){
+   const file=join(root,'runtime-state.json'),runtime=JSON.parse(readFileSync(file,'utf8'));
+   if(!runtime.importReady)privateJson(file,{...runtime,importReady:true,firstImportAt:report.appliedAt});
+  }
   console.log(JSON.stringify(report));
  }catch(error){try{await db.query('ROLLBACK');}catch{}console.error(JSON.stringify({complete:false,phase,code:error.constraint??error.code??error.name}));process.exitCode=1;}
  finally{await db.end();}

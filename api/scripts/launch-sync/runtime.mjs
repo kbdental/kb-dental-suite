@@ -1,9 +1,10 @@
 import {readFileSync,existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import {join} from 'node:path';
+import {join,resolve,isAbsolute} from 'node:path';
 import {homedir} from 'node:os';
 import pg from 'pg';
-export const root=fileURLToPath(new URL('../../.organization-demo-runtime/launch-sync/',import.meta.url));
+if(process.env.KB_SYNC_RUNTIME_DIR&&!isAbsolute(process.env.KB_SYNC_RUNTIME_DIR))throw Error('KB_SYNC_RUNTIME_DIR must be an absolute private directory');
+export const root=process.env.KB_SYNC_RUNTIME_DIR?resolve(process.env.KB_SYNC_RUNTIME_DIR):fileURLToPath(new URL('../../.organization-demo-runtime/launch-sync/',import.meta.url));
 pg.types.setTypeParser(1082,value=>value);
 export const quote=value=>'"'+value.replaceAll('"','""')+'"';
 export const literal=value=>"'"+value.replaceAll("'","''")+"'";
@@ -12,7 +13,8 @@ export async function copyConnection({administrative=false}={}) {
   if(!/^kb_launch_sync_test_[0-9]{8}_[0-9]{6}_[a-f0-9]{6}$/.test(state.database))throw new Error('Invalid copy target');
   const runtimeFile=join(root,'runtime-state.json');
   const runtime=!administrative&&existsSync(runtimeFile)?JSON.parse(readFileSync(runtimeFile,'utf8')):null;
-  const config={host:'127.0.0.1',port:5432,database:state.database,user:runtime?.complete?runtime.owner:'postgres',
+  if(state.installMode==='fresh'&&(!runtime?.complete||runtime.installMode!=='fresh'||runtime.database!==state.database||runtime.marker!==state.marker))throw Error('Fresh runtime state is incomplete or inconsistent');
+  const config={host:state.host??'127.0.0.1',port:state.port??5432,database:state.database,user:runtime?.complete?runtime.owner:'postgres',
     password:runtime?.complete?runtime.ownerPassword:readFileSync(join(homedir(),'.kb-pms/postgres-superuser.txt'),'utf8').trim()};
   const db=new pg.Client(config);await db.connect();
   const marker=(await db.query("SELECT shobj_description(oid,'pg_database') AS marker FROM pg_database WHERE datname=current_database()")).rows[0].marker;

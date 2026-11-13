@@ -2,11 +2,12 @@
 import{readFileSync,existsSync}from'node:fs';import{join}from'node:path';import{parseEnv}from'node:util';
 import{root}from'./runtime.mjs';
 const file=join(root,'app.env'),config=parseEnv(readFileSync(file,'utf8'));
+const state=JSON.parse(readFileSync(join(root,'runtime-state.json'),'utf8'));
+if(state.installMode==='fresh'&&!state.importReady)throw Error('Fresh installation requires a reconciled source import before the website can start');
 const system=new Set(['PATH','SYSTEMROOT','WINDIR','TEMP','TMP','USERPROFILE','HOMEDRIVE','HOMEPATH','COMSPEC','PATHEXT']);
 for(const key of Object.keys(process.env))if(!system.has(key.toUpperCase()))delete process.env[key];
 Object.assign(process.env,config,{KB_APP_ENV_FILE:file,KB_LOAD_OWNER_ENV:'false',ANTHROPIC_API_KEY:'',PDF_BROWSER:''});
 const[{createDb},{buildApp},{asActor},{sql}]=await Promise.all([import('../../src/db/index.ts'),import('../../src/app.ts'),import('../../src/http/context.ts'),import('kysely')]);
-const state=JSON.parse(readFileSync(join(root,'runtime-state.json'),'utf8'));
 const{HttpError}=await import('../../src/http/errors.ts');
 const url=new URL(config.DATABASE_URL);
 if(!state.complete||url.pathname!=='/'+state.database||!/^kb_launch_sync_test_[0-9]{8}_[0-9]{6}_[a-f0-9]{6}$/.test(state.database)||url.username!==state.app)throw Error('Unexpected database runtime');
@@ -47,6 +48,8 @@ for(const issue of result.issues??[]){const item=add(document.getElementById('is
 if(ref?.book&&Number.isInteger(ref.tab)&&Number.isInteger(ref.row)&&ref.row>0){const link=add(item,'a','Open source row '+ref.row);link.href='https://docs.google.com/spreadsheets/d/'+encodeURIComponent(ref.book)+'/edit#gid='+ref.tab+'&range=A'+ref.row;link.target='_blank';link.rel='noopener noreferrer';}}
 if(!result.issues?.length)add(document.getElementById('issues'),'li','No row-level exception links are currently available.');
 }catch(error){output.textContent=error.message;}})();`));
-await app.listen({host:'127.0.0.1',port:8350});
-console.log('Database-backed verification site listening on loopback8350. Source website and Apps Script settings are unchanged.');
+const port=Number(config.PORT??8350);
+if(!Number.isInteger(port)||port<1||port>65535)throw Error('Invalid private application port');
+await app.listen({host:'127.0.0.1',port});
+console.log(JSON.stringify({listening:true,host:'127.0.0.1',port,googleWrites:false}));
 for(const signal of['SIGINT','SIGTERM'])process.on(signal,async()=>{await app.close();await db.destroy();process.exit(0);});

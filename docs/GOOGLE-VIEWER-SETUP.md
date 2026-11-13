@@ -2,8 +2,8 @@
 
 13 November 2026. The user chose a fresh Google-to-VM import and a new Umami
 installation without analytics history. No laptop database dump or old runtime
-secrets are required for that route. See `VM-REPLICATION.md` for the remaining
-fresh-install work; the current clone-based rehearsal is not that installer.
+secrets are required for that route. Follow [FRESH-VM-IMPORT.md](FRESH-VM-IMPORT.md)
+for the implemented new-database installer and capture/import commands.
 
 ## Option A: create a dedicated VM service account
 
@@ -82,8 +82,8 @@ key is not intrinsically read-only if its account is granted broader access.
 
 Do not add `--apply-copy` to try to complete a fresh install: that flag currently
 expects the laptop-style `kb_realdata_review` database and private source state.
-After the fresh-install path is implemented and tested, capture/import into the
-new VM database, verify counts/totals and set up the VM's own refresh schedule.
+Use `fresh.mjs` to initialize the new VM database, then capture with `--reuse-copy`,
+preview/apply the import, verify counts/totals and configure the VM's own schedule.
 An expired laptop `worker-config.json` is not a VM schedule.
 
 ## What still cannot be recovered from Sheets automatically

@@ -22,13 +22,12 @@ analytics dump, existing passwords or old application encryption key for that
 fresh-install route. Read [GOOGLE-VIEWER-SETUP.md](GOOGLE-VIEWER-SETUP.md) for
 creating or privately transferring the Google service-account JSON credential.
 
-**Current code gap:** `rehearse.mjs --apply-copy` calls `cloneReview()` and requires
-`kb_realdata_review` plus its private state; `provision-runtime.mjs` also assumes
-an already imported clone and copies attachments from the older review profile.
-These scripts are not a complete empty-VM bootstrap. The default read-only source
-preview is usable on a fresh machine. Claude must implement and test a fresh
-database/organization/account bootstrap before applying the importer there;
-do not fabricate state files or remove the database safety guards.
+**Fresh setup is implemented:** follow [FRESH-VM-IMPORT.md](FRESH-VM-IMPORT.md).
+`fresh.mjs` creates a new empty database, organization, clinic and restricted
+accounts without a local review clone. Capture with `--reuse-copy`, preview/apply
+the import, then verify the website. Startup is blocked until the first import
+reconciles. The old `--apply-copy` and `provision-runtime.mjs` remain clone-only;
+do not fabricate state files or remove database safety guards.
 
 Read `HANDOVER.md`, `PATIENT-CRM-DIRECTION.md`, `LAUNCH-SHEETS-SYNC.md`,
 `UPDATE-AND-SYNC-2026-11-12.md` and `LOCAL-ANALYTICS.md` before making changes.
@@ -205,7 +204,8 @@ discarding the laptop copy.
 - `node scripts/launch-sync/verify-site.mjs <VM HTTPS URL>` is a profile-specific
   verifier: first validate the destination and record it in private `public-url.txt`
   on the VM before sending credentials. Its expected counts/flags reflect this
-  snapshot; explain any drift instead of changing data to satisfy an assertion.
+  selected snapshot. Empty populated-history checks are reported as skipped;
+  explain missing coverage rather than changing data to satisfy an assertion.
   It reads application records but creates/ends login sessions.
 - Verify tracking persistence, restart recovery and a separate backup/restore.
   Browser/write/print acceptance and operational cutover still need explicit

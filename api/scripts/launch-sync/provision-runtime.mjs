@@ -2,6 +2,7 @@
 import{readFileSync,writeFileSync,existsSync,mkdirSync,copyFileSync}from'node:fs';
 import{join,resolve,sep}from'node:path';import{fileURLToPath}from'node:url';import{randomBytes,createHash}from'node:crypto';
 import{root,copyConnection,quote,literal}from'./runtime.mjs';
+if(existsSync(join(root,'copy-state.json'))&&JSON.parse(readFileSync(join(root,'copy-state.json'),'utf8')).installMode==='fresh')throw Error('Fresh installation credentials are provisioned by fresh.mjs; this clone-only helper must not reset them');
 const{hashPassword}=await import('../../src/auth/password.ts');
 const{db,state}=await copyConnection({administrative:true});
 const stateFile=join(root,'runtime-state.json');let phase='preflight';

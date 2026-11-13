@@ -6,10 +6,18 @@ Latest user correction: populate the VM directly from Google and create new Umam
 without old analytics history. Old database dumps, runtime passwords and the old
 app encryption key are not prerequisites for that fresh route. Read
 `GOOGLE-VIEWER-SETUP.md` for the service-account/Viewer/JSON-key steps and private
-WhatsApp option. Existing clone/provision scripts still depend on the local
-review database; an empty-VM bootstrap must be implemented/tested before applying
-the importer. Default source preview works without that database. Source capture
-does not retrieve Drive attachment content or laptop-only app changes.
+WhatsApp option. Read `FRESH-VM-IMPORT.md` for the now-implemented `fresh.mjs`
+installer: a marked empty database, all38 migrations, one organization/clinic,
+restricted roles and new private credentials/key without a review clone. Capture
+with --reuse-copy, preview/apply import, then verify. Startup is blocked until the
+first fresh import reconciles. Reapplying setup preserves existing credentials;
+the old clone-only provisioner refuses fresh installations. The verifier handles
+snapshot-specific review counts and explicitly skips absent populated plans.
+Source capture does not retrieve Drive attachment content or laptop-only edits.
+Fresh-install validation:23 focused backend tests pass in5 serialized files,
+including the new real-database/real-server journey;49 importer/UI Node tests,
+TypeScript and build pass. No current patient DB was copied/reset, no live Google
+capture or VM install was performed, and no source credentials entered Git.
 
 The user requested access from Viveyk's `kbdental/kb-dental-suite` repository.
 Publish the same `saas/multi-clinic` branch there and in the fork, keeping `main`
