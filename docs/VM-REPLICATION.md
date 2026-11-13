@@ -1,7 +1,9 @@
 # Replicate the current application on Viveyk's VM
 
 13 November 2026. Handoff for the operator and Claude on the destination VM.
-This is a copy of the current verification installation, not a production cutover.
+The current choice is a fresh Google-to-VM import and new Umami without history.
+The optional restore route below describes an exact copy if later required.
+Neither route is a production cutover.
 The VM operating system, hostname, domain and remote access are not yet verified.
 No VM installation or private-data transfer was performed by this GitHub update.
 
@@ -13,6 +15,20 @@ and a CRLF-sensitive registration test were reproduced and corrected. This is
 targeted validation, not a full-suite run or verification of the destination VM.
 
 ## Start here
+
+**Latest user direction:** import directly from the five Google workbooks on the
+VM and set up Umami there from scratch. Do not request a laptop clinical dump,
+analytics dump, existing passwords or old application encryption key for that
+fresh-install route. Read [GOOGLE-VIEWER-SETUP.md](GOOGLE-VIEWER-SETUP.md) for
+creating or privately transferring the Google service-account JSON credential.
+
+**Current code gap:** `rehearse.mjs --apply-copy` calls `cloneReview()` and requires
+`kb_realdata_review` plus its private state; `provision-runtime.mjs` also assumes
+an already imported clone and copies attachments from the older review profile.
+These scripts are not a complete empty-VM bootstrap. The default read-only source
+preview is usable on a fresh machine. Claude must implement and test a fresh
+database/organization/account bootstrap before applying the importer there;
+do not fabricate state files or remove the database safety guards.
 
 Read `HANDOVER.md`, `PATIENT-CRM-DIRECTION.md`, `LAUNCH-SHEETS-SYNC.md`,
 `UPDATE-AND-SYNC-2026-11-12.md` and `LOCAL-ANALYTICS.md` before making changes.
@@ -59,9 +75,11 @@ operating notes. `node_modules`, generated builds, databases and private runtime
 are not deployment artifacts in Git. Reinstall/build them on the destination.
 The abandoned `sheets-bridge.mjs` is historical tooling; do not use it as this server.
 
-## Required private transfer
+## Optional exact-copy restore: private transfer
 
-Arrange a fresh backup and a private manifest with the operator. Do not put file
+This section applies only if an exact laptop restore is later chosen. It is not
+the current fresh-Google-import plan. Arrange a fresh backup and a private manifest
+with the operator for that restore. Do not put file
 contents, patient identifiers, credentials or per-patient hashes in GitHub, issues,
 Claude prompts or chat. Keep the manifest with the encrypted transfer.
 
@@ -85,7 +103,7 @@ temporary logs. Do not transfer this laptop's PostgreSQL superuser password,
 SSH private key, browser profile or unrelated `~/.kb-pms` development credentials.
 Create destination administration credentials separately.
 
-## Restore and configure
+## Optional exact-copy restore: configure
 
 1. Inventory the VM's OS, software, disks, existing databases/services and ports
    read-only. Pick a new destination; back up anything already there. Secure remote
@@ -159,10 +177,27 @@ Umami; a configured-status response alone is insufficient. Verify clinical reads
 and saves remain usable when analytics is stopped, using fictional disposable
 data only for write testing.
 
+The user selected a **new** Umami database/website/admin credentials/event salt.
+No analytics history or private analytics files need transferring from the laptop.
+
+## What private runtime settings, keys and credentials mean
+
+| Term | What it actually is | Fresh VM handling |
+| --- | --- | --- |
+| Private runtime configuration | Local settings such as the database URL, document directory, expected database marker and analytics endpoint/website ID. Some include passwords. `app.env` and runtime state files hold these outside Git. | Create them for the VM's own paths, database and services. Do not copy the old profile just to obtain defaults. |
+| Application encryption key (`KB_SECRETS_KEY`) | A random 32-byte key used to encrypt saved storage-provider credentials in the database, such as Drive/bucket access. It is not the Google import JSON key and does not encrypt the patient database as a whole. | Generate a new key. The old one is only relevant if restoring old encrypted credential settings; otherwise reconfigure those integrations. |
+| Credentials | Database role passwords, website staff accounts, Master/Finance/Reports passwords, Umami admin credentials and the Google service-account JSON private key. | Generate new database/application/analytics credentials locally. The Google JSON is created/authorized through Google or transferred privately. No Google user password is needed. |
+
+Back up the VM's newly generated settings/key securely alongside its operating
+runbook. A fresh import recreates source-backed records, not laptop-only edits,
+uploaded files or old conflict-resolution history. Review those differences before
+discarding the laptop copy.
+
 ## Acceptance before sharing the VM URL
 
-- Compare database/schema checksums, aggregate record counts and financial totals
-  with the private fresh-backup manifest. Compare document checksums. Preserve
+- For a fresh import, reconcile record counts/financial totals with the fresh
+  Google capture; for an exact-copy restore, compare with the private backup
+  manifest. Check migration and available document checksums. Preserve
   unknown dates, source review flags, held expenses and CRM conflicts.
 - Verify HTTPS, anonymous/signed-out rejection, staff login/logout, clinic access
   and populated clinical/register/finance reads. User/operator sign-in can remain

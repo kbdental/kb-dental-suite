@@ -2,6 +2,15 @@
 
 ## VM replication handoff — 13 November 2026
 
+Latest user correction: populate the VM directly from Google and create new Umami
+without old analytics history. Old database dumps, runtime passwords and the old
+app encryption key are not prerequisites for that fresh route. Read
+`GOOGLE-VIEWER-SETUP.md` for the service-account/Viewer/JSON-key steps and private
+WhatsApp option. Existing clone/provision scripts still depend on the local
+review database; an empty-VM bootstrap must be implemented/tested before applying
+the importer. Default source preview works without that database. Source capture
+does not retrieve Drive attachment content or laptop-only app changes.
+
 The user requested access from Viveyk's `kbdental/kb-dental-suite` repository.
 Publish the same `saas/multi-clinic` branch there and in the fork, keeping `main`
 unchanged. This updates the source branch of existing PR138; merging is separate.
