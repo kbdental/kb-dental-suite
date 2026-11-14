@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-13";
+var BACKEND_BUILD = "2026-11-14";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -2651,6 +2651,113 @@ function listClinicalSheetRecords(p) {
     next: done < keys.length ? done : null,
     records: records
   };
+}
+
+// ════════════════════════════════════════════════
+// THE TRIAL COPY
+// ════════════════════════════════════════════════
+//
+// Showing the app to somebody should not mean showing them the clinic's
+// patients. This empties a COPY of the book: every patient, appointment,
+// clinical record, document and rupee goes, and the master lists stay, so
+// what is handed over is the app itself with the clinic's own setup in it
+// and nobody's records.
+//
+// The lists are kept BY NAME and everything else is cleared. That way
+// round on purpose: a tab this function has never heard of is far more
+// likely to be a record of something than a list of options, and the one
+// mistake that cannot be undone here is leaving a patient in.
+var TRIAL_KEEP_TABS = [
+  // Who the clinic is and how it works
+  "Clinic Profile", "Doctor Details", "Employees", "Chairs", "Panels",
+  "Clinic Timings", "Working Days", "Appointment Reasons", "Procedure Library",
+  // What Registration offers
+  "Referral Sources", "Patient Types", "Occupations", "Safety Flags",
+  "Document Categories",
+  // What the clinic writes with
+  "Clinical Note Templates", "Clinical Templates (Type 1 & 2)",
+  "Clinical Note Plan", "Clinical Departments", "Clinical Examination",
+  "Medicine Instructions", "Medicine Notes", "Implant Brands",
+  // The prescription pad's lists
+  "Medicines Master", "Medicine Dosages", "Medicine Frequencies",
+  "Medicine Durations",
+  // The rate cards. Prices, not takings: what a treatment costs is part of
+  // the setup, what was taken for it is not.
+  "Treatments Master", "Payment Modes", "Expense Categories", "Panel Rates"
+];
+// Deliberately NOT kept, though it is setup rather than a record:
+// "Signatures" holds the doctors' actual signature images, and a signature
+// is not a thing to hand to somebody trying the software out. The trial
+// draws its signature line empty, as a blank form does.
+//
+// "Doctor Details" IS kept, because every form asks who treated the
+// patient and a trial with nobody in that box shows nothing. It carries
+// the doctors' phone and email with it -- if that is more than you want to
+// hand over, take it off the list above and the trial will simply have an
+// empty doctor list to fill in.
+
+// A tab whose header row is the clinic's own column layout: emptied of
+// rows but kept, so the trial writes into the same shape the clinic has.
+// Anything else is cleared outright.
+function trialClearTab_(sh) {
+  var last = sh.getLastRow();
+  if (last < 1) return 0;
+  var header = sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0];
+  var hasHeader = String(header.join("")).trim() !== "";
+  var rows = hasHeader ? last - 1 : last;
+  if (rows <= 0) return 0;
+  sh.deleteRows(hasHeader ? 2 : 1, rows);
+  return rows;
+}
+
+// Run this from the Apps Script editor of the COPY, never the clinic's own
+// book. It refuses on both of the clinic's books, by ID, so a copy that was
+// never made cannot be emptied by accident.
+function emptyThisCopyForTrial() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var id = ss.getId();
+  if (id === MAIN_PMS_SHEET_ID || id === PANEL_PMS_SHEET_ID) {
+    Logger.log("REFUSED. This is the clinic's own book (%s), not a copy of it.", ss.getName());
+    Logger.log("Make a copy first: File > Make a copy, then run this in the copy.");
+    return { success: false, error: "this is the clinic's own book" };
+  }
+  // The finance file too: a copy keeps its money in itself, but a Script
+  // Property can point it somewhere else, and that somewhere else may be
+  // the clinic's. Emptying is only ever done to this file.
+  var finance = getFinanceSheetId();
+  if (finance !== id) {
+    Logger.log("REFUSED. This book's finance file is another spreadsheet (%s).", finance);
+    Logger.log("Clear the FINANCE_SHEET_ID script property so the copy keeps its money in itself, then run this again.");
+    return { success: false, error: "the finance file is not this one" };
+  }
+
+  var keep = {};
+  TRIAL_KEEP_TABS.forEach(function (n) { keep[n] = true; });
+
+  var kept = [], cleared = [], emptyAlready = [];
+  ss.getSheets().forEach(function (sh) {
+    var name = sh.getName();
+    if (keep[name]) { kept.push(name + " (" + Math.max(0, sh.getLastRow() - 1) + ")"); return; }
+    var n = trialClearTab_(sh);
+    if (n > 0) cleared.push(name + " (" + n + ")");
+    else emptyAlready.push(name);
+  });
+
+  Logger.log("Emptied \"%s\" for trial use.", ss.getName());
+  Logger.log("");
+  Logger.log("CLEARED %s tab(s), with the row counts that went:", cleared.length);
+  cleared.forEach(function (n) { Logger.log("   " + n); });
+  Logger.log("");
+  Logger.log("KEPT %s master list(s), with what is in them:", kept.length);
+  kept.forEach(function (n) { Logger.log("   " + n); });
+  if (emptyAlready.length) {
+    Logger.log("");
+    Logger.log("Already empty: " + emptyAlready.join(", "));
+  }
+  Logger.log("");
+  Logger.log("Now: Deploy > New deployment > Web app, and paste the /exec URL");
+  Logger.log("into trial/config.js in the repository.");
+  return { success: true, cleared: cleared.length, kept: kept.length };
 }
 
 // ── One-off, safe to re-run ──────────────────────────────────────────────
