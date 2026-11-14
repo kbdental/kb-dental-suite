@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-13";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-13";
+const KB_APP_BUILD = "2026-11-14";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -31038,6 +31038,14 @@ const MASTER_STRUCTURE = [
     { id:"doctors",       label:"Doctors" },
     { id:"employees",     label:"Employees" },
     { id:"chairs",        label:"Chairs" },
+    // Who the clinic is empanelled with. It sat under Accounts, beside the
+    // payment modes and the expense heads, but it is not a money list: it
+    // is a fact about the clinic, the way its chairs and its doctors are,
+    // and everything downstream reads it that way -- Registration offers
+    // it, the CRM boards by it, the panel register is filed by it. The
+    // Panel FEE SCHEDULE stays in Accounts, next to the normal one, because
+    // a rate card is money.
+    { id:"panels",        label:"Panels" },
     { id:"otherClinic",   label:"Other Clinic" }
   ]},
   { id:"schedule", label:"Schedule", subtabs:[
@@ -31092,7 +31100,6 @@ const MASTER_STRUCTURE = [
     { id:"medDurations",   label:"Duration" }
   ]},
   { id:"accounts", label:"Accounts", subtabs:[
-    { id:"panels",       label:"Panels" },
     { id:"modes",        label:"Payment Modes" },
     { id:"expenses",     label:"Expense Categories" },
     { id:"accountHeads", label:"Account Heads", placeholder:true },
