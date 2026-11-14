@@ -82,6 +82,26 @@ eq('the instruction list says whose instructions they are',
 ok('and it really is patient advice, which is why it sits here',
    /const INSTRUCTION_CATEGORIES = \["Oral Hygiene"/.test(html));
 
+// ── who the clinic is empanelled with is a clinic fact ─────────────
+// Panels sat under Accounts, beside the payment modes and the expense
+// heads. It is not a money list: Registration offers it, the CRM boards by
+// it and the panel register is filed by it, none of which is accounting.
+// It belongs with the chairs and the doctors.
+eq('Panels is one of the clinic\'s own lists',
+   subs("clinic"),
+   ["clinicProfile", "doctors", "employees", "chairs", "panels", "otherClinic"]);
+ok('and Other Clinic is still last, being the catch-all',
+   subs("clinic")[subs("clinic").length - 1] === "otherClinic", subs("clinic").join(','));
+ok('Accounts no longer holds it', subs("accounts").indexOf("panels") < 0,
+   subs("accounts").join(','));
+// The rate card is money and stays where money is, next to the clinic's
+// own fee schedule.
+eq('but the panel FEE SCHEDULE stays in Accounts',
+   subs("accounts"),
+   ["modes", "expenses", "accountHeads", "treatments", "panelFees"]);
+ok('and Accounts opens on something, not on the gap where Panels was',
+   group("accounts").subtabs[0].id === "modes", subs("accounts").join(','));
+
 // ── nothing was displaced on the way ────────────────────────────────────
 eq('the other categories are where they were',
    MENU.map(t => t.id),
