@@ -41,7 +41,12 @@ ok('there are three stages, numbered in the order they happen',
 ok('the prescription is handed only the endorsed lines',
    /CghsPrescription, \{ pat: pat, lines: e\.approved, plan: notePlan \}/.test(html));
 ok('and so is the bill',
-   /CghsBill, \{ pat: pat, panel: e\.panel, card: e\.card,\s*holder: e\.holder, lines: e\.approved \}/.test(html));
+   /CghsBill, \{ pat: pat, panel: e\.panel, card: e\.card,\s*\n?\s*holder: e\.holder, lines: e\.approved, onBilled: e\.markBilled \}/.test(html));
+// A line that has gone onto a bill is claimed. The bill says which lines
+// it carried and the plan stamps them, which is what stops the endorsement
+// offering the same treatment up to be billed a second time.
+ok('and the bill tells the plan what it claimed',
+   /onBilled: e\.markBilled/.test(html));
 ok('with nothing ticked, neither stage is drawn at all',
    /stage === "prescription" && \(e\.approved\.length/.test(html) &&
    /stage === "bill" && \(e\.approved\.length/.test(html));

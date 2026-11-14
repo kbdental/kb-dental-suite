@@ -466,8 +466,11 @@ const VIEW = html.slice(A, B);
       ];
       const endTotal = 1000;
     ` });
-    await p2.addScriptTag({ content: pick('  function buildEndHTML() {', '  const docHTML = which =>') });
-    const out = await p2.evaluate(() => buildEndHTML());
+    // The builder is module-level now, and takes the rows it is to print:
+    // Records prints the lines picked there, the plan prints its own. One
+    // function, so the two documents cannot say different things.
+    await p2.addScriptTag({ content: pick('function buildEndorsementHTML(', '\nfunction TreatmentPlan') });
+    const out = await p2.evaluate(() => buildEndorsementHTML(endRows, patPanel, panelPat));
     await p2.setContent(out);
     const got = await p2.evaluate(() => ({
       heads: Array.from(document.querySelectorAll('thead th')).map(t => t.textContent),
