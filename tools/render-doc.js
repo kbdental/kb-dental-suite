@@ -11,7 +11,7 @@ const inline = s => esc(s)
   .replace(/`([^`]+)`/g, '<code>$1</code>')
   .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
-const isMarker = l => /^(\||```|#|---\s*$|[-*] |\d+\. )/.test(l);
+const isMarker = l => /^(\||```|#|---\s*$|[-*] |\d+\. |> )/.test(l);
 const lines = md.split('\n'); const out = []; let i = 0;
 while (i < lines.length) {
   const l = lines[i];
@@ -29,6 +29,11 @@ while (i < lines.length) {
   if (/^## /.test(l)) { out.push('<h2>' + inline(l.slice(3)) + '</h2>'); i++; continue; }
   if (/^# /.test(l)) { out.push('<h1>' + inline(l.slice(2)) + '</h1>'); i++; continue; }
   if (/^---\s*$/.test(l)) { out.push('<hr>'); i++; continue; }
+  // A blockquote is an aside the page sets apart, and its wrapped lines
+  // belong to it the same way a list item's do.
+  if (/^> /.test(l)) { const buf = [];
+    while (i < lines.length && /^> /.test(lines[i])) buf.push(lines[i++].replace(/^> /, ''));
+    out.push('<blockquote>' + inline(buf.join(' ')) + '</blockquote>'); continue; }
   const bullet = /^[-*] /.test(l), numbered = /^\d+\. /.test(l);
   if (bullet || numbered) {
     const re = bullet ? /^[-*] / : /^\d+\. /;
@@ -65,7 +70,10 @@ pre code{background:none;padding:0;font-size:13px;line-height:1.6}
 table{width:100%;border-collapse:collapse;margin:0 0 18px;font-size:14.5px;display:block;overflow-x:auto}
 th{text-align:left;font-weight:700;color:var(--acc);border-bottom:1.5px solid var(--line);padding:7px 10px;white-space:nowrap}
 td{border-bottom:1px solid var(--line);padding:7px 10px;vertical-align:top}
-strong{font-weight:700}`;
+strong{font-weight:700}
+blockquote{margin:0 0 16px;padding:11px 15px;border-left:3px solid var(--acc);
+background:var(--code);border-radius:0 7px 7px 0;color:var(--mute);font-size:15px}
+blockquote code{background:var(--bg)}`;
 fs.writeFileSync(OUT,
   '<!doctype html><html lang="en"><head><meta charset="utf-8">'
   + '<meta name="viewport" content="width=device-width,initial-scale=1">'
