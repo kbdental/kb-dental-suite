@@ -220,7 +220,7 @@ const KB_BACKEND_IS_APPS_SCRIPT = /script\.google\.com/.test(SCRIPT_URL);
 // nicer is the boy who cried wolf, and it sat across a working screen for an
 // afternoon. This goes up again the next time the app genuinely cannot work
 // without a new Code.gs.
-const KB_BACKEND_BUILD_REQUIRED = "2026-11-13";
+const KB_BACKEND_BUILD_REQUIRED = "2026-11-19a";
 // WHICH APP THIS IS.
 //
 // There was no way to tell. The sidebar said which BACKEND was answering
@@ -240,7 +240,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-13";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-19";
+const KB_APP_BUILD = "2026-11-19a";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -7375,10 +7375,12 @@ function rupeesInWords(n) {
 const CGHS_TPL_STOP = ["per", "tooth", "teeth", "each", "unit", "units", "and", "the", "of",
   "for", "with", "single", "both", "upper", "lower", "full", "mouth", "arch", "quadrant", "a"];
 function cghsTemplateFor(procedure, templates) {
-  // A template's name now carries which length it is -- "RCT - Obturation
-  // \u00b7 Type 1 (Concise)". That belongs on the dropdown, not in the
-  // matching: left in, every name would share four words and the closest
-  // template would be whichever happened to come first.
+  // A template's name used to carry which length it was -- "RCT -
+  // Obturation \u00b7 Type 1 (Concise)". There is one length now, so
+  // nothing writes that suffix any more; the strip stays because a tab
+  // left open on the older page, and a sheet row saved from it, still can.
+  // Left in the matching, every name would share four words and the
+  // closest template would be whichever happened to come first.
   const bare = (v) => String(v === undefined || v === null ? "" : v)
     .replace(/\s*\u00b7\s*Type\s*\d+\s*\([^)]*\)\s*$/i, "");
   const norm = (v) => bare(v)
@@ -7426,8 +7428,8 @@ function cghsBlankTokens(text) {
 // ── What the plan says a treatment is made of ──────────────────────
 // A treatment named on a sheet -- an endorsement line, a Procedure Done in
 // the register -- is looked up in the clinical note plan, and the templates
-// that plan names are offered to pick from, each at both lengths and in
-// Hindi where that has been written. The point is that the note is
+// that plan names are offered to pick from, in Hindi too where that has
+// been written. The point is that the note is
 // SELECTED and not typed from memory.
 //
 // Shared because two screens need the same answer and would otherwise
@@ -7463,15 +7465,13 @@ function clinicalNoteOptions(treatment, templates, plan, which, vals) {
   clinicalTemplateRefs(row ? row.templates : "").forEach(name => {
     const t = byName[norm(name)];
     if (!t) return;
-    add(name + " · Type 1 (Concise)", t.concise || t.text);
-    add(name + " · Type 2 (Comprehensive)", t.comprehensive || t.text);
+    add(name, t.concise || t.text);
     add(name + " · Hindi", t.hindi);
   });
   if (!out.length) {
     const t = cghsTemplateFor(treatment, templates);
     if (t) {
-      add("Type 1 (Concise)", t.concise || t.text);
-      add("Type 2 (Comprehensive)", t.comprehensive || t.text);
+      add(t.situation || "Clinical note", t.concise || t.text);
       add("Hindi", t.hindi);
     }
   }
@@ -7559,12 +7559,12 @@ function CghsPrescription({ pat, lines, plan }) {
   const suggested = (x) => {
     const t = cghsTemplateFor(nameOf(x), templates);
     if (!t) return "";
-    // The CONCISE length, deliberately. This sheet is printed on a pad,
-    // under a line per treatment; the comprehensive note is what gets
-    // saved into the register and the progress note, where it is read
-    // back. `t.text` is the comprehensive one, so it is not used here --
-    // and an older backend that sends neither field falls back to it
-    // rather than printing nothing.
+    // The concise note -- which is now the only length there is. A second,
+    // comprehensive length was kept for a while and the clinic found it
+    // was not needed, so one note prints here and saves into the register
+    // and the progress note alike. `t.text` is that same note, and is the
+    // fallback for an older backend in a cached tab that sends no
+    // `concise` field at all.
     return cghsFillTokens(t.concise || t.text, {
       tooth: x.r.tooth, teeth: x.r.tooth, toothNumber: x.r.tooth,
       code: x.code, units: x.qty, unit: x.qty, qty: x.qty,
@@ -29035,10 +29035,9 @@ function ImplantBrandListEditor({ items, onAdd, onRemove, onEdit }) {
 // spelling, because the editor no longer offers it.
 // The clinic's clinical notes, as three things rather than one.
 //
-//   the TEMPLATES  156, one per procedure, each written in two lengths --
-//                  Type 1 (Concise) for a routine visit, Type 2
-//                  (Comprehensive) for a record somebody else, or a panel,
-//                  may read back
+//   the TEMPLATES  156, one per procedure, one note each -- short enough
+//                  to print on a pad under a line per treatment, and
+//                  complete enough to stand as the record
 //
 //   the PLAN       277 treatments that can go on a plan -- 156 on the
 //                  clinic's own and 121 on the CGHS rate card -- each
@@ -30104,9 +30103,13 @@ function ClinicalExaminationEditor({ rows, onSave, saving, seed }) {
 }
 
 // ── Master → Clinical Configuration → Clinical Note Templates ───────────
-// The 156 templates themselves: one per procedure, each in two lengths. A
-// plan treatment refers to these by name, so a correction here reaches
-// every plan treatment that uses it.
+// The 156 templates themselves: one per procedure, one note each. A plan
+// treatment refers to these by name, so a correction here reaches every
+// plan treatment that uses it.
+//
+// Comprehensive (Type 2) came out of this editor, NOT out of the sheet:
+// the column and every word written in it stay where they are and ride
+// through each save untouched, so this is a reversible decision.
 function ClinicalTemplateLibEditor({ rows, onSave, saving, seed, categories }) {
   // The saved departments when there are any, the built-in list until then.
   const CATS = (categories && categories.length) ? categories : CLINICAL_TEMPLATE_CATEGORIES;
@@ -30149,7 +30152,7 @@ function ClinicalTemplateLibEditor({ rows, onSave, saving, seed, categories }) {
   const shown = all.map((r, at) => ({ r, at })).filter(x => {
     const n = q.trim().toLowerCase();
     if (!n) return true;
-    return [x.r.template, x.r.category, x.r.type1, x.r.type2, x.r.hindi]
+    return [x.r.template, x.r.category, x.r.type1, x.r.hindi]
       .some(v => txt(v).toLowerCase().indexOf(n) >= 0);
   });
   const { groups, order } = kbClinGroup(shown, x => txt(x.r.category));
@@ -30176,8 +30179,8 @@ function ClinicalTemplateLibEditor({ rows, onSave, saving, seed, categories }) {
   if (!all.length) {
     return React.createElement(KbClinEmpty, {
       what: "No clinical note templates yet",
-      detail: "The clinic's library holds " + seed.length + " templates, each written in both "
-            + "lengths — Type 1 for a routine visit, Type 2 for the full record.",
+      detail: "The clinic's library holds " + seed.length + " templates, one note per "
+            + "procedure, ready to pick at the chair.",
       label: "Load the clinic's templates (" + seed.length + ")",
       saving: saving,
       onLoad: () => onSave(seed.map(r => ({ category:r[0], template:r[1], type1:r[2], type2:r[3] })))
@@ -30213,15 +30216,10 @@ function ClinicalTemplateLibEditor({ rows, onSave, saving, seed, categories }) {
           placeholder:"e.g. Access Opening",
           onChange: e => setForm({ ...form, template: e.target.value }) })),
       React.createElement("div", { style:{ marginBottom:8 } },
-        React.createElement(Lbl, { c:"Type 1 — Concise" }),
-        React.createElement("textarea", { style:{ ...ta, minHeight:56 }, value: txt(form.type1),
-          placeholder:"One or two lines, for a routine visit…",
+        React.createElement(Lbl, { c:"Clinical Note" }),
+        React.createElement("textarea", { style:{ ...ta, minHeight:70 }, value: txt(form.type1),
+          placeholder:"The note as it should read in the record…",
           onChange: e => setForm({ ...form, type1: e.target.value }) })),
-      React.createElement("div", { style:{ marginBottom:8 } },
-        React.createElement(Lbl, { c:"Type 2 — Comprehensive" }),
-        React.createElement("textarea", { style:{ ...ta, minHeight:110 }, value: txt(form.type2),
-          placeholder:"The full record…",
-          onChange: e => setForm({ ...form, type2: e.target.value }) })),
       React.createElement("div", { style:{ marginBottom:10 } },
         React.createElement(Lbl, { c:"Hindi — used when the Hindi toggle is on (optional)" }),
         React.createElement("textarea", { style:{ ...ta, minHeight:70 }, value: txt(form.hindi),
@@ -30267,30 +30265,18 @@ function ClinicalTemplateLibEditor({ rows, onSave, saving, seed, categories }) {
                     React.createElement("input", { style:inp, value: txt(draft.template),
                       onChange: e => setDraft({ ...draft, template: e.target.value }) })),
                   React.createElement("div", { style:{ marginBottom:8 } },
-                    React.createElement(Lbl, { c:"Type 1 \u2014 Concise" }),
-                    React.createElement("textarea", { style:{ ...ta, minHeight:56 },
+                    React.createElement(Lbl, { c:"Clinical Note" }),
+                    React.createElement("textarea", { style:{ ...ta, minHeight:70 },
                       value: txt(draft.type1),
                       onChange: e => setDraft({ ...draft, type1: e.target.value }) })),
-                  React.createElement("div", { style:{ marginBottom:8 } },
-                    React.createElement(Lbl, { c:"Type 2 \u2014 Comprehensive" }),
-                    React.createElement("textarea", { style:{ ...ta, minHeight:110 },
-                      value: txt(draft.type2),
-                      onChange: e => setDraft({ ...draft, type2: e.target.value }) })),
                   React.createElement("div", null,
                     React.createElement(Lbl, { c:"Hindi \u2014 used when the Hindi toggle is on (optional)" }),
                     React.createElement("textarea", { style:{ ...ta, minHeight:70 },
                       value: txt(draft.hindi), lang:"hi",
                       onChange: e => setDraft({ ...draft, hindi: e.target.value }) }))))
               : React.createElement("div", null,
-                  React.createElement("div", { style:{ fontSize:12, fontWeight:700,
-                    color:"#444444", marginBottom:2 } }, "TYPE 1"),
                   React.createElement("div", { style:{ fontSize:13.5, color:"#3d3d3d",
-                    lineHeight:1.5, whiteSpace:"pre-wrap",
-                    marginBottom: txt(x.r.type2).trim() ? 6 : 0 } }, txt(x.r.type1)),
-                  txt(x.r.type2).trim() ? React.createElement("div", { style:{ fontSize:12,
-                    fontWeight:700, color:"#444444", marginBottom:2 } }, "TYPE 2") : null,
-                  txt(x.r.type2).trim() ? React.createElement("div", { style:{ fontSize:13.5,
-                    color:"#3d3d3d", lineHeight:1.5, whiteSpace:"pre-wrap" } }, txt(x.r.type2)) : null,
+                    lineHeight:1.5, whiteSpace:"pre-wrap" } }, txt(x.r.type1)),
                   txt(x.r.hindi).trim() ? React.createElement("div", { style:{ fontSize:12,
                     fontWeight:700, color:"#444444", marginTop:6, marginBottom:2 } }, "HINDI") : null,
                   txt(x.r.hindi).trim() ? React.createElement("div", { lang:"hi",
