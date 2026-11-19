@@ -175,5 +175,99 @@ ok('and the Treatment Progress Notes split theirs',
      (out.match(/Total Amount Received[\s\S]{0,80}/) || [])[0]);
 }
 
+// ── the daily register: pointers, not a paragraph ──────────────────────
+// "even in daily register I want separate procedures done in one day must
+//  come as pointers and not like paragraphs"
+//
+// The register is one row per visit by design -- it is a day's log, not a
+// treatment record -- so the fix there is not more rows but a list inside
+// the cell.
+{
+  const bctx = { String, Object, Array, console };
+  vm.createContext(bctx);
+  vm.runInContext(fnOf('cghsEsc') + fnOf('kbBulletCell') + '\nthis.b = kbBulletCell;', bctx);
+  const li = (s) => '<li style="margin-bottom:1.5pt">' + s + '</li>';
+  const ul = (...xs) => '<ul style="margin:0;padding-left:11pt">' + xs.map(li).join('') + '</ul>';
+
+  eq('two things done come out as two pointers',
+     bctx.b('Obturation done wrt 16.\nCrown prep done wrt 14.'),
+     ul('Obturation done wrt 16.', 'Crown prep done wrt 14.'));
+  eq('and the procedures they were filed under, the same way',
+     bctx.b('RCT - Obturation, Tooth Preparation', 'comma'),
+     ul('RCT - Obturation', 'Tooth Preparation'));
+  // A list drawn round a single note is noise.
+  eq('one thing done stays a plain line', bctx.b('Scaling done wrt 11.'), 'Scaling done wrt 11.');
+  eq('and one procedure likewise', bctx.b('Restoration - Composite', 'comma'),
+     'Restoration - Composite');
+  eq('an empty cell still reads as empty', bctx.b(''), '\u2014');
+  eq('nothing at all does too', bctx.b(null), '\u2014');
+  eq('a trailing comma makes no empty pointer', bctx.b('Scaling,', 'comma'), 'Scaling,');
+  eq('blank lines between notes make none either',
+     bctx.b('A wrt 16.\n\n\nB wrt 14.'), ul('A wrt 16.', 'B wrt 14.'));
+  // The cell used to be interpolated raw. A list of them must not be.
+  eq('and what goes in a pointer is escaped',
+     bctx.b('A <b>x</b> wrt 16.\nB & C wrt 14.'),
+     ul('A &lt;b&gt;x&lt;/b&gt; wrt 16.', 'B &amp; C wrt 14.'));
+}
+ok('the printed register uses it for Work Done',
+   /line-height:1\.4">\$\{kbBulletCell\(e\.workDone\)\}<\/td>/.test(html));
+ok('and for Procedure Done, which holds several names in one field',
+   /<td>\$\{kbBulletCell\(e\.procedureDone, "comma"\)\}<\/td>/.test(html));
+
+// ── and the prescription, which is the one that matters ────────────────
+// The Case Paper is the sheet the patient walks out with. It is built
+// inside the prescription form -- a base64 blob of its own -- so the rule
+// lives there a second time, and has to be held to the same behaviour.
+const form = (() => {
+  const a = html.indexOf('const PRESCRIPTION_FORM_B64 =');
+  const end = html.indexOf(';\n', a);
+  const b64 = html.slice(a, end + 1).match(/"([A-Za-z0-9+/=]*)"/g)
+    .map(x => x.slice(1, -1)).join('');
+  return Buffer.from(b64, 'base64').toString('utf8');
+})();
+
+ok('the form keeps the entries, not just the line they are flattened into',
+   /TODAYS_PROCS = procs;/.test(form));
+ok('and the printed table is built from them',
+   /var pr = typedOver \? \[\] : procRowsForPrint\(TODAYS_PROCS\);/.test(form));
+ok('a doctor who types over the box gets what they typed, as one row',
+   /var typedOver = !!\(tch && tch\.dataset && tch\.dataset\.touched\);/.test(form));
+ok('and the cells are escaped, which one hand-typed row never needed',
+   /function esc\(s\)\{/.test(form) && /esc\(r\.comments \|\| '—'\)/.test(form));
+
+{
+  const fctx = { String, Object, Array, Number, console };
+  vm.createContext(fctx);
+  const fnIn = (src, name) => {
+    const a = src.indexOf('function ' + name + '(');
+    return src.slice(a, src.indexOf('\n}', a) + 2) + '\n';
+  };
+  vm.runInContext(fnIn(form, 'teethInLine') + fnIn(form, 'procRowsForPrint')
+    + '\nthis.rows = procRowsForPrint;', fctx);
+
+  const r = fctx.rows([{ toothNo: '16, 14', doctor: 'Dr. Viveyk Mittel',
+    treatmentRendered: 'RCT - Obturation, Tooth Preparation',
+    workDone: 'Obturation done in 3 canals MB=16mm-25/04, occlusally adjusted wrt #16.\n'
+      + 'Tooth preparation for Zirconium crown done wrt #14, scan sent to lab.' }]);
+  eq('the case paper gets a row per thing done', r.length, 2);
+  eq('each against its own tooth', r.map(x => x.teeth), ['16', '14']);
+  eq('and named for its own procedure',
+     r.map(x => x.procedure), ['RCT - Obturation', 'Tooth Preparation']);
+  ok('the canal length is still not read as a tooth', r[0].teeth === '16', r[0].teeth);
+  eq('the doctor is carried onto every row',
+     r.map(x => x.doctor), ['Dr. Viveyk Mittel', 'Dr. Viveyk Mittel']);
+
+  // Same guard as the sheets: one procedure over two teeth is one row.
+  const one = fctx.rows([{ toothNo: '37, 36', doctor: 'Dr. Manika Mittel',
+    treatmentRendered: 'Restoration - Composite',
+    workDone: 'Occlusal pits and marginal caries excavated, composite restoration '
+      + 'with isolation done wrt 37, 36.' }]);
+  eq('one restoration across two teeth stays one row on the case paper', one.length, 1);
+  eq('with the tooth cell as the register has it', one[0].teeth, '37, 36');
+
+  eq('nothing logged today prints nothing from here', fctx.rows([]).length, 0);
+  eq('and a missing list does not throw', fctx.rows(null).length, 0);
+}
+
 console.log('  ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
