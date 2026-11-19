@@ -218,7 +218,7 @@ const KB_BACKEND_IS_APPS_SCRIPT = /script\.google\.com/.test(SCRIPT_URL);
 // nicer is the boy who cried wolf, and it sat across a working screen for an
 // afternoon. This goes up again the next time the app genuinely cannot work
 // without a new Code.gs.
-const KB_BACKEND_BUILD_REQUIRED = "2026-11-19a";
+const KB_BACKEND_BUILD_REQUIRED = "2026-11-19b";
 // WHICH APP THIS IS.
 //
 // There was no way to tell. The sidebar said which BACKEND was answering
@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-19a";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-19e";
+const KB_APP_BUILD = "2026-11-19f";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -7645,6 +7645,126 @@ function clinicalNoteOptions(treatment, templates, plan, which, vals) {
   return out;
 }
 
+// ── Saved prescriptions, found again ──────────────────────────────────
+// Its own component because it is a screen of its own: a search, a list
+// and a print, with nothing to do with the prescription being written.
+function CghsRxSearch({ uhid, setUhid, from, setFrom, to, setTo, found, finding, onSearch, onPrint }) {
+  const lbl = (c) => React.createElement("div", { style:{ fontSize:12, fontWeight:700,
+    color:"#444444", textTransform:"uppercase", letterSpacing:".04em", marginBottom:3 } }, c);
+  return React.createElement("div", { style:{ border:`1px solid ${BORDER}`, borderRadius:9,
+    padding:"13px 15px", marginBottom:16, background:BGS } },
+    React.createElement("div", { style:{ display:"flex", gap:12, alignItems:"flex-end",
+      flexWrap:"wrap", marginBottom:10 } },
+      React.createElement("div", null, lbl("UHID (blank = every patient)"),
+        React.createElement("input", { value: uhid, placeholder:"e.g. AH0713",
+          onChange: e => setUhid(e.target.value), style:{ ...inp, width:150 } })),
+      React.createElement("div", null, lbl("From"),
+        React.createElement("input", { type:"date", value: from,
+          onChange: e => setFrom(e.target.value), style:{ ...inp, width:160 } })),
+      React.createElement("div", null, lbl("To"),
+        React.createElement("input", { type:"date", value: to,
+          onChange: e => setTo(e.target.value), style:{ ...inp, width:160 } })),
+      React.createElement("button", { onClick: onSearch, disabled: finding,
+        style:{ padding:"9px 20px", fontSize:14, fontWeight:700, border:"none", borderRadius:7,
+          cursor: finding ? "not-allowed" : "pointer", background:T, color:"#fff" } },
+        finding ? "Searching…" : "Search")),
+    found === null
+      ? React.createElement("div", { style:{ fontSize:13, color:"#5a5a5a" } },
+          "Pick a date range and search. The last month is filled in already.")
+      : (found.length
+        ? React.createElement("div", null,
+            React.createElement("div", { style:{ fontSize:12.5, color:"#5a5a5a", marginBottom:6 } },
+              found.length + (found.length === 1 ? " prescription" : " prescriptions") + ", newest first."),
+            found.map((r, i) => React.createElement("div", { key:i,
+              style:{ display:"flex", gap:12, alignItems:"center", background:"#fff",
+                border:`1px solid ${BORDER}`, borderRadius:8, padding:"9px 12px", marginBottom:6 } },
+              React.createElement("div", { style:{ minWidth:92, fontSize:13, fontWeight:700, color:T } },
+                fmtDMY(r.date) || "—"),
+              React.createElement("div", { style:{ minWidth:150, fontSize:13 } },
+                React.createElement("div", { style:{ fontWeight:700 } }, r.patientName || "—"),
+                React.createElement("div", { style:{ fontSize:12, color:"#5a5a5a" } }, r.uhid || "")),
+              React.createElement("div", { style:{ flex:1, fontSize:12.5, color:"#3d3d3d",
+                lineHeight:1.45 } },
+                React.createElement("div", null, r.treatments || "—"),
+                r.teeth ? React.createElement("div", { style:{ fontSize:12, color:"#5a5a5a" } },
+                  "Tooth " + r.teeth) : null),
+              React.createElement("button", { onClick: () => onPrint(r),
+                style:{ padding:"7px 15px", fontSize:13, fontWeight:700, border:`1px solid ${T}`,
+                  borderRadius:7, cursor:"pointer", background:"#fff", color:T } },
+                "🖨 Print"))))
+        : React.createElement("div", { style:{ fontSize:13, color:"#5a5a5a" } },
+            "Nothing saved in that range. Widen the dates, or clear the UHID to look across every patient.")));
+}
+
+// ── The printed prescription ──────────────────────────────────────────
+// Built from a plain payload rather than from the editor's state, so the
+// same function prints what is on screen and what was saved months ago.
+// A saved prescription reprinted through a second builder would drift
+// from the live one the first time either was touched.
+//
+//   { date, pat: { name, uhid, dob },
+//     rows: [ { code, name, tooth, qty, sits: [ { date, text } ] } ] }
+function buildCghsRxHTML(rx, pad) {
+  const date = String((rx && rx.date) || "");
+  const pat = (rx && rx.pat) || {};
+  const dayOf = (sit) => (sit && sit.date) ? sit.date : date;
+  {
+    const when = fmtDMY(date) || TODAY;
+    const trs = ((rx && rx.rows) || []).map((x, i) => {
+      const list = (x && x.sits && x.sits.length) ? x.sits : [{ date: null, text: "" }];
+      const days = list.map(si => fmtDMY(dayOf(si)) || when);
+      // One visit: the date, as it has always printed. Several: the span
+      // the treatment ran over, because the line is the endorsed treatment
+      // and each visit's own date is on its own line underneath.
+      //
+      // Earliest to latest, NOT first-typed to last-typed. A dentist
+      // writing up a finished course often enters the obturation first and
+      // adds the earlier sittings after it; taken in the order they were
+      // typed, the panel sheet said the course began on the day it ended.
+      const span = list.map(si => dayOf(si)).filter(Boolean).sort();
+      const first = span.length ? (fmtDMY(span[0]) || when) : when;
+      const last = span.length ? (fmtDMY(span[span.length - 1]) || when) : when;
+      const cell = first !== last ? first + " – " + last : (days[0] || when);
+      const written = list.map((si, n) => ({ day: days[n], text: cghsBlankTokens(si.text).trim() }))
+                          .filter(si => si.text);
+      const detail = written.length === 1 && list.length === 1
+        // A single sitting reads as a sentence about the treatment, so it
+        // needs no date in front of it: the row already carries it.
+        ? `<span style="white-space:pre-wrap">${cghsEsc(written[0].text)}</span>`
+        : written.map(si => `<div style="margin-bottom:1.5pt"><b>${cghsEsc(si.day)}</b>` +
+            ` — <span style="white-space:pre-wrap">${cghsEsc(si.text)}</span></div>`).join("");
+      return `<tr><td class="c">${i + 1}</td>` +
+        // Before the treatment, because that is the order it is read in:
+        // on this day, this was done.
+        `<td class="c">${cghsEsc(cell)}</td>` +
+        `<td class="c b">${cghsEsc(x.code) || "—"}</td>` +
+        `<td>${cghsEsc(x.name)}</td>` +
+        `<td class="c b">${cghsEsc(x.tooth) || "—"}</td>` +
+        `<td class="c">${x.qty}</td></tr>` +
+        // Under its own line rather than in a seventh column: the detail is
+        // sentences, and a column of sentences on a pad is unreadable.
+        (detail
+          ? `<tr><td></td><td colspan="5" style="padding-top:0;border-top:none;` +
+            `font-size:10pt;line-height:1.45">${detail}</td></tr>`
+          : "");
+    }).join("");
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>${cghsPadCss(pad)}</style></head><body>` +
+      `<div class="dtitle">Prescription — Treatment Advised</div>` +
+      `<div class="g4">` +
+        `<div class="fl"><div class="lbl">Patient Name</div><div class="val">${cghsEsc(pat.name) || "&nbsp;"}</div></div>` +
+        `<div class="fl"><div class="lbl">Age</div><div class="val">${cghsEsc(calcAge(pat.dob || pat.DOB)) || "&nbsp;"}</div></div>` +
+        `<div class="fl"><div class="lbl">UHID</div><div class="val">${cghsEsc(pat.uhid) || "&nbsp;"}</div></div>` +
+        `<div class="fl"><div class="lbl">Date</div><div class="val">${cghsEsc(when)}</div></div>` +
+      `</div><div class="sec">Treatment Advised — Endorsed</div>` +
+      `<table><thead><tr><th style="width:6%" class="c">Sn</th>` +
+      `<th style="width:13%" class="c">Date</th><th style="width:13%">Code</th>` +
+      `<th>Treatment Advised</th><th style="width:14%" class="c">Tooth Number</th>` +
+      `<th style="width:11%" class="c">No. of Units</th></tr></thead><tbody>${trs}</tbody></table>` +
+      `<div class="sig"><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div>` +
+      `<div style="font-size:10pt;color:#2e2e2e">${signatureLine(when)}</div></div></body></html>`;
+  }
+}
+
 function CghsPrescription({ pat, lines, plan }) {
   const pad = usePadMargins();
   // An endorsement comes back days after it went out, so the sheet is
@@ -7782,60 +7902,82 @@ function CghsPrescription({ pat, lines, plan }) {
   const dropSit = (x, i) => editSits(x, list => list.length > 1 ? list.filter((si, n) => n !== i) : list);
   const matched = rows.filter(x => !!suggested(x)).length;
 
-  const build = () => {
-    const when = fmtDMY(date) || TODAY;
-    const trs = rows.map((x, i) => {
-      const list = sitsOf(x);
-      const days = list.map(si => fmtDMY(dayOf(si)) || when);
-      // One visit: the date, as it has always printed. Several: the span
-      // the treatment ran over, because the line is the endorsed treatment
-      // and each visit's own date is on its own line underneath.
-      //
-      // Earliest to latest, NOT first-typed to last-typed. A dentist
-      // writing up a finished course often enters the obturation first and
-      // adds the earlier sittings after it; taken in the order they were
-      // typed, the panel sheet said the course began on the day it ended.
-      const span = list.map(si => dayOf(si)).filter(Boolean).sort();
-      const first = span.length ? (fmtDMY(span[0]) || when) : when;
-      const last = span.length ? (fmtDMY(span[span.length - 1]) || when) : when;
-      const cell = first !== last ? first + " – " + last : (days[0] || when);
-      const written = list.map((si, n) => ({ day: days[n], text: cghsBlankTokens(si.text).trim() }))
-                          .filter(si => si.text);
-      const detail = written.length === 1 && list.length === 1
-        // A single sitting reads as a sentence about the treatment, so it
-        // needs no date in front of it: the row already carries it.
-        ? `<span style="white-space:pre-wrap">${cghsEsc(written[0].text)}</span>`
-        : written.map(si => `<div style="margin-bottom:1.5pt"><b>${cghsEsc(si.day)}</b>` +
-            ` — <span style="white-space:pre-wrap">${cghsEsc(si.text)}</span></div>`).join("");
-      return `<tr><td class="c">${i + 1}</td>` +
-        // Before the treatment, because that is the order it is read in:
-        // on this day, this was done.
-        `<td class="c">${cghsEsc(cell)}</td>` +
-        `<td class="c b">${cghsEsc(x.code) || "—"}</td>` +
-        `<td>${cghsEsc(nameOf(x))}</td>` +
-        `<td class="c b">${cghsEsc(x.r.tooth) || "—"}</td>` +
-        `<td class="c">${x.qty}</td></tr>` +
-        // Under its own line rather than in a seventh column: the detail is
-        // sentences, and a column of sentences on a pad is unreadable.
-        (detail
-          ? `<tr><td></td><td colspan="5" style="padding-top:0;border-top:none;` +
-            `font-size:10pt;line-height:1.45">${detail}</td></tr>`
-          : "");
-    }).join("");
-    return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>${cghsPadCss(pad)}</style></head><body>` +
-      `<div class="dtitle">Prescription — Treatment Advised</div>` +
-      `<div class="g4">` +
-        `<div class="fl"><div class="lbl">Patient Name</div><div class="val">${cghsEsc(pat.name) || "&nbsp;"}</div></div>` +
-        `<div class="fl"><div class="lbl">Age</div><div class="val">${cghsEsc(calcAge(pat.dob || pat.DOB)) || "&nbsp;"}</div></div>` +
-        `<div class="fl"><div class="lbl">UHID</div><div class="val">${cghsEsc(pat.uhid) || "&nbsp;"}</div></div>` +
-        `<div class="fl"><div class="lbl">Date</div><div class="val">${cghsEsc(when)}</div></div>` +
-      `</div><div class="sec">Treatment Advised — Endorsed</div>` +
-      `<table><thead><tr><th style="width:6%" class="c">Sn</th>` +
-      `<th style="width:13%" class="c">Date</th><th style="width:13%">Code</th>` +
-      `<th>Treatment Advised</th><th style="width:14%" class="c">Tooth Number</th>` +
-      `<th style="width:11%" class="c">No. of Units</th></tr></thead><tbody>${trs}</tbody></table>` +
-      `<div class="sig"><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div>` +
-      `<div style="font-size:10pt;color:#2e2e2e">${signatureLine(when)}</div></div></body></html>`;
+  // What this screen holds, as the plain thing the printer and the sheet
+  // both take. One shape, so what is printed is exactly what is saved.
+  const payload = () => ({
+    date: date,
+    pat: { name: pat.name || "", uhid: pat.uhid || "", dob: pat.dob || pat.DOB || "" },
+    rows: rows.map(x => ({
+      code: x.code || "", name: nameOf(x), tooth: x.r.tooth || "", qty: x.qty,
+      sits: sitsOf(x).map(si => ({ date: dayOf(si) || "", text: si.text || "" }))
+    }))
+  });
+  const build = () => buildCghsRxHTML(payload(), pad);
+
+  // ── Saving, and finding one again ────────────────────────────────────
+  // A prescription existed only on the paper it was printed on. Months
+  // later the panel queries a bill, or the patient has lost the sheet, and
+  // it had to be rebuilt from the endorsement by hand.
+  //
+  // What is saved is the same payload that is printed, so a sheet pulled
+  // back out is the sheet that was signed rather than an approximation.
+  const [saveMsg, setSaveMsg] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const doSave = () => {
+    const rx = payload();
+    if (!rx.pat.uhid) { setSaveMsg("Load a patient first — there is nobody to file this under."); return; }
+    if (!rx.rows.length) { setSaveMsg("There are no treatments on this prescription to save."); return; }
+    setSaving(true); setSaveMsg("");
+    // The readable columns are for the clinic scanning the tab by eye; the
+    // document is what gets reprinted.
+    const sitCount = rx.rows.reduce((n, r) => n + (r.sits ? r.sits.length : 0), 0);
+    api("saveCghsPrescription", {
+      uhid: rx.pat.uhid, patientName: rx.pat.name, date: rx.date,
+      treatments: rx.rows.map(r => r.name).filter(Boolean).join(", "),
+      teeth: rx.rows.map(r => r.tooth).filter(Boolean).join(", "),
+      sittings: String(sitCount),
+      document: JSON.stringify(rx)
+    }).then(res => {
+      setSaving(false);
+      setSaveMsg(res && res.success
+        ? "\u2713 Saved. It can be found again under Saved Prescriptions."
+        : "Could not save: " + ((res && res.error) || "the sheet did not answer."));
+    }).catch(() => { setSaving(false); setSaveMsg("Could not save: the sheet did not answer."); });
+  };
+
+  // The search. Dates default to the last month, which is the answer
+  // nearly every time; the patient on screen is the default UHID, and
+  // clearing it searches every patient.
+  const [findOpen, setFindOpen] = React.useState(false);
+  const [findUhid, setFindUhid] = React.useState("");
+  const [findFrom, setFindFrom] = React.useState("");
+  const [findTo, setFindTo] = React.useState("");
+  const [found, setFound] = React.useState(null);
+  const [finding, setFinding] = React.useState(false);
+  const openFind = () => {
+    const now = new Date();
+    const back = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    setFindUhid(pat && pat.uhid ? pat.uhid : "");
+    setFindFrom(toISODate(back)); setFindTo(toISODate(now));
+    setFound(null); setFindOpen(true);
+  };
+  const doFind = () => {
+    setFinding(true);
+    api("listCghsPrescriptions", { uhid: findUhid, from: findFrom, to: findTo })
+      .then(res => {
+        setFinding(false);
+        setFound((res && res.success && res.prescriptions) || []);
+      })
+      .catch(() => { setFinding(false); setFound([]); });
+  };
+  // Reprinted through the same builder as the live sheet, so the two
+  // cannot drift. A row saved by an older page that cannot be read back is
+  // said so rather than printing a blank sheet.
+  const printSaved = (r) => {
+    let rx = null;
+    try { rx = JSON.parse(r.document); } catch (e) { rx = null; }
+    if (!rx || !rx.rows) { setSaveMsg("That saved prescription could not be read back."); return; }
+    cghsPrint(buildCghsRxHTML(rx, pad));
   };
 
   const note = (text) => React.createElement("div", { style:{ background:"#fffbeb",
@@ -7852,7 +7994,21 @@ function CghsPrescription({ pat, lines, plan }) {
           onChange: e => setDate(e.target.value), style:{ ...inp, width:170 } })),
       React.createElement("button", { onClick: () => cghsPrint(build()),
         style:{ padding:"9px 20px", fontSize:14, fontWeight:700, border:"none", borderRadius:7,
-          cursor:"pointer", background:T, color:"#fff" } }, "🖨 Print Prescription")),
+          cursor:"pointer", background:T, color:"#fff" } }, "🖨 Print Prescription"),
+      React.createElement("button", { onClick: doSave, disabled: saving,
+        style:{ padding:"9px 18px", fontSize:14, fontWeight:700, border:`1px solid ${T}`,
+          borderRadius:7, cursor: saving ? "not-allowed" : "pointer", background:"#fff",
+          color:T } }, saving ? "Saving\u2026" : "\uD83D\uDCBE Save Prescription"),
+      React.createElement("button", { onClick: () => (findOpen ? setFindOpen(false) : openFind()),
+        style:{ padding:"9px 18px", fontSize:14, fontWeight:700, border:`1px solid ${BORDER}`,
+          borderRadius:7, cursor:"pointer", background:"#fff", color:"#444444" } },
+        findOpen ? "Close" : "\uD83D\uDD0E Saved Prescriptions")),
+    saveMsg ? note(saveMsg) : null,
+    findOpen ? React.createElement(CghsRxSearch, {
+      uhid: findUhid, setUhid: setFindUhid, from: findFrom, setFrom: setFindFrom,
+      to: findTo, setTo: setFindTo, found: found, finding: finding,
+      onSearch: doFind, onPrint: printSaved
+    }) : null,
     tplMsg ? note(tplMsg) : null,
 
     // The detail, one box per endorsed line, prefilled and editable.
