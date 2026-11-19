@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-13";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-14a";
+const KB_APP_BUILD = "2026-11-19";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -906,7 +906,7 @@ const ta = {
   resize: "vertical",
   minHeight: 52
 };
-const PCSS = "@page{size:A4 portrait;margin:12mm 13mm 10mm 13mm}*{box-sizing:border-box;margin:0;padding:0}html,body{font-family:'Segoe UI',Arial,sans-serif;font-size:10.5pt;color:#111;background:#fff}.hdr{display:flex;align-items:center;gap:10pt;border-bottom:1.5pt solid #0078B4;padding-bottom:7pt;margin-bottom:8pt}.logo{width:52pt;height:52pt;object-fit:contain;mix-blend-mode:multiply}.hdr-mid{flex:1;text-align:center}.cares{font-size:14pt;font-weight:800;color:#C0392B;letter-spacing:0.12em;text-decoration:underline;margin-bottom:1pt}.tagline{font-size:8pt;font-weight:700;color:#0078B4;margin-bottom:1pt}.sub{font-size:8pt;color:#2e2e2e;margin-bottom:1pt}.dtitle{text-align:center;font-size:13pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8pt}.g2{display:grid;grid-template-columns:1fr 1fr;gap:5pt 10pt;margin-bottom:6pt}.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5pt 8pt;margin-bottom:6pt}.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt}.fl{margin-bottom:4pt}.lbl{font-size:7pt;font-weight:700;color:#383838;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:1pt}.val{font-size:10.5pt;border-bottom:0.5pt solid #ccc;padding-bottom:1pt;min-height:14pt}.vb{font-size:10.5pt;border:0.5pt solid #ccc;padding:3pt 6pt;min-height:22pt;border-radius:2pt;line-height:1.4}.sec{background:#f0f6fb;border-left:3pt solid #0078B4;padding:3pt 7pt;font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#0078B4;margin:6pt 0 5pt}.note{font-size:8pt;color:#2e2e2e;font-style:italic;margin-bottom:6pt;padding:4pt 8pt;background:#f8f8f8;border-left:2pt solid #0078B4}.tc{width:20pt;height:20pt;text-align:center;font-size:8.5pt;font-weight:700;border:0.5pt solid #ccc;vertical-align:middle}.tu{border-color:#0078B4!important;background:#DCF4FB!important;color:#0078B4!important}.tg{width:8pt;border:none;background:transparent}.tgrid{margin:0 auto;border-collapse:collapse}.ph{padding:4pt 8pt;font-size:9pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;margin:8pt 0 0;color:#fff}table{width:100%;border-collapse:collapse;margin-bottom:0}th{background:#f0f6fb;color:#0078B4;padding:4pt 6pt;font-size:8pt;font-weight:700;text-align:left;border-bottom:1pt solid #0078B4}td{padding:4pt 6pt;border-bottom:0.5pt solid #eee;font-size:10pt;vertical-align:middle}.amt{text-align:right;font-weight:600}.tots{margin-top:10pt;border-top:1.5pt solid #0078B4;padding-top:8pt}.tr{display:flex;justify-content:space-between;padding:3pt 8pt;font-size:11pt}.trg{font-size:13pt;font-weight:800;color:#0078B4;background:#f0f6fb;padding:5pt 8pt}.sigrow{display:grid;grid-template-columns:1fr 1fr;gap:14pt;margin-top:16pt;padding-top:8pt;border-top:0.5pt solid #ccc}.sigbox{border:0.5pt solid #bbb;border-radius:3pt;height:42pt;background:#fafafa;margin-bottom:3pt}.foot{margin-top:10pt;border-top:0.5pt solid #ddd;padding-top:4pt;display:flex;justify-content:space-between;font-size:7.5pt;color:#444444}.pb{page-break-before:always}";
+const PCSS = "@page{size:A4 portrait;margin:10mm 12mm 8mm 12mm}*{box-sizing:border-box;margin:0;padding:0}html,body{font-family:'Segoe UI',Arial,sans-serif;font-size:12pt;color:#111;background:#fff}.hdr{display:flex;align-items:center;gap:10pt;border-bottom:1.5pt solid #0078B4;padding-bottom:7pt;margin-bottom:8pt}.logo{width:52pt;height:52pt;object-fit:contain;mix-blend-mode:multiply}.hdr-mid{flex:1;text-align:center}.cares{font-size:15pt;font-weight:800;color:#C0392B;letter-spacing:0.12em;text-decoration:underline;margin-bottom:1pt}.tagline{font-size:9.5pt;font-weight:700;color:#0078B4;margin-bottom:1pt}.sub{font-size:9.5pt;color:#2e2e2e;margin-bottom:1pt}.dtitle{text-align:center;font-size:14pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8pt}.g2{display:grid;grid-template-columns:1fr 1fr;gap:3pt 10pt;margin-bottom:4pt}.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:3pt 8pt;margin-bottom:4pt}.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:3pt 8pt;margin-bottom:4pt}.fl{margin-bottom:2.5pt}.lbl{font-size:9.5pt;font-weight:700;color:#383838;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:1pt}.val{font-size:12pt;border-bottom:0.5pt solid #ccc;padding-bottom:1pt;min-height:14pt}.vb{font-size:12pt;border:0.5pt solid #ccc;padding:2.5pt 6pt;min-height:20pt;border-radius:2pt;line-height:1.35}.sec{background:#f0f6fb;border-left:3pt solid #0078B4;padding:2.5pt 7pt;font-size:9.5pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#0078B4;margin:5pt 0 3pt}.note{font-size:9.5pt;color:#2e2e2e;font-style:italic;margin-bottom:6pt;padding:4pt 8pt;background:#f8f8f8;border-left:2pt solid #0078B4}.tc{width:20pt;height:20pt;text-align:center;font-size:10pt;font-weight:700;border:0.5pt solid #ccc;vertical-align:middle}.tu{border-color:#0078B4!important;background:#DCF4FB!important;color:#0078B4!important}.tg{width:8pt;border:none;background:transparent}.tgrid{margin:0 auto;border-collapse:collapse}.ph{padding:4pt 8pt;font-size:10.5pt;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;margin:8pt 0 0;color:#fff}table{width:100%;border-collapse:collapse;margin-bottom:0}th{background:#f0f6fb;color:#0078B4;padding:3pt 6pt;font-size:9.5pt;font-weight:700;text-align:left;border-bottom:1pt solid #0078B4}td{padding:3pt 6pt;border-bottom:0.5pt solid #eee;font-size:11.5pt;vertical-align:middle}.amt{text-align:right;font-weight:600}.tots{margin-top:10pt;border-top:1.5pt solid #0078B4;padding-top:8pt}.tr{display:flex;justify-content:space-between;padding:3pt 8pt;font-size:12.5pt}.trg{font-size:14pt;font-weight:800;color:#0078B4;background:#f0f6fb;padding:5pt 8pt}.sigrow{display:grid;grid-template-columns:1fr 1fr;gap:14pt;margin-top:9pt;padding-top:6pt;border-top:0.5pt solid #ccc}.sigbox{border:0.5pt solid #bbb;border-radius:3pt;height:32pt;background:#fafafa;margin-bottom:3pt}.foot{margin-top:10pt;border-top:0.5pt solid #ddd;padding-top:4pt;display:flex;justify-content:space-between;font-size:9.5pt;color:#444444}.pb{page-break-before:always}";
 function pH(logo, fn) {
   return `<div class="hdr"><img class="logo" src="${logo}"/><div class="hdr-mid"><div class="cares">C. A. R. E. S.</div><div class="tagline">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div><div class="sub">BLOCK R - 74 B, DILSHAD GARDEN, DELHI - 110095</div><div class="sub">Ph.: 011-22131942 &nbsp; Mob: 7866939786, 9319990912 &nbsp; kbdentaldelhi@gmail.com</div></div><div style="font-size:9px;color:#4b4b4b">${fn || "KBDC"}</div></div>`;
 }
@@ -920,7 +920,7 @@ function toothG(rows) {
   const gap = '<td class="tg"></td>';
   const up = UPPER_T.slice(0, 8).map(cell).join("") + gap + UPPER_T.slice(8).map(cell).join("");
   const lo = LOWER_T.slice(0, 8).map(cell).join("") + gap + LOWER_T.slice(8).map(cell).join("");
-  return `<div style="margin-bottom:8pt"><div style="font-size:7.5pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:3pt">Dental Chart</div><div style="text-align:center"><div style="font-size:7pt;font-weight:700;color:#0078B4;text-transform:uppercase;margin-bottom:2pt">Upper</div><table class="tgrid"><tr>${up}</tr></table><div style="border-top:1.5pt dashed #0078B4;margin:2pt auto;width:75%;opacity:0.4"></div><table class="tgrid"><tr>${lo}</tr></table><div style="font-size:7pt;font-weight:700;color:#0078B4;text-transform:uppercase;margin-top:2pt">Lower</div></div></div>`;
+  return `<div style="margin-bottom:8pt"><div style="font-size:9.5pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:3pt">Dental Chart</div><div style="text-align:center"><div style="font-size:9.5pt;font-weight:700;color:#0078B4;text-transform:uppercase;margin-bottom:2pt">Upper</div><table class="tgrid"><tr>${up}</tr></table><div style="border-top:1.5pt dashed #0078B4;margin:2pt auto;width:75%;opacity:0.4"></div><table class="tgrid"><tr>${lo}</tr></table><div style="font-size:9.5pt;font-weight:700;color:#0078B4;text-transform:uppercase;margin-top:2pt">Lower</div></div></div>`;
 }
 
 // ── Shared UI ─────────────────────────────────────────────────────
@@ -2583,7 +2583,7 @@ function Registration({
   const buildPrintHTML = () => {
     const condList = M.conditions.length ? M.conditions.join(" · ") : "None reported";
     const allergyList = M.allergies.length ? M.allergies.join(", ") : "None";
-    return pW(pH(window.LOGO_B64, "KBDC/FORMS/REG-01") + `<div class="dtitle">Patient Registration</div><div class="g3"><div class="fl"><div class="lbl">Full Name</div><div class="val" style="font-size:12pt;font-weight:700">${P.name}</div></div><div class="fl"><div class="lbl">UHID</div><div class="val" style="font-weight:700">${uhid}</div></div><div class="fl"><div class="lbl">Date</div><div class="val">${TODAY}</div></div></div>` + `<div class="g4"><div class="fl"><div class="lbl">Gender</div><div class="val">${P.gender || "—"}</div></div><div class="fl"><div class="lbl">Date of Birth</div><div class="val">${P.dob || "—"}</div></div><div class="fl"><div class="lbl">Age</div><div class="val">${calcAge(P.dob) || "—"} yrs</div></div><div class="fl"><div class="lbl">Blood Group</div><div class="val">${P.bloodGroup || "—"}</div></div></div>` + `<div class="g3"><div class="fl"><div class="lbl">Occupation</div><div class="val">${P.occupation || "—"}</div></div><div class="fl"><div class="lbl">Marital Status</div><div class="val">${P.maritalStatus || "—"}</div></div><div class="fl"><div class="lbl">Referred By</div><div class="val">${P.referredBy || "—"}</div></div></div>` + `<div class="fl"><div class="lbl">Address</div><div class="val">${P.address || "—"}</div></div>` + `<div class="g3"><div class="fl"><div class="lbl">Mobile</div><div class="val">${P.mobile}</div></div><div class="fl"><div class="lbl">WhatsApp</div><div class="val">${P.whatsapp}</div></div><div class="fl"><div class="lbl">Email</div><div class="val">${P.email}</div></div></div>` + `<div class="g3"><div class="fl"><div class="lbl">Emergency Contact</div><div class="val">${P.emergencyName}</div></div><div class="fl"><div class="lbl">Relation</div><div class="val">${P.emergencyRelation}</div></div><div class="fl"><div class="lbl">Contact No.</div><div class="val">${P.emergencyContact}</div></div></div>` + `<div class="sec">Medical Information</div><div class="fl"><div class="lbl">Medical Conditions — Positive Findings</div><div class="vb">${condList}</div></div>` + `<div class="g2"><div class="fl"><div class="lbl">Any other condition</div><div class="val">${M.anyOther || "—"}</div></div><div class="fl"><div class="lbl">Medicines currently taking</div><div class="val">${M.medicines || "—"}</div></div></div>` + `<div class="g4"><div class="fl"><div class="lbl">Pregnant</div><div class="val">${M.pregnant}${M.pregnant === "Yes" && M.dueDate ? " · " + M.dueDate : ""}</div></div><div class="fl"><div class="lbl">Feeding Mother</div><div class="val">${M.feedingMother}</div></div><div class="fl"><div class="lbl">Smoke/Beedi</div><div class="val">${M.smoke}${M.smoke === "Yes" ? " · " + M.smokeFreq + "/day" : ""}</div></div><div class="fl"><div class="lbl">Alcohol</div><div class="val">${M.alcohol}${M.alcohol === "Yes" ? " · " + M.alcoholFreq + "/week" : ""}</div></div></div>` + `<div class="fl"><div class="lbl">Allergies</div><div class="val">${allergyList}${M.otherAllergy ? " · " + M.otherAllergy : ""}</div></div>` + `<div class="sec">Dental Information</div><div class="fl"><div class="lbl">How did you know about us</div><div class="val">${D.howKnown.join(", ") || "—"}</div></div><div class="fl"><div class="lbl">Chief Complaint</div><div class="vb">${D.complaint || "&nbsp;"}</div></div>` + `<div class="sec">Pain Management Chart</div><div style="font-size:11pt">Are you in Pain? <strong>${pain.inPain || "—"}</strong>${pain.inPain === "Yes" && pain.level !== null ? ` &nbsp;|&nbsp; Level: <strong>${pain.level} — ${PAIN_L[pain.level]}</strong>` : ""}</div>` + `<div class="pb">${pH(window.LOGO_B64, "KBDC/FORMS/REG-01")}<div class="sec">General Consent Form</div><div style="font-size:11pt;margin-bottom:10pt">I <strong>${P.name}</strong>, desire to avail dental services at this facility and give my agreement to accept their services related to diagnosis and care of my dental condition.</div><div style="font-size:10pt;color:#333;line-height:1.7;margin-bottom:14pt"><p style="margin-bottom:7pt">I understand that this consent is a general consent and it includes routine procedures and treatments such as physical examination, drawing blood for lab tests, medication administration, taking x-rays, use of local anaesthesia and conduct any non-invasive procedure etc.</p><p style="margin-bottom:7pt">I also understand that in case high risk or invasive procedure is required to be done, whether for investigation or treatment, I will be asked to sign a separate consent form.</p><p style="margin-bottom:7pt">I acknowledge that result of the treatment in this clinic are not guaranteed and I cannot hold clinic or its doctor or any other staff liable for the outcome, unless and until it is because of negligence.</p><p style="margin-bottom:7pt">I also authorize the clinic to collect and maintain a record of my basic information and medical information. I understand that this information is confidential and will be shared only with healthcare providers at K. B. Dental Clinic only and used only for my treatment purpose.</p><p style="margin-bottom:7pt">I assume full responsibility of my personal belongings and valuables and clinic will not be responsible for loss of any personal item.</p><p>I undertake that I will abide by the rules and byelaws of the clinic.</p></div><div class="sigrow"><div><div class="lbl">Patient / Guardian Signature &amp; Name</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">Name: ${P.name} | Date: ${TODAY}</div></div><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div></div>`, "KBDC/FORMS/REG-01");
+    return pW(pH(window.LOGO_B64, "KBDC/FORMS/REG-01") + `<div class="dtitle">Patient Registration</div><div class="g3"><div class="fl"><div class="lbl">Full Name</div><div class="val" style="font-size:13.5pt;font-weight:700">${P.name}</div></div><div class="fl"><div class="lbl">UHID</div><div class="val" style="font-weight:700">${uhid}</div></div><div class="fl"><div class="lbl">Date</div><div class="val">${TODAY}</div></div></div>` + `<div class="g4"><div class="fl"><div class="lbl">Gender</div><div class="val">${P.gender || "—"}</div></div><div class="fl"><div class="lbl">Date of Birth</div><div class="val">${P.dob || "—"}</div></div><div class="fl"><div class="lbl">Age</div><div class="val">${calcAge(P.dob) || "—"} yrs</div></div><div class="fl"><div class="lbl">Blood Group</div><div class="val">${P.bloodGroup || "—"}</div></div></div>` + `<div class="g3"><div class="fl"><div class="lbl">Occupation</div><div class="val">${P.occupation || "—"}</div></div><div class="fl"><div class="lbl">Marital Status</div><div class="val">${P.maritalStatus || "—"}</div></div><div class="fl"><div class="lbl">Referred By</div><div class="val">${P.referredBy || "—"}</div></div></div>` + `<div class="fl"><div class="lbl">Address</div><div class="val">${P.address || "—"}</div></div>` + `<div class="g3"><div class="fl"><div class="lbl">Mobile</div><div class="val">${P.mobile}</div></div><div class="fl"><div class="lbl">WhatsApp</div><div class="val">${P.whatsapp}</div></div><div class="fl"><div class="lbl">Email</div><div class="val">${P.email}</div></div></div>` + `<div class="g3"><div class="fl"><div class="lbl">Emergency Contact</div><div class="val">${P.emergencyName}</div></div><div class="fl"><div class="lbl">Relation</div><div class="val">${P.emergencyRelation}</div></div><div class="fl"><div class="lbl">Contact No.</div><div class="val">${P.emergencyContact}</div></div></div>` + `<div class="sec">Medical Information</div><div class="fl"><div class="lbl">Medical Conditions — Positive Findings</div><div class="vb">${condList}</div></div>` + `<div class="g2"><div class="fl"><div class="lbl">Any other condition</div><div class="val">${M.anyOther || "—"}</div></div><div class="fl"><div class="lbl">Medicines currently taking</div><div class="val">${M.medicines || "—"}</div></div></div>` + `<div class="g4"><div class="fl"><div class="lbl">Pregnant</div><div class="val">${M.pregnant}${M.pregnant === "Yes" && M.dueDate ? " · " + M.dueDate : ""}</div></div><div class="fl"><div class="lbl">Feeding Mother</div><div class="val">${M.feedingMother}</div></div><div class="fl"><div class="lbl">Smoke/Beedi</div><div class="val">${M.smoke}${M.smoke === "Yes" ? " · " + M.smokeFreq + "/day" : ""}</div></div><div class="fl"><div class="lbl">Alcohol</div><div class="val">${M.alcohol}${M.alcohol === "Yes" ? " · " + M.alcoholFreq + "/week" : ""}</div></div></div>` + `<div class="fl"><div class="lbl">Allergies</div><div class="val">${allergyList}${M.otherAllergy ? " · " + M.otherAllergy : ""}</div></div>` + `<div class="sec">Dental Information</div><div class="fl"><div class="lbl">How did you know about us</div><div class="val">${D.howKnown.join(", ") || "—"}</div></div><div class="fl"><div class="lbl">Chief Complaint</div><div class="vb">${D.complaint || "&nbsp;"}</div></div>` + `<div class="sec">Pain Management Chart</div><div style="font-size:12.5pt">Are you in Pain? <strong>${pain.inPain || "—"}</strong>${pain.inPain === "Yes" && pain.level !== null ? ` &nbsp;|&nbsp; Level: <strong>${pain.level} — ${PAIN_L[pain.level]}</strong>` : ""}</div>` + `<div class="pb">${pH(window.LOGO_B64, "KBDC/FORMS/REG-01")}<div class="sec">General Consent Form</div><div style="font-size:12.5pt;margin-bottom:10pt">I <strong>${P.name}</strong>, desire to avail dental services at this facility and give my agreement to accept their services related to diagnosis and care of my dental condition.</div><div style="font-size:11.5pt;color:#333;line-height:1.7;margin-bottom:14pt"><p style="margin-bottom:7pt">I understand that this consent is a general consent and it includes routine procedures and treatments such as physical examination, drawing blood for lab tests, medication administration, taking x-rays, use of local anaesthesia and conduct any non-invasive procedure etc.</p><p style="margin-bottom:7pt">I also understand that in case high risk or invasive procedure is required to be done, whether for investigation or treatment, I will be asked to sign a separate consent form.</p><p style="margin-bottom:7pt">I acknowledge that result of the treatment in this clinic are not guaranteed and I cannot hold clinic or its doctor or any other staff liable for the outcome, unless and until it is because of negligence.</p><p style="margin-bottom:7pt">I also authorize the clinic to collect and maintain a record of my basic information and medical information. I understand that this information is confidential and will be shared only with healthcare providers at K. B. Dental Clinic only and used only for my treatment purpose.</p><p style="margin-bottom:7pt">I assume full responsibility of my personal belongings and valuables and clinic will not be responsible for loss of any personal item.</p><p>I undertake that I will abide by the rules and byelaws of the clinic.</p></div><div class="sigrow"><div><div class="lbl">Patient / Guardian Signature &amp; Name</div><div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">Name: ${P.name} | Date: ${TODAY}</div></div><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div></div>`, "KBDC/FORMS/REG-01");
   };
   const NavRow = ({
     back,
@@ -3002,7 +3002,12 @@ function Registration({
     ceQ("div", { style: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" } },
       ceQ(Lbl, { c: "Patient Type" }),
       ceQ("div", { style: { display: "flex", gap: 8 } },
-        [["normal", "Normal", T], ["panel", "Panel", "#7C3AED"]].map(([v, label, col]) =>
+        // The clinic says "private", so the button says Private. The value
+        // behind it stays "normal" and the cell still reads "Normal":
+        // thousands of rows, the CRM's boards, the Patient Types master and
+        // every report are keyed on that word, and renaming the data to
+        // match a button would orphan all of them.
+        [["normal", "Private", T], ["panel", "Panel", "#7C3AED"]].map(([v, label, col]) =>
           ceQ("button", { key: v,
             onClick: () => { setPatientType(v); if (v === "normal") { setPanel(""); setQ(prev => ({ ...prev, panelCat: "", cardId: "" })); } },
             style: { padding: "8px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer",
@@ -4542,7 +4547,7 @@ function CarePlan({
     });
   };
   function buildCPPage1HTML() {
-    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="dtitle">Oral Health Assessment — Care Plan</div><div class="g3"><div class="fl"><div class="lbl">Name</div><div class="val" style="font-size:12pt;font-weight:700">${pat ? pat.name : "—"}</div></div><div class="fl"><div class="lbl">UHID</div><div class="val" style="font-weight:700">${pat ? pat.uhid : "—"}</div></div><div class="fl"><div class="lbl">Date</div><div class="val">${TODAY}</div></div></div><div class="fl"><div class="lbl">Chief Complaint</div><div class="vb">${p1.chiefComplaint || "&nbsp;"}</div></div><div class="sec">History</div><div class="g2">${[["medHistory", "Medical History"], ["habits", "Habits"], ["oralHabits", "Oral Habits"], ["allergies", "Allergies"], ["familyHistory", "Family History"], ["dentalHistory", "Dental History"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="vb">${p1[k] || "—"}</div></div>`).join("")}</div><div class="sec">Clinical Examination of Chief Complaint</div>${[["affectedArea", "Affected Area"], ["duration", "Duration & Progression"], ["aggravating", "Aggravating & Relieving Factors"], ["extraOral", "Extra Oral Examination"], ["intraOral", "Intra Oral Examination"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="vb">${p1[k] || "&nbsp;"}</div></div>`).join("")}<div class="fl"><div class="lbl">Provisional Diagnosis</div><div class="vb">${p1.provisionalDiagnosis || "&nbsp;"}</div></div><div class="sec">Suggested Treatment(s)</div><table><thead><tr><th>Treatment Options</th><th>Prognosis</th><th>Possible Outcome</th><th>Charges (₹)</th></tr></thead><tbody>${p1.treatments.map(t => `<tr><td>${t.option || "&nbsp;"}</td><td>${t.prognosis || "&nbsp;"}</td><td>${t.outcome || "&nbsp;"}</td><td>${t.charges || "&nbsp;"}</td></tr>`).join("")}</tbody></table><div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
+    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="dtitle">Oral Health Assessment — Care Plan</div><div class="g3"><div class="fl"><div class="lbl">Name</div><div class="val" style="font-size:13.5pt;font-weight:700">${pat ? pat.name : "—"}</div></div><div class="fl"><div class="lbl">UHID</div><div class="val" style="font-weight:700">${pat ? pat.uhid : "—"}</div></div><div class="fl"><div class="lbl">Date</div><div class="val">${TODAY}</div></div></div><div class="fl"><div class="lbl">Chief Complaint</div><div class="vb">${p1.chiefComplaint || "&nbsp;"}</div></div><div class="sec">History</div><div class="g2">${[["medHistory", "Medical History"], ["habits", "Habits"], ["oralHabits", "Oral Habits"], ["allergies", "Allergies"], ["familyHistory", "Family History"], ["dentalHistory", "Dental History"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="vb">${p1[k] || "—"}</div></div>`).join("")}</div><div class="sec">Clinical Examination of Chief Complaint</div>${[["affectedArea", "Affected Area"], ["duration", "Duration & Progression"], ["aggravating", "Aggravating & Relieving Factors"], ["extraOral", "Extra Oral Examination"], ["intraOral", "Intra Oral Examination"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="vb">${p1[k] || "&nbsp;"}</div></div>`).join("")}<div class="fl"><div class="lbl">Provisional Diagnosis</div><div class="vb">${p1.provisionalDiagnosis || "&nbsp;"}</div></div><div class="sec">Suggested Treatment(s)</div><table><thead><tr><th>Treatment Options</th><th>Prognosis</th><th>Possible Outcome</th><th>Charges (₹)</th></tr></thead><tbody>${p1.treatments.map(t => `<tr><td>${t.option || "&nbsp;"}</td><td>${t.prognosis || "&nbsp;"}</td><td>${t.outcome || "&nbsp;"}</td><td>${t.charges || "&nbsp;"}</td></tr>`).join("")}</tbody></table><div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
   }
   function buildCPPage2HTML() {
     const hf = v => v.healthy ? "Healthy" : `Obs: ${v.observation || "—"}`;
@@ -4562,12 +4567,12 @@ function CarePlan({
     // the same list through a renderer of their own.
     const examChips = (section) => examIn(section).map(r => {
       const on = !!p2.inv[r.key || r.finding];
-      return `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:8pt;font-weight:${on ? 700 : 400};background:${on ? "#DCF4FB" : "#f5f5f5"};color:${on ? "#0078B4" : "#8a8a8a"};border:0.5pt solid ${on ? "#0090CC" : "#ddd"}">${r.finding}</span>`;
+      return `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:9.5pt;font-weight:${on ? 700 : 400};background:${on ? "#DCF4FB" : "#f5f5f5"};color:${on ? "#0078B4" : "#8a8a8a"};border:0.5pt solid ${on ? "#0090CC" : "#ddd"}">${r.finding}</span>`;
     }).join("");
-    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="sec">Extra-Oral Check</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Extra-Oral Check")}<div class="fl"><div class="lbl">Facial Profile</div><div class="val">${p2.facialProfile || "—"}</div></div></div><div class="sec">Intra-Oral — Soft Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Intra-Oral Check")}<div class="fl"><div class="lbl">Frenum</div><div class="val">${p2.frenum || "—"}</div></div><div class="fl"><div class="lbl">Pigmentation</div><div class="val">${p2.pigmentation || "—"}</div></div></div><div class="sec">Intra-Oral — Hard Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${[["silverFillings", "Silver Fillings"], ["whiteFillings", "White Fillings"], ["decayedTeeth", "Decayed Teeth"], ["chippedTeeth", "Chipped Teeth"], ["missingTeeth", "Missing Teeth"], ["crowns", "Crowns"], ["bridges", "Bridges"], ["veneers", "Veneers"], ["crowding", "Crowding"], ["dentures", "Dentures"], ["stainsCalculus", "Stains & Calculus"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="val">${pf(p2[k])}</div></div>`).join("")}</div><div class="sec">Gum &amp; Parafunctional &amp; Wasting</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Gum Assessment")}${examCells("Parafunctional Habits")}${examCells("Wasting Disease")}${examExtra.map(sec => examCells(sec)).join("")}</div><div class="sec">Investigations Required</div><div style="margin-bottom:5pt">${examChips("Investigations Required")}${p2.inv.blood ? `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:8pt;font-weight:700;background:#DCF4FB;color:#0078B4;border:0.5pt solid #0090CC">Blood Exam${p2.inv.bloodText ? " — " + p2.inv.bloodText : ""}</span>` : ""}</div><div class="sec">Post Radiograph Findings</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:5pt">${examCells("Post Radiograph Findings")}</div>${p2.otherFindings ? `<div class="fl"><div class="lbl">Any Other Findings</div><div class="val">${p2.otherFindings}</div></div>` : ""}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
+    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="sec">Extra-Oral Check</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Extra-Oral Check")}<div class="fl"><div class="lbl">Facial Profile</div><div class="val">${p2.facialProfile || "—"}</div></div></div><div class="sec">Intra-Oral — Soft Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Intra-Oral Check")}<div class="fl"><div class="lbl">Frenum</div><div class="val">${p2.frenum || "—"}</div></div><div class="fl"><div class="lbl">Pigmentation</div><div class="val">${p2.pigmentation || "—"}</div></div></div><div class="sec">Intra-Oral — Hard Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${[["silverFillings", "Silver Fillings"], ["whiteFillings", "White Fillings"], ["decayedTeeth", "Decayed Teeth"], ["chippedTeeth", "Chipped Teeth"], ["missingTeeth", "Missing Teeth"], ["crowns", "Crowns"], ["bridges", "Bridges"], ["veneers", "Veneers"], ["crowding", "Crowding"], ["dentures", "Dentures"], ["stainsCalculus", "Stains & Calculus"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="val">${pf(p2[k])}</div></div>`).join("")}</div><div class="sec">Gum &amp; Parafunctional &amp; Wasting</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Gum Assessment")}${examCells("Parafunctional Habits")}${examCells("Wasting Disease")}${examExtra.map(sec => examCells(sec)).join("")}</div><div class="sec">Investigations Required</div><div style="margin-bottom:5pt">${examChips("Investigations Required")}${p2.inv.blood ? `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:9.5pt;font-weight:700;background:#DCF4FB;color:#0078B4;border:0.5pt solid #0090CC">Blood Exam${p2.inv.bloodText ? " — " + p2.inv.bloodText : ""}</span>` : ""}</div><div class="sec">Post Radiograph Findings</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:5pt">${examCells("Post Radiograph Findings")}</div>${p2.otherFindings ? `<div class="fl"><div class="lbl">Any Other Findings</div><div class="val">${p2.otherFindings}</div></div>` : ""}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
   }
   function buildCPPage3HTML() {
-    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="sec">Radiograph Findings</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8pt;margin-bottom:10pt">${[["iopa", "IOPA"], ["opg", "OPG"], ["latCeph", "Lateral Cephalogram"], ["cbct", "CBCT"], ["digScan", "Digital Scan"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="vb" style="min-height:50pt">${p3[k] || "&nbsp;"}</div></div>`).join("")}</div><div class="sec">Medication Record</div><table><thead><tr><th style="width:38%">Name of Drug</th><th style="width:14%">Dose</th><th style="width:18%">Route</th><th style="width:30%">Frequency</th></tr></thead><tbody>${p3.meds.filter(m => m.drug).map(m => `<tr><td>${m.drug}</td><td>${m.dose}</td><td>${m.route}</td><td>${m.frequency}</td></tr>`).join("") || "<tr><td colspan='4' style='color:#5a5a5a;text-align:center;padding:8pt'>No medications recorded</td></tr>"}</tbody></table>${[["medCorrelation", "Medical Correlation (if any)"], ["provisionalDiagnosis", "Provisional Diagnosis"], ["specialNotes", "Special Notes (if any)"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="vb">${p3[k] || "&nbsp;"}</div></div>`).join("")}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
+    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="sec">Radiograph Findings</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8pt;margin-bottom:10pt">${[["iopa", "IOPA"], ["opg", "OPG"], ["latCeph", "Lateral Cephalogram"], ["cbct", "CBCT"], ["digScan", "Digital Scan"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="vb" style="min-height:50pt">${p3[k] || "&nbsp;"}</div></div>`).join("")}</div><div class="sec">Medication Record</div><table><thead><tr><th style="width:38%">Name of Drug</th><th style="width:14%">Dose</th><th style="width:18%">Route</th><th style="width:30%">Frequency</th></tr></thead><tbody>${p3.meds.filter(m => m.drug).map(m => `<tr><td>${m.drug}</td><td>${m.dose}</td><td>${m.route}</td><td>${m.frequency}</td></tr>`).join("") || "<tr><td colspan='4' style='color:#5a5a5a;text-align:center;padding:8pt'>No medications recorded</td></tr>"}</tbody></table>${[["medCorrelation", "Medical Correlation (if any)"], ["provisionalDiagnosis", "Provisional Diagnosis"], ["specialNotes", "Special Notes (if any)"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="vb">${p3[k] || "&nbsp;"}</div></div>`).join("")}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
   }
   function buildCPPage4HTML() {
     const usedSet = new Set(p4.rows.map(r => parseInt(r.tooth)).filter(Boolean));
@@ -4576,7 +4581,7 @@ function CarePlan({
     const gap = '<td class="tg"></td>';
     const up = UPPER_T.slice(0, 8).map(cell).join("") + gap + UPPER_T.slice(8).map(cell).join("");
     const lo = LOWER_T.slice(0, 8).map(cell).join("") + gap + LOWER_T.slice(8).map(cell).join("");
-    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="dtitle">Proposed / Suggested Treatment Plan</div><div class="g3" style="margin-bottom:8pt"><div class="fl"><div class="lbl">Name</div><div class="val" style="font-size:12pt;font-weight:700">${pat ? pat.name : "—"}</div></div><div class="fl"><div class="lbl">UHID</div><div class="val" style="font-weight:700">${pat ? pat.uhid : "—"}</div></div><div class="fl"><div class="lbl">Date</div><div class="val">${TODAY}</div></div></div><div class="sec">Dental Chart</div><div style="text-align:center;margin-bottom:8pt"><div style="font-size:7pt;font-weight:700;color:#0078B4;text-transform:uppercase;margin-bottom:2pt">Upper</div><table class="tgrid"><tr>${up}</tr></table><div style="border-top:1.5pt dashed #0078B4;margin:2pt auto;width:75%;opacity:0.4"></div><table class="tgrid"><tr>${lo}</tr></table><div style="font-size:7pt;font-weight:700;color:#0078B4;text-transform:uppercase;margin-top:2pt">Lower</div></div>${rows.length ? `<div class="sec">Treatment Plan</div><table><thead><tr><th style="width:12%">Tooth No.</th><th style="width:30%">Procedure</th><th>Treatment Details</th></tr></thead><tbody>${rows.map(r => `<tr><td style="text-align:center;font-weight:700;font-size:12pt">${r.tooth || "—"}</td><td>${r.procedure || "—"}</td><td>${r.details || "&nbsp;"}</td></tr>`).join("")}</tbody></table>` : `<div style="text-align:center;padding:16pt;color:#5a5a5a;border:0.5pt dashed #ddd;border-radius:4pt">No treatment plan entries</div>`}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
+    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="dtitle">Proposed / Suggested Treatment Plan</div><div class="g3" style="margin-bottom:8pt"><div class="fl"><div class="lbl">Name</div><div class="val" style="font-size:13.5pt;font-weight:700">${pat ? pat.name : "—"}</div></div><div class="fl"><div class="lbl">UHID</div><div class="val" style="font-weight:700">${pat ? pat.uhid : "—"}</div></div><div class="fl"><div class="lbl">Date</div><div class="val">${TODAY}</div></div></div><div class="sec">Dental Chart</div><div style="text-align:center;margin-bottom:8pt"><div style="font-size:9.5pt;font-weight:700;color:#0078B4;text-transform:uppercase;margin-bottom:2pt">Upper</div><table class="tgrid"><tr>${up}</tr></table><div style="border-top:1.5pt dashed #0078B4;margin:2pt auto;width:75%;opacity:0.4"></div><table class="tgrid"><tr>${lo}</tr></table><div style="font-size:9.5pt;font-weight:700;color:#0078B4;text-transform:uppercase;margin-top:2pt">Lower</div></div>${rows.length ? `<div class="sec">Treatment Plan</div><table><thead><tr><th style="width:12%">Tooth No.</th><th style="width:30%">Procedure</th><th>Treatment Details</th></tr></thead><tbody>${rows.map(r => `<tr><td style="text-align:center;font-weight:700;font-size:13.5pt">${r.tooth || "—"}</td><td>${r.procedure || "—"}</td><td>${r.details || "&nbsp;"}</td></tr>`).join("")}</tbody></table>` : `<div style="text-align:center;padding:16pt;color:#5a5a5a;border:0.5pt dashed #ddd;border-radius:4pt">No treatment plan entries</div>`}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
   }
   function buildAllCPHTML() {
     const b1 = buildCPPage1HTML().replace("</body></html>", "");
@@ -5486,22 +5491,22 @@ function buildEndorsementHTML(endRows, patPanel, panelPat) {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>` +
     `@page{size:A4 portrait;margin:${margins};}` +
     `*{box-sizing:border-box;margin:0;padding:0;}${flipCss}` +
-    `body{font-family:'Segoe UI',Arial,sans-serif;font-size:10.5pt;color:#111;background:#fff;}` +
-    `.dtitle{text-align:center;font-size:12.5pt;font-weight:800;color:#0078B4;` +
+    `body{font-family:'Segoe UI',Arial,sans-serif;font-size:12pt;color:#111;background:#fff;}` +
+    `.dtitle{text-align:center;font-size:14pt;font-weight:800;color:#0078B4;` +
     `text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8pt;}` +
     `.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5pt 8pt;margin-bottom:6pt;}` +
     `.g4{display:grid;grid-template-columns:2fr 0.8fr 1.2fr 1.2fr;gap:5pt 8pt;margin-bottom:6pt;}` +
     `.fl{margin-bottom:4pt;}` +
-    `.lbl{font-size:7pt;font-weight:700;color:#383838;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:1pt;}` +
-    `.val{font-size:10.5pt;border-bottom:0.5pt solid #ccc;padding-bottom:1pt;min-height:14pt;}` +
-    `.note{font-size:8pt;color:#2e2e2e;font-style:italic;margin:6pt 0;padding:4pt 8pt;` +
+    `.lbl{font-size:9.5pt;font-weight:700;color:#383838;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:1pt;}` +
+    `.val{font-size:12pt;border-bottom:0.5pt solid #ccc;padding-bottom:1pt;min-height:14pt;}` +
+    `.note{font-size:9.5pt;color:#2e2e2e;font-style:italic;margin:6pt 0;padding:4pt 8pt;` +
     `background:#f8f8f8;border-left:2pt solid #0078B4;}` +
-    `.sec{background:#f0f6fb;border-left:3pt solid #0078B4;padding:3pt 7pt;font-size:8pt;font-weight:800;` +
+    `.sec{background:#f0f6fb;border-left:3pt solid #0078B4;padding:3pt 7pt;font-size:9.5pt;font-weight:800;` +
     `text-transform:uppercase;letter-spacing:0.06em;color:#0078B4;margin:8pt 0 5pt;}` +
     `table{width:100%;border-collapse:collapse;}` +
-    `th{background:#f0f6fb;color:#0078B4;padding:4pt 6pt;font-size:8pt;font-weight:700;text-align:left;` +
+    `th{background:#f0f6fb;color:#0078B4;padding:4pt 6pt;font-size:9.5pt;font-weight:700;text-align:left;` +
     `border-bottom:1pt solid #0078B4;}` +
-    `td{padding:4pt 6pt;border-bottom:0.5pt solid #eee;font-size:10pt;vertical-align:middle;}` +
+    `td{padding:4pt 6pt;border-bottom:0.5pt solid #eee;font-size:11.5pt;vertical-align:middle;}` +
     `.c{text-align:center;} .b{font-weight:700;}` +
     `.empty{text-align:center;padding:16pt;color:#5a5a5a;border:0.5pt dashed #ddd;border-radius:4pt;}` +
     `.sig{margin-top:22pt;width:60%;}` +
@@ -5522,7 +5527,7 @@ function buildEndorsementHTML(endRows, patPanel, panelPat) {
     `for endorsement. Rates are as per the ${esc(panel)} schedule of charges in force.</div>` +
     `<div class="sec">Proposed Treatment</div>` + body +
     `<div class="sig"><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div>` +
-    `<div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div>` +
+    `<div style="font-size:10pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div>` +
     `</body></html>`;
 }
 
@@ -6053,18 +6058,18 @@ function TreatmentPlan({
       const pc = PHASE_COL[phase] || T;
       const trs = pr.map(r => {
         const amt = r.price && r.qty ? Number(r.price) * Number(r.qty) : 0;
-        return `<tr class="${r.isOpt ? "opt" : ""}"><td style="color:#5a5a5a;font-size:9pt;padding-left:${r.isOpt ? "16pt" : "6pt"}">${r.isOpt ? "↳" : ""}</td><td>${r.tooth || "—"}</td><td>${r.procedure}</td><td class="amt">${r.price ? "₹" + Number(r.price).toLocaleString("en-IN") : "—"}</td><td class="amt">${r.qty || 1}</td><td class="amt">${amt ? "₹" + amt.toLocaleString("en-IN") : "—"}</td></tr>`;
+        return `<tr class="${r.isOpt ? "opt" : ""}"><td style="color:#5a5a5a;font-size:10.5pt;padding-left:${r.isOpt ? "16pt" : "6pt"}">${r.isOpt ? "↳" : ""}</td><td>${r.tooth || "—"}</td><td>${r.procedure}</td><td class="amt">${r.price ? "₹" + Number(r.price).toLocaleString("en-IN") : "—"}</td><td class="amt">${r.qty || 1}</td><td class="amt">${amt ? "₹" + amt.toLocaleString("en-IN") : "—"}</td></tr>`;
       }).join("");
       return `<div style="margin-bottom:6pt"><div class="ph" style="background:${pc}">${phase} — ${PHASE_DESC[phase]}</div><table><thead><tr><th style="width:6%">&nbsp;</th><th style="width:10%">Tooth</th><th>Procedure</th><th style="width:14%;text-align:right">Unit Price</th><th style="width:6%;text-align:right">Qty</th><th style="width:14%;text-align:right">Amount</th></tr></thead><tbody>${trs}</tbody></table></div>`;
     };
-    return pW(pH(window.LOGO_B64, "KBDC/FORMS/TP-01") + `<div class="dtitle">Treatment Plan</div><div style="display:grid;grid-template-columns:1fr auto auto;gap:8pt;margin-bottom:8pt"><div class="fl"><div class="lbl">Patient Name</div><div class="val" style="font-size:12pt;font-weight:700">${pat ? pat.name : "—"}</div></div><div class="fl"><div class="lbl">UHID</div><div class="val" style="font-weight:700">${pat ? pat.uhid : "—"}</div></div><div class="fl"><div class="lbl">Date</div><div class="val">${TODAY}</div></div></div><div class="note">Consultation charges inclusive if treatment starts within 15 days. Multiple options shown — patient to select preferred option.</div>` + toothG(planRows) + PHASES.map(phBlock).join("") + `<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div><div><div class="lbl">Patient / Guardian Acknowledgement</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${pat ? pat.name : ""}</div></div></div>`, "KBDC/FORMS/TP-01");
+    return pW(pH(window.LOGO_B64, "KBDC/FORMS/TP-01") + `<div class="dtitle">Treatment Plan</div><div style="display:grid;grid-template-columns:1fr auto auto;gap:8pt;margin-bottom:8pt"><div class="fl"><div class="lbl">Patient Name</div><div class="val" style="font-size:13.5pt;font-weight:700">${pat ? pat.name : "—"}</div></div><div class="fl"><div class="lbl">UHID</div><div class="val" style="font-weight:700">${pat ? pat.uhid : "—"}</div></div><div class="fl"><div class="lbl">Date</div><div class="val">${TODAY}</div></div></div><div class="note">Consultation charges inclusive if treatment starts within 15 days. Multiple options shown — patient to select preferred option.</div>` + toothG(planRows) + PHASES.map(phBlock).join("") + `<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div><div><div class="lbl">Patient / Guardian Acknowledgement</div><div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">${pat ? pat.name : ""}</div></div></div>`, "KBDC/FORMS/TP-01");
   }
   function buildEstHTML() {
     const phRows = PHASES.map(phase => selRows.filter(r => r.phase === phase).map(r => {
       const amt = r.price && r.qty ? Number(r.price) * Number(r.qty) : 0;
       return `<tr><td style="font-weight:600;color:${PHASE_COL[phase] || T}">${phase}</td><td style="text-align:center;font-weight:700">${r.tooth || "—"}</td><td>${r.procedure}</td><td style="text-align:right">${r.qty}</td><td style="text-align:right;font-weight:700">₹${amt.toLocaleString("en-IN")}</td></tr>`;
     }).join("")).join("");
-    return pW(pH(window.LOGO_B64, "KBDC/FORMS/ES-01") + `<div class="dtitle">Estimated Cost Sheet</div><div style="display:grid;grid-template-columns:1fr auto auto;gap:8pt;margin-bottom:8pt"><div class="fl"><div class="lbl">Patient Name</div><div class="val" style="font-size:12pt;font-weight:700">${pat ? pat.name : "—"}</div></div><div class="fl"><div class="lbl">UHID</div><div class="val" style="font-weight:700">${pat ? pat.uhid : "—"}</div></div><div class="fl"><div class="lbl">Date</div><div class="val">${TODAY}</div></div></div><div class="note">Consultation charges inclusive if treatment starts within 15 days. This estimate is valid for 3 months.</div>` + toothG(selRows) + `<table><thead><tr><th style="width:14%">Phase</th><th style="width:10%">Tooth</th><th>Procedure</th><th style="width:8%;text-align:right">Qty</th><th style="width:16%;text-align:right">Amount</th></tr></thead><tbody>${phRows}</tbody></table><div class="tots"><div class="tr"><span>Subtotal</span><span>₹${sub.toLocaleString("en-IN")}</span></div>${membership && mAmt ? `<div class="tr" style="color:#059669"><span>Membership Plan Amount</span><span>₹${mAmt.toLocaleString("en-IN")}</span></div>` : ""}` + `${membership && disc ? `<div class="tr" style="color:#059669"><span>Membership Discount (${memberDisc}%)</span><span>− ₹${disc.toLocaleString("en-IN")}</span></div>` : ""}` + `${ccCharges && cc ? `<div class="tr" style="color:#D97706"><span>Credit Card Charges (2%)</span><span>+ ₹${cc.toLocaleString("en-IN")}</span></div>` : ""}<div class="tr trg"><span>Total Estimated Cost</span><span>₹${total.toLocaleString("en-IN")}</span></div></div><div style="margin-top:14pt;padding:8pt 10pt;background:#fffbf0;border:0.5pt solid #D97706;border-radius:4pt;font-size:9pt;color:#444444">[Payment terms and conditions to be added]</div><div class="sigrow"><div><div class="lbl">Patient / Guardian Signature &amp; Name</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${pat ? pat.name : ""}</div></div><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/ES-01");
+    return pW(pH(window.LOGO_B64, "KBDC/FORMS/ES-01") + `<div class="dtitle">Estimated Cost Sheet</div><div style="display:grid;grid-template-columns:1fr auto auto;gap:8pt;margin-bottom:8pt"><div class="fl"><div class="lbl">Patient Name</div><div class="val" style="font-size:13.5pt;font-weight:700">${pat ? pat.name : "—"}</div></div><div class="fl"><div class="lbl">UHID</div><div class="val" style="font-weight:700">${pat ? pat.uhid : "—"}</div></div><div class="fl"><div class="lbl">Date</div><div class="val">${TODAY}</div></div></div><div class="note">Consultation charges inclusive if treatment starts within 15 days. This estimate is valid for 3 months.</div>` + toothG(selRows) + `<table><thead><tr><th style="width:14%">Phase</th><th style="width:10%">Tooth</th><th>Procedure</th><th style="width:8%;text-align:right">Qty</th><th style="width:16%;text-align:right">Amount</th></tr></thead><tbody>${phRows}</tbody></table><div class="tots"><div class="tr"><span>Subtotal</span><span>₹${sub.toLocaleString("en-IN")}</span></div>${membership && mAmt ? `<div class="tr" style="color:#059669"><span>Membership Plan Amount</span><span>₹${mAmt.toLocaleString("en-IN")}</span></div>` : ""}` + `${membership && disc ? `<div class="tr" style="color:#059669"><span>Membership Discount (${memberDisc}%)</span><span>− ₹${disc.toLocaleString("en-IN")}</span></div>` : ""}` + `${ccCharges && cc ? `<div class="tr" style="color:#D97706"><span>Credit Card Charges (2%)</span><span>+ ₹${cc.toLocaleString("en-IN")}</span></div>` : ""}<div class="tr trg"><span>Total Estimated Cost</span><span>₹${total.toLocaleString("en-IN")}</span></div></div><div style="margin-top:14pt;padding:8pt 10pt;background:#fffbf0;border:0.5pt solid #D97706;border-radius:4pt;font-size:10.5pt;color:#444444">[Payment terms and conditions to be added]</div><div class="sigrow"><div><div class="lbl">Patient / Guardian Signature &amp; Name</div><div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">${pat ? pat.name : ""}</div></div><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/ES-01");
   }
   // Document 3, printed on the clinic's own prescription pad.
   //
@@ -7270,26 +7275,26 @@ function cghsPadCss(margins) {
   return `@page{size:A4 portrait;margin:${box};}` +
     `*{box-sizing:border-box;margin:0;padding:0;}` +
     (flip ? "body{transform:rotate(180deg);transform-origin:50% 50%;}" : "") +
-    `body{font-family:'Segoe UI',Arial,sans-serif;font-size:10.5pt;color:#111;background:#fff;}` +
-    `.dtitle{text-align:center;font-size:12.5pt;font-weight:800;color:#0078B4;` +
+    `body{font-family:'Segoe UI',Arial,sans-serif;font-size:12pt;color:#111;background:#fff;}` +
+    `.dtitle{text-align:center;font-size:14pt;font-weight:800;color:#0078B4;` +
     `text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8pt;}` +
     `.g4{display:grid;grid-template-columns:2fr 0.8fr 1.2fr 1.2fr;gap:5pt 8pt;margin-bottom:6pt;}` +
     `.g2{display:grid;grid-template-columns:1fr 1fr;gap:4pt 14pt;margin-bottom:8pt;}` +
     `.fl{margin-bottom:4pt;}` +
-    `.lbl{font-size:7pt;font-weight:700;color:#383838;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:1pt;}` +
-    `.val{font-size:10.5pt;border-bottom:0.5pt solid #ccc;padding-bottom:1pt;min-height:14pt;}` +
-    `.kv{font-size:10.5pt;padding:1pt 0;}` +
+    `.lbl{font-size:9.5pt;font-weight:700;color:#383838;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:1pt;}` +
+    `.val{font-size:12pt;border-bottom:0.5pt solid #ccc;padding-bottom:1pt;min-height:14pt;}` +
+    `.kv{font-size:12pt;padding:1pt 0;}` +
     `.kv b{display:inline-block;min-width:92pt;font-weight:700;}` +
-    `.sec{background:#f0f6fb;border-left:3pt solid #0078B4;padding:3pt 7pt;font-size:8pt;font-weight:800;` +
+    `.sec{background:#f0f6fb;border-left:3pt solid #0078B4;padding:3pt 7pt;font-size:9.5pt;font-weight:800;` +
     `text-transform:uppercase;letter-spacing:0.06em;color:#0078B4;margin:8pt 0 5pt;}` +
     `table{width:100%;border-collapse:collapse;}` +
-    `th{background:#f0f6fb;color:#0078B4;padding:4pt 6pt;font-size:8pt;font-weight:700;text-align:left;` +
+    `th{background:#f0f6fb;color:#0078B4;padding:4pt 6pt;font-size:9.5pt;font-weight:700;text-align:left;` +
     `border-bottom:1pt solid #0078B4;}` +
-    `td{padding:4pt 6pt;border-bottom:0.5pt solid #eee;font-size:10pt;vertical-align:middle;}` +
+    `td{padding:4pt 6pt;border-bottom:0.5pt solid #eee;font-size:11.5pt;vertical-align:middle;}` +
     `.c{text-align:center;} .r{text-align:right;} .b{font-weight:700;}` +
     `.tot{margin-top:8pt;border-top:1.5pt solid #0078B4;padding-top:6pt;display:flex;` +
-    `justify-content:space-between;font-size:12pt;font-weight:800;color:#0078B4;}` +
-    `.words{font-size:10pt;margin-top:4pt;font-style:italic;}` +
+    `justify-content:space-between;font-size:13.5pt;font-weight:800;color:#0078B4;}` +
+    `.words{font-size:11.5pt;margin-top:4pt;font-style:italic;}` +
     `.sig{margin-top:22pt;width:60%;}` +
     `.sigrow{display:grid;grid-template-columns:1fr 1fr;gap:14pt;margin-top:22pt;}` +
     `.sigbox{border-bottom:0.5pt solid #bbb;height:34pt;margin-bottom:3pt;}`;
@@ -7645,7 +7650,7 @@ function CghsPrescription({ pat, lines, plan }) {
         // sentences, and a column of sentences on a pad is unreadable.
         (detail
           ? `<tr><td></td><td colspan="5" style="padding-top:0;border-top:none;` +
-            `font-size:8.5pt;line-height:1.45">${detail}</td></tr>`
+            `font-size:10pt;line-height:1.45">${detail}</td></tr>`
           : "");
     }).join("");
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>${cghsPadCss(pad)}</style></head><body>` +
@@ -7661,7 +7666,7 @@ function CghsPrescription({ pat, lines, plan }) {
       `<th>Treatment Advised</th><th style="width:14%" class="c">Tooth Number</th>` +
       `<th style="width:11%" class="c">No. of Units</th></tr></thead><tbody>${trs}</tbody></table>` +
       `<div class="sig"><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div>` +
-      `<div style="font-size:8.5pt;color:#2e2e2e">${signatureLine(when)}</div></div></body></html>`;
+      `<div style="font-size:10pt;color:#2e2e2e">${signatureLine(when)}</div></div></body></html>`;
   };
 
   const note = (text) => React.createElement("div", { style:{ background:"#fffbeb",
@@ -7867,7 +7872,7 @@ function CghsBill({ pat, panel, card, holder, lines, onBilled }) {
       `<div class="words">${cghsEsc(rupeesInWords(total))}</div>` +
       `<div class="sigrow"><div><div class="lbl">Patient Signature</div><div class="sigbox"></div></div>` +
       `<div><div class="lbl">For ${cghsEsc((window.CLINIC && window.CLINIC.name) || "the clinic")}</div>` +
-      `<div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">Authorised Signatory</div></div></div>` +
+      `<div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">Authorised Signatory</div></div></div>` +
       `</body></html>`;
   };
   const fld = (label, control) => React.createElement("div", null,
@@ -8826,9 +8831,9 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
       // what to lay out; "RCT · Obturation" does.
       .map(a => `<tr><td>${cell(a.time)}</td><td>${cell(a.chair)}</td><td>${cell(a.patientName)}</td><td>${cell(a.uhid)}</td><td>${esc(reasonWithStep(a.type, a.subType))}</td><td>${cell(a.doctor)}</td><td>${cell(a.status)}</td></tr>`).join("");
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>
-      body{font-family:Arial,sans-serif;font-size:11pt;padding:14pt}table{width:100%;border-collapse:collapse;margin-top:10pt}
-      th,td{border:0.5pt solid #ccc;padding:5pt 8pt;text-align:left;font-size:10pt}th{background:#0078B4;color:#fff}
-      h2{color:#0078B4;margin:0}p.sub{margin:3pt 0 0;color:#4b4b4b;font-size:9.5pt}</style></head><body>
+      body{font-family:Arial,sans-serif;font-size:12.5pt;padding:14pt}table{width:100%;border-collapse:collapse;margin-top:10pt}
+      th,td{border:0.5pt solid #ccc;padding:5pt 8pt;text-align:left;font-size:11.5pt}th{background:#0078B4;color:#fff}
+      h2{color:#0078B4;margin:0}p.sub{margin:3pt 0 0;color:#4b4b4b;font-size:11pt}</style></head><body>
       <h2>${esc(CLINIC && CLINIC.name || "Schedule")}</h2>
       <p class="sub">Schedule — ${fmtDMY(selDate+"T00:00:00")}</p>
       <table><thead><tr><th>Time</th><th>Chair</th><th>Patient</th><th>UHID</th><th>Reason</th><th>Doctor</th><th>Status</th></tr></thead>
@@ -11838,8 +11843,8 @@ function buildRCTConsentHTML(pat, soap, medHistory, medFlags, fee, payTerms, ext
   var dateStr = fmtDMY(new Date());
   var sec = function(t){ return '<div class="sec">'+t+'</div>'; };
   var fl = function(l,v){ return '<div class="fl"><div class="lbl">'+l+'</div><div class="val">'+(v||"&nbsp;")+'</div></div>'; };
-  var bul = function(arr){ return '<ul style="margin:0;padding-left:14pt;font-size:9pt;line-height:1.5">'+arr.map(function(i){return'<li style="margin-bottom:2pt">'+i+'</li>';}).join("")+"</ul>"; };
-  var chk = function(arr){ return arr.map(function(i){return'<div style="display:flex;align-items:flex-start;gap:5pt;margin-bottom:3pt;font-size:9pt;line-height:1.45"><span style="flex-shrink:0;margin-top:1pt;font-size:10pt">□</span><span>'+i+'</span></div>';}).join(""); };
+  var bul = function(arr){ return '<ul style="margin:0;padding-left:14pt;font-size:10.5pt;line-height:1.5">'+arr.map(function(i){return'<li style="margin-bottom:2pt">'+i+'</li>';}).join("")+"</ul>"; };
+  var chk = function(arr){ return arr.map(function(i){return'<div style="display:flex;align-items:flex-start;gap:5pt;margin-bottom:3pt;font-size:10.5pt;line-height:1.45"><span style="flex-shrink:0;margin-top:1pt;font-size:11.5pt">□</span><span>'+i+'</span></div>';}).join(""); };
   var soapHtml = (soap||"").replace(/\n/g,"<br/>");
   var medHist = (medHistory||"—").replace(/\n/g,"<br/>");
   var extraHtml = (extraProc||"").replace(/\n/g,"<br/>");
@@ -11855,40 +11860,40 @@ function buildRCTConsentHTML(pat, soap, medHistory, medFlags, fee, payTerms, ext
   // on the risk grid, clause list, and signature row stops those specific
   // blocks from being sliced across a page boundary.
   var page1 = pH(logo, "")
-    +'<div style="text-align:center;margin-bottom:6pt"><div style="font-size:13pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:.07em">'+TX.title+'</div>'
-    +'<div style="font-size:9pt;font-weight:600;color:#2e2e2e;margin-top:2pt">'+TX.consentFor+' <strong>'+(pat&&pat.name||"________________________________")+'</strong></div></div>'
+    +'<div style="text-align:center;margin-bottom:6pt"><div style="font-size:14pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:.07em">'+TX.title+'</div>'
+    +'<div style="font-size:10.5pt;font-weight:600;color:#2e2e2e;margin-top:2pt">'+TX.consentFor+' <strong>'+(pat&&pat.name||"________________________________")+'</strong></div></div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;background:#f8f9fa;padding:6pt 8pt;border-radius:3pt;border:.5pt solid #ddd;margin-bottom:5pt">'
     +fl(TX.lblName,'<strong>'+(pat&&pat.name||"—")+'</strong>')+fl(TX.lblUHID,(pat&&pat.uhid||"—"))+fl(TX.lblDOB,(pat&&pat.dob||"—")+age)+fl(TX.lblDate,dateStr)+'</div>'
     +((pat&&pat.address)?'<div style="margin-bottom:5pt">'+fl(TX.lblAddr,pat.address)+'</div>':"")
-    +sec(TX.secFindings)+'<div class="vb" style="font-size:9.5pt;line-height:1.5;min-height:60pt">'+soapHtml+'</div>'
-    +sec(TX.secMedHist)+'<div class="vb" style="font-size:9.5pt;min-height:18pt">'+medHist+'</div>'
+    +sec(TX.secFindings)+'<div class="vb" style="font-size:11pt;line-height:1.5;min-height:60pt">'+soapHtml+'</div>'
+    +sec(TX.secMedHist)+'<div class="vb" style="font-size:11pt;min-height:18pt">'+medHist+'</div>'
     +sec(TX.secBenefits)+bul(TX.benefits)
     +sec(TX.secAlt)+bul(TX.alternatives)
-    +sec(TX.secPurpose)+'<p style="font-size:9.5pt;line-height:1.4;margin-bottom:3pt">'+TX.purpose+'</p>'
-    +sec(TX.secLA)+'<p style="font-size:9.5pt;line-height:1.45;margin-bottom:2pt">'+TX.laPara1+'</p><p style="font-size:9.5pt;line-height:1.45;margin-bottom:4pt">'+TX.laPara2+'</p>'
+    +sec(TX.secPurpose)+'<p style="font-size:11pt;line-height:1.4;margin-bottom:3pt">'+TX.purpose+'</p>'
+    +sec(TX.secLA)+'<p style="font-size:11pt;line-height:1.45;margin-bottom:2pt">'+TX.laPara1+'</p><p style="font-size:11pt;line-height:1.45;margin-bottom:4pt">'+TX.laPara2+'</p>'
     +sec(TX.secRisks)
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6pt;margin-bottom:4pt;page-break-inside:avoid">'
-    +'<div><div style="font-size:7.5pt;font-weight:800;color:#C0392B;text-transform:uppercase;padding:2pt 5pt;background:#FDEDEC;border-radius:2pt;margin-bottom:3pt">'+TX.secCommon+'</div>'
-    +'<div style="font-size:8pt;font-weight:700;color:#2e2e2e;margin-bottom:2pt">'+TX.rctLabel+'</div>'+bul(TX.commonRCT)
-    +'<div style="font-size:8pt;font-weight:700;color:#2e2e2e;margin:4pt 0 2pt">'+TX.laLabel+'</div>'+bul(TX.commonLA)+'</div>'
-    +'<div><div style="font-size:7.5pt;font-weight:800;color:#7B241C;text-transform:uppercase;padding:2pt 5pt;background:#FADBD8;border-radius:2pt;margin-bottom:3pt">'+TX.secUncommon+'</div>'
-    +'<div style="font-size:8pt;font-weight:700;color:#2e2e2e;margin-bottom:2pt">'+TX.rctLabel+'</div>'+bul(TX.uncommonRCT)
-    +'<div style="font-size:8pt;font-weight:700;color:#2e2e2e;margin:4pt 0 2pt">'+TX.laLabel+'</div>'+bul(TX.uncommonLA)+'</div>'
+    +'<div><div style="font-size:9.5pt;font-weight:800;color:#C0392B;text-transform:uppercase;padding:2pt 5pt;background:#FDEDEC;border-radius:2pt;margin-bottom:3pt">'+TX.secCommon+'</div>'
+    +'<div style="font-size:9.5pt;font-weight:700;color:#2e2e2e;margin-bottom:2pt">'+TX.rctLabel+'</div>'+bul(TX.commonRCT)
+    +'<div style="font-size:9.5pt;font-weight:700;color:#2e2e2e;margin:4pt 0 2pt">'+TX.laLabel+'</div>'+bul(TX.commonLA)+'</div>'
+    +'<div><div style="font-size:9.5pt;font-weight:800;color:#7B241C;text-transform:uppercase;padding:2pt 5pt;background:#FADBD8;border-radius:2pt;margin-bottom:3pt">'+TX.secUncommon+'</div>'
+    +'<div style="font-size:9.5pt;font-weight:700;color:#2e2e2e;margin-bottom:2pt">'+TX.rctLabel+'</div>'+bul(TX.uncommonRCT)
+    +'<div style="font-size:9.5pt;font-weight:700;color:#2e2e2e;margin:4pt 0 2pt">'+TX.laLabel+'</div>'+bul(TX.uncommonLA)+'</div>'
     +'</div>'
-    +(extraProc?'<div style="margin-bottom:4pt"><div class="lbl">'+TX.extraProcLbl+'</div><div class="vb" style="font-size:9.5pt;min-height:14pt">'+extraHtml+'</div></div>':"")
+    +(extraProc?'<div style="margin-bottom:4pt"><div class="lbl">'+TX.extraProcLbl+'</div><div class="vb" style="font-size:11pt;min-height:14pt">'+extraHtml+'</div></div>':"")
     +sec(TX.secUnderstanding)+'<div style="page-break-inside:avoid">'+chk(TX.clauses)+'</div>'
-    +sec(TX.secFee)+'<p style="font-size:9.5pt;margin-bottom:2pt">'+TX.feeLbl+' <strong>'+(fee||"₹ __________")+'</strong></p><p style="font-size:9.5pt;margin-bottom:2pt">'+TX.feeNote+'</p>'
-    +'<p style="font-size:9.5pt;margin-bottom:4pt"><strong>'+TX.payLbl+'</strong> '+(payTerms||"70% in advance, remaining 30% on subsequent visits.")+'</p>'
+    +sec(TX.secFee)+'<p style="font-size:11pt;margin-bottom:2pt">'+TX.feeLbl+' <strong>'+(fee||"₹ __________")+'</strong></p><p style="font-size:11pt;margin-bottom:2pt">'+TX.feeNote+'</p>'
+    +'<p style="font-size:11pt;margin-bottom:4pt"><strong>'+TX.payLbl+'</strong> '+(payTerms||"70% in advance, remaining 30% on subsequent visits.")+'</p>'
     +sec(TX.secCompliance)+'<div style="page-break-inside:avoid">'+chk(TX.compliance)+'</div>'
-    +sec(TX.secEndorsement)+'<p style="font-size:9pt;line-height:1.5;margin-bottom:8pt">'+TX.endorsement+'</p>'
+    +sec(TX.secEndorsement)+'<p style="font-size:10.5pt;line-height:1.5;margin-bottom:8pt">'+TX.endorsement+'</p>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10pt;margin-top:8pt;padding-top:6pt;border-top:.5pt solid #ccc;page-break-inside:avoid">'
     +[[TX.sigPatient,pat&&pat.name||""],[TX.sigWitness,""],[TX.sigDoctor, signingDoctor()],[TX.sigStaff,""]].map(function(pair){
       return '<div><div style="border:.5pt solid #bbb;border-radius:3pt;height:40pt;background:#fafafa;margin-bottom:3pt"></div>'
-        +'<div style="font-size:7.5pt;color:#2e2e2e;line-height:1.4;white-space:pre-line">'+pair[0]+'</div>'
-        +(pair[1]?'<div style="font-size:8pt;color:#333;margin-top:1pt">'+pair[1]+'</div>':"")+'</div>';
+        +'<div style="font-size:9.5pt;color:#2e2e2e;line-height:1.4;white-space:pre-line">'+pair[0]+'</div>'
+        +(pair[1]?'<div style="font-size:9.5pt;color:#333;margin-top:1pt">'+pair[1]+'</div>':"")+'</div>';
     }).join("")
     +'</div>'
-    +'<div style="margin-top:6pt;font-size:8.5pt">'+TX.sigDate+': ___________________</div>';
+    +'<div style="margin-top:6pt;font-size:10pt">'+TX.sigDate+': ___________________</div>';
 
   return pW(page1, "");
 }
@@ -11901,8 +11906,8 @@ function buildGenericConsentHTML(pat, consentKey, procedureTypeChecked, fee, pay
   var dateStr = fmtDMY(new Date());
   var sec = function(t){ return '<div class="sec">'+t+'</div>'; };
   var fl = function(l,v){ return '<div class="fl"><div class="lbl">'+l+'</div><div class="val">'+(v||"&nbsp;")+'</div></div>'; };
-  var bul = function(arr){ return '<ul style="margin:0;padding-left:14pt;font-size:9pt;line-height:1.5">'+arr.map(function(i){return'<li style="margin-bottom:2pt">'+i+'</li>';}).join("")+"</ul>"; };
-  var chk = function(label, on){ return '<div style="display:flex;align-items:center;gap:5pt;margin-bottom:3pt;font-size:9.5pt"><span style="flex-shrink:0;font-size:11pt">'+(on?"☑":"□")+'</span><span>'+label+'</span></div>'; };
+  var bul = function(arr){ return '<ul style="margin:0;padding-left:14pt;font-size:10.5pt;line-height:1.5">'+arr.map(function(i){return'<li style="margin-bottom:2pt">'+i+'</li>';}).join("")+"</ul>"; };
+  var chk = function(label, on){ return '<div style="display:flex;align-items:center;gap:5pt;margin-bottom:3pt;font-size:11pt"><span style="flex-shrink:0;font-size:12.5pt">'+(on?"☑":"□")+'</span><span>'+label+'</span></div>'; };
 
   var typesHtml = "";
   if (data.procedureTypes) {
@@ -11911,7 +11916,7 @@ function buildGenericConsentHTML(pat, consentKey, procedureTypeChecked, fee, pay
       + '</div>';
   }
 
-  var descHtml = data.description[lang].map(function(p){ return '<p style="font-size:9.5pt;line-height:1.5;margin-bottom:5pt">'+withClinicName(p)+'</p>'; }).join("");
+  var descHtml = data.description[lang].map(function(p){ return '<p style="font-size:11pt;line-height:1.5;margin-bottom:5pt">'+withClinicName(p)+'</p>'; }).join("");
 
   var benefitsHtml = data.benefits ? sec(C.secBenefits) + bul(data.benefits[lang]) : "";
 
@@ -11919,28 +11924,28 @@ function buildGenericConsentHTML(pat, consentKey, procedureTypeChecked, fee, pay
     + (data.risksFlat
       ? bul(data.risksFlat[lang])
       : '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6pt;margin-bottom:4pt">'
-        + '<div><div style="font-size:7.5pt;font-weight:800;color:#C0392B;text-transform:uppercase;padding:2pt 5pt;background:#FDEDEC;border-radius:2pt;margin-bottom:3pt">'+C.secCommon+'</div>'+bul(data.commonRisks[lang])+'</div>'
-        + '<div><div style="font-size:7.5pt;font-weight:800;color:#7B241C;text-transform:uppercase;padding:2pt 5pt;background:#FADBD8;border-radius:2pt;margin-bottom:3pt">'+C.secUncommon+'</div>'+bul(data.uncommonRisks[lang])+'</div>'
+        + '<div><div style="font-size:9.5pt;font-weight:800;color:#C0392B;text-transform:uppercase;padding:2pt 5pt;background:#FDEDEC;border-radius:2pt;margin-bottom:3pt">'+C.secCommon+'</div>'+bul(data.commonRisks[lang])+'</div>'
+        + '<div><div style="font-size:9.5pt;font-weight:800;color:#7B241C;text-transform:uppercase;padding:2pt 5pt;background:#FADBD8;border-radius:2pt;margin-bottom:3pt">'+C.secUncommon+'</div>'+bul(data.uncommonRisks[lang])+'</div>'
         + '</div>')
-    + '<p style="font-size:9pt;line-height:1.45;margin-bottom:4pt">'+C.otherEffects+'</p>';
+    + '<p style="font-size:10.5pt;line-height:1.45;margin-bottom:4pt">'+C.otherEffects+'</p>';
 
   var extraAltHtml = "";
   if (data.extraProcedures || data.alternativeTreatments) {
     extraAltHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6pt;margin-bottom:4pt">'
-      + '<div>'+sec(C.secExtra)+(data.extraProcedures?bul(data.extraProcedures[lang]):'<div style="font-size:9pt;color:#4b4b4b">—</div>')+'</div>'
-      + '<div>'+sec(C.secAlt)+(data.alternativeTreatments?bul(data.alternativeTreatments[lang]):'<div style="font-size:9pt;color:#4b4b4b">—</div>')+'</div>'
+      + '<div>'+sec(C.secExtra)+(data.extraProcedures?bul(data.extraProcedures[lang]):'<div style="font-size:10.5pt;color:#4b4b4b">—</div>')+'</div>'
+      + '<div>'+sec(C.secAlt)+(data.alternativeTreatments?bul(data.alternativeTreatments[lang]):'<div style="font-size:10.5pt;color:#4b4b4b">—</div>')+'</div>'
       + '</div>';
   }
 
   var respHtml = "";
   if (data.patientResponsibilities) {
     var pr = data.patientResponsibilities[lang];
-    respHtml = sec(C.secResponsibilities) + (Array.isArray(pr) ? bul(pr) : '<p style="font-size:9pt;line-height:1.4;margin-bottom:3pt">'+pr+'</p>');
+    respHtml = sec(C.secResponsibilities) + (Array.isArray(pr) ? bul(pr) : '<p style="font-size:10.5pt;line-height:1.4;margin-bottom:3pt">'+pr+'</p>');
   }
 
   var ifUntreatedHtml = data.ifUntreated ? sec(C.secIfUntreated || (lang==="HI"?"अगर इलाज न कराया जाए":"IF LEFT UNTREATED")) + bul(data.ifUntreated[lang]) : "";
 
-  var extraNotesHtml = extraNotes ? '<div style="margin-bottom:4pt"><div class="lbl">'+C.secExtra+' — Notes</div><div class="vb" style="font-size:9.5pt;min-height:14pt">'+(extraNotes||"").replace(/\n/g,"<br/>")+'</div></div>' : "";
+  var extraNotesHtml = extraNotes ? '<div style="margin-bottom:4pt"><div class="lbl">'+C.secExtra+' — Notes</div><div class="vb" style="font-size:11pt;min-height:14pt">'+(extraNotes||"").replace(/\n/g,"<br/>")+'</div></div>' : "";
 
   var endorsementText = (data.endorsementReplace ? data.endorsementReplace[lang] : C.endorsementText)
     + (data.endorsementExtra ? " " + data.endorsementExtra[lang].join(" ") : "")
@@ -11948,33 +11953,33 @@ function buildGenericConsentHTML(pat, consentKey, procedureTypeChecked, fee, pay
 
   var complianceBullets = data.complianceOverride ? data.complianceOverride[lang] : C.complianceBullets.concat(data.extraCompliance ? data.extraCompliance[lang] : []);
 
-  var postComplianceNoteHtml = data.postComplianceNote ? '<div style="margin:4pt 0 6pt">'+data.postComplianceNote[lang].map(function(p){return '<p style="font-size:9pt;line-height:1.45;margin-bottom:3pt">'+p+'</p>';}).join("")+'</div>' : "";
+  var postComplianceNoteHtml = data.postComplianceNote ? '<div style="margin:4pt 0 6pt">'+data.postComplianceNote[lang].map(function(p){return '<p style="font-size:10.5pt;line-height:1.45;margin-bottom:3pt">'+p+'</p>';}).join("")+'</div>' : "";
 
   var sigBlockHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14pt;margin-top:8pt;padding-top:6pt;border-top:.5pt solid #ccc">'
     + [[C.sigPatient,pat&&pat.name||""],[C.sigDoctor, signingDoctor()]].map(function(pair){
         return '<div><div style="border:.5pt solid #bbb;border-radius:3pt;height:40pt;background:#fafafa;margin-bottom:3pt"></div>'
-          +'<div style="font-size:8pt;color:#2e2e2e;line-height:1.4">'+pair[0]+'</div>'
-          +(pair[1]?'<div style="font-size:8.5pt;color:#333;margin-top:1pt">'+pair[1]+'</div>':"")+'</div>';
+          +'<div style="font-size:9.5pt;color:#2e2e2e;line-height:1.4">'+pair[0]+'</div>'
+          +(pair[1]?'<div style="font-size:10pt;color:#333;margin-top:1pt">'+pair[1]+'</div>':"")+'</div>';
       }).join("")
     + '</div>'
-    + '<div style="margin-top:6pt;font-size:8.5pt">'+C.sigDate+': ___________________</div>';
+    + '<div style="margin-top:6pt;font-size:10pt">'+C.sigDate+': ___________________</div>';
 
   var essayHtml = "";
   if (data.essay) {
     var es = data.essay;
     essayHtml = '<div class="pb">'+pH(logo, "")
-      + '<div style="font-size:10pt;font-weight:800;color:#0078B4;text-align:center;margin-bottom:6pt;text-transform:uppercase">'+es.heading[lang]+'</div>'
-      + '<p style="font-size:9pt;line-height:1.5;margin-bottom:6pt">'+es.intro[lang]+'</p>'
-      + es.bullets[lang].map(function(b){ return '<p style="font-size:9pt;line-height:1.5;margin-bottom:5pt"><strong>'+b.label+':</strong> '+b.text+'</p>'; }).join("")
-      + (es.recordsClause ? '<p style="font-size:9pt;line-height:1.5;margin:6pt 0">'+es.recordsClause[lang]+'</p>' : "")
-      + (es.terminationClause ? '<div style="font-weight:700;font-size:9.5pt;margin-top:6pt;margin-bottom:2pt">'+(lang==="HI"?"इलाज की समाप्ति":"Termination of Treatment")+'</div><p style="font-size:9pt;line-height:1.5">'+es.terminationClause[lang]+'</p>' : "")
+      + '<div style="font-size:11.5pt;font-weight:800;color:#0078B4;text-align:center;margin-bottom:6pt;text-transform:uppercase">'+es.heading[lang]+'</div>'
+      + '<p style="font-size:10.5pt;line-height:1.5;margin-bottom:6pt">'+es.intro[lang]+'</p>'
+      + es.bullets[lang].map(function(b){ return '<p style="font-size:10.5pt;line-height:1.5;margin-bottom:5pt"><strong>'+b.label+':</strong> '+b.text+'</p>'; }).join("")
+      + (es.recordsClause ? '<p style="font-size:10.5pt;line-height:1.5;margin:6pt 0">'+es.recordsClause[lang]+'</p>' : "")
+      + (es.terminationClause ? '<div style="font-weight:700;font-size:11pt;margin-top:6pt;margin-bottom:2pt">'+(lang==="HI"?"इलाज की समाप्ति":"Termination of Treatment")+'</div><p style="font-size:10.5pt;line-height:1.5">'+es.terminationClause[lang]+'</p>' : "")
       + sigBlockHtml
       + '</div>';
   }
 
   var page1 = pH(logo, "")
-    + '<div style="text-align:center;margin-bottom:6pt"><div style="font-size:12pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:.06em">'+data.title[lang]+'</div>'
-    + '<div style="font-size:9pt;font-weight:600;color:#2e2e2e;margin-top:2pt">'+C.consentFor+' <strong>'+(pat&&pat.name||"________________________________")+'</strong></div></div>'
+    + '<div style="text-align:center;margin-bottom:6pt"><div style="font-size:13.5pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:.06em">'+data.title[lang]+'</div>'
+    + '<div style="font-size:10.5pt;font-weight:600;color:#2e2e2e;margin-top:2pt">'+C.consentFor+' <strong>'+(pat&&pat.name||"________________________________")+'</strong></div></div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;background:#f8f9fa;padding:6pt 8pt;border-radius:3pt;border:.5pt solid #ddd;margin-bottom:6pt">'
     + fl(C.lblName,'<strong>'+(pat&&pat.name||"—")+'</strong>')+fl(C.lblUHID,(pat&&pat.uhid||"—"))+fl(C.lblDate,dateStr)+'</div>'
     + typesHtml
@@ -11985,13 +11990,13 @@ function buildGenericConsentHTML(pat, consentKey, procedureTypeChecked, fee, pay
     + extraAltHtml
     + respHtml
     + extraNotesHtml
-    + (data.noCost ? "" : sec(C.secFee) + '<p style="font-size:9.5pt;line-height:1.4;margin-bottom:3pt">'+C.costText.replace("__________", '<strong>'+(fee||"__________")+'</strong>')+'</p>')
-    + sec(C.secCompliance) + '<p style="font-size:9.5pt;margin-bottom:3pt">'+C.complianceIntro+'</p>'
-    + '<ul style="margin:0;padding-left:14pt;font-size:9.5pt;line-height:1.6;margin-bottom:4pt">'+complianceBullets.map(function(i){return '<li style="margin-bottom:2pt">'+i+'</li>';}).join("")+'</ul>'
+    + (data.noCost ? "" : sec(C.secFee) + '<p style="font-size:11pt;line-height:1.4;margin-bottom:3pt">'+C.costText.replace("__________", '<strong>'+(fee||"__________")+'</strong>')+'</p>')
+    + sec(C.secCompliance) + '<p style="font-size:11pt;margin-bottom:3pt">'+C.complianceIntro+'</p>'
+    + '<ul style="margin:0;padding-left:14pt;font-size:11pt;line-height:1.6;margin-bottom:4pt">'+complianceBullets.map(function(i){return '<li style="margin-bottom:2pt">'+i+'</li>';}).join("")+'</ul>'
     + postComplianceNoteHtml
-    + sec(C.secEndorsement) + '<p style="font-size:9pt;line-height:1.4;margin-bottom:3pt">'+endorsementText+'</p>'
-    + (data.noUndertaking ? "" : '<div style="font-weight:700;font-size:9.5pt;margin-bottom:2pt">'+C.secUndertaking+'</div>'
-    + '<p style="font-size:9.5pt;line-height:1.5;margin-bottom:10pt">'+C.undertakingText.replace("__________________", '<strong>'+(payTerms||"__________________")+'</strong>')+'</p>')
+    + sec(C.secEndorsement) + '<p style="font-size:10.5pt;line-height:1.4;margin-bottom:3pt">'+endorsementText+'</p>'
+    + (data.noUndertaking ? "" : '<div style="font-weight:700;font-size:11pt;margin-bottom:2pt">'+C.secUndertaking+'</div>'
+    + '<p style="font-size:11pt;line-height:1.5;margin-bottom:10pt">'+C.undertakingText.replace("__________________", '<strong>'+(payTerms||"__________________")+'</strong>')+'</p>')
     + (data.essay ? "" : sigBlockHtml);
 
   return pW(page1 + essayHtml, data.formNo);
@@ -12092,89 +12097,89 @@ function buildNarrativeConsentHTML(pat, consentKey, findings, proposedPlan, medH
     } catch(e){ return ""; }
   })();
   var fl = function(l,v){ return '<div class="fl"><div class="lbl">'+l+'</div><div class="val">'+(v||"&nbsp;")+'</div></div>'; };
-  var bul = function(arr){ return '<ul style="margin:1pt 0 3pt;padding-left:14pt;font-size:9.5pt;line-height:1.35">'+arr.map(function(i){return'<li style="margin-bottom:1pt">'+i+'</li>';}).join("")+"</ul>"; };
-  var numbered = function(arr){ return '<ol style="margin:1pt 0 3pt;padding-left:16pt;font-size:9.5pt;line-height:1.35">'+arr.map(function(i){return'<li style="margin-bottom:1.5pt">'+i+'</li>';}).join("")+"</ol>"; };
+  var bul = function(arr){ return '<ul style="margin:1pt 0 3pt;padding-left:14pt;font-size:11pt;line-height:1.35">'+arr.map(function(i){return'<li style="margin-bottom:1pt">'+i+'</li>';}).join("")+"</ul>"; };
+  var numbered = function(arr){ return '<ol style="margin:1pt 0 3pt;padding-left:16pt;font-size:11pt;line-height:1.35">'+arr.map(function(i){return'<li style="margin-bottom:1.5pt">'+i+'</li>';}).join("")+"</ol>"; };
 
   var findingsHtml = (findings||"").replace(/\n/g,"<br/>");
   var planHtml = (proposedPlan||"").replace(/\n/g,"<br/>");
   var procTypeHtml = (data.procedureTypes && procedureTypeChecked && procedureTypeChecked.length)
-    ? '<p style="font-size:9.5pt;margin:4pt 0"><strong>'+N.procTypeLbl+'</strong> '+procedureTypeChecked.join(", ")+'</p>' : "";
+    ? '<p style="font-size:11pt;margin:4pt 0"><strong>'+N.procTypeLbl+'</strong> '+procedureTypeChecked.join(", ")+'</p>' : "";
 
   var conditionsHtml = data.additionalConditions
-    ? '<div style="font-weight:700;font-size:10pt;margin:3pt 0 1pt">'+N.conditionsHdr+'</div>'+numbered(data.additionalConditions[lang])
+    ? '<div style="font-weight:700;font-size:11.5pt;margin:3pt 0 1pt">'+N.conditionsHdr+'</div>'+numbered(data.additionalConditions[lang])
     : "";
 
   var optionsHtml = data.alternativeTreatments
-    ? '<p style="font-size:9.5pt;line-height:1.4;margin-bottom:2pt;font-weight:700">'+N.optionsHdr+'</p>'+numbered(data.alternativeTreatments[lang])
+    ? '<p style="font-size:11pt;line-height:1.4;margin-bottom:2pt;font-weight:700">'+N.optionsHdr+'</p>'+numbered(data.alternativeTreatments[lang])
     : "";
 
   var purposeText = withClinicName(data.purposeOverride ? data.purposeOverride[lang] : data.description[lang].join(" "));
 
   var risksMerged = data.risksFlat ? data.risksFlat[lang] : (data.commonRisks[lang]||[]).concat(data.uncommonRisks?data.uncommonRisks[lang]:[]);
 
-  var clauses = data.clausesOverride ? data.clausesOverride[lang].map(function(c){ return '<p style="font-size:9.5pt;line-height:1.4;margin-bottom:3pt">'+c+'</p>'; }).join("") : (
-    '<p style="font-size:9.5pt;line-height:1.4;margin-bottom:3pt">'+N.clausePurpose+'</p>'
-    + (data.alternativeTreatments ? '<p style="font-size:9.5pt;line-height:1.4;margin-bottom:3pt">'+N.clauseAlt+'</p>' : "")
-    + '<p style="font-size:9.5pt;line-height:1.4;margin-bottom:3pt">'+N.clauseExplained+'</p>'
-    + '<p style="font-size:9.5pt;line-height:1.4;margin-bottom:3pt">'+N.clauseNoGuarantee+'</p>'
+  var clauses = data.clausesOverride ? data.clausesOverride[lang].map(function(c){ return '<p style="font-size:11pt;line-height:1.4;margin-bottom:3pt">'+c+'</p>'; }).join("") : (
+    '<p style="font-size:11pt;line-height:1.4;margin-bottom:3pt">'+N.clausePurpose+'</p>'
+    + (data.alternativeTreatments ? '<p style="font-size:11pt;line-height:1.4;margin-bottom:3pt">'+N.clauseAlt+'</p>' : "")
+    + '<p style="font-size:11pt;line-height:1.4;margin-bottom:3pt">'+N.clauseExplained+'</p>'
+    + '<p style="font-size:11pt;line-height:1.4;margin-bottom:3pt">'+N.clauseNoGuarantee+'</p>'
   );
 
-  var risksHtml = '<p style="font-size:9.5pt;line-height:1.4;margin-bottom:2pt">'+N.riskIntro+'</p>'+numbered(risksMerged);
+  var risksHtml = '<p style="font-size:11pt;line-height:1.4;margin-bottom:2pt">'+N.riskIntro+'</p>'+numbered(risksMerged);
 
-  var benefitsHtml = data.benefits ? '<p style="font-size:9.5pt;margin-bottom:2pt">'+N.benefitIntro+'</p>'+bul(data.benefits[lang]) : "";
+  var benefitsHtml = data.benefits ? '<p style="font-size:11pt;margin-bottom:2pt">'+N.benefitIntro+'</p>'+bul(data.benefits[lang]) : "";
 
   var dutyHtml = "";
   if (data.patientResponsibilities) {
     var pr = data.patientResponsibilities[lang];
-    dutyHtml = '<p style="font-size:9.5pt;margin-bottom:2pt">'+N.dutyIntro+'</p>'+(Array.isArray(pr)?bul(pr):'<p style="font-size:9.5pt;line-height:1.5">'+pr+'</p>');
+    dutyHtml = '<p style="font-size:11pt;margin-bottom:2pt">'+N.dutyIntro+'</p>'+(Array.isArray(pr)?bul(pr):'<p style="font-size:11pt;line-height:1.5">'+pr+'</p>');
   }
 
   var closingHtml = (data.closingOverride
-    ? data.closingOverride[lang].map(function(c){ return '<p style="font-size:9.5pt;line-height:1.4;margin-bottom:3pt">'+c+'</p>'; }).join("")
-    : N.closing.map(function(c){ return '<p style="font-size:9.5pt;line-height:1.4;margin-bottom:3pt">'+c+'</p>'; }).join(""))
-    + (data.endorsementExtra ? data.endorsementExtra[lang].map(function(c){ return '<p style="font-size:9.5pt;line-height:1.4;margin-bottom:3pt">'+c+'</p>'; }).join("") : "");
+    ? data.closingOverride[lang].map(function(c){ return '<p style="font-size:11pt;line-height:1.4;margin-bottom:3pt">'+c+'</p>'; }).join("")
+    : N.closing.map(function(c){ return '<p style="font-size:11pt;line-height:1.4;margin-bottom:3pt">'+c+'</p>'; }).join(""))
+    + (data.endorsementExtra ? data.endorsementExtra[lang].map(function(c){ return '<p style="font-size:11pt;line-height:1.4;margin-bottom:3pt">'+c+'</p>'; }).join("") : "");
 
-  var feeHtml = data.noFee ? "" : '<p style="font-size:9.5pt;line-height:1.4;margin-bottom:3pt">'+N.feeLbl+' <strong>'+(fee||"__________")+'</strong> '+N.feeTail+' <strong>'+(payTerms||"70% in advance, remaining 30% on subsequent visits.")+'</strong></p>';
+  var feeHtml = data.noFee ? "" : '<p style="font-size:11pt;line-height:1.4;margin-bottom:3pt">'+N.feeLbl+' <strong>'+(fee||"__________")+'</strong> '+N.feeTail+' <strong>'+(payTerms||"70% in advance, remaining 30% on subsequent visits.")+'</strong></p>';
 
-  var medHistHtml = medHistory ? '<p style="font-size:9.5pt;margin-bottom:2pt"><strong>'+N.medHistHdr+'</strong> '+medHistory.replace(/\n/g,"<br/>")+'</p>'
-    + (medFlags && medFlags.length ? '<div style="background:#FFF8E1;border:.5pt solid #F9A825;border-radius:3pt;padding:4pt 8pt;margin-bottom:4pt">'+medFlags.map(function(f){return '<div style="font-size:8.5pt;color:#5D4037">'+f+'</div>';}).join("")+'</div>' : "")
+  var medHistHtml = medHistory ? '<p style="font-size:11pt;margin-bottom:2pt"><strong>'+N.medHistHdr+'</strong> '+medHistory.replace(/\n/g,"<br/>")+'</p>'
+    + (medFlags && medFlags.length ? '<div style="background:#FFF8E1;border:.5pt solid #F9A825;border-radius:3pt;padding:4pt 8pt;margin-bottom:4pt">'+medFlags.map(function(f){return '<div style="font-size:10pt;color:#5D4037">'+f+'</div>';}).join("")+'</div>' : "")
     : "";
 
   var page1 = pH(logo, "")
-    + '<div style="text-align:center;margin-bottom:4pt"><div style="font-size:13pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:.05em">'+N.consentForPrefix+data.title[lang]+'</div></div>'
+    + '<div style="text-align:center;margin-bottom:4pt"><div style="font-size:14pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:.05em">'+N.consentForPrefix+data.title[lang]+'</div></div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:3pt 8pt;background:#f8f9fa;padding:5pt 8pt;border-radius:3pt;border:.5pt solid #ddd;margin-bottom:5pt">'
     + fl(N.lblName,'<strong>'+(pat&&pat.name||"—")+'</strong>')+fl(N.lblUHID,(pat&&pat.uhid||"—"))
     + fl(N.lblDOB,(pat&&pat.dob||"—")+age)+fl(N.lblDate,dateStr)
     + ((pat&&pat.address)?fl(N.lblAddr,pat.address):"")+((pat&&(pat.aadhaar||pat.Aadhaar))?fl(N.lblAadhaar,pat.aadhaar||pat.Aadhaar):"")
     + '</div>'
-    + '<div style="font-weight:700;font-size:10pt;margin-bottom:1pt">'+N.findingsHdr+'</div>'
-    + '<div class="vb" style="font-size:9.5pt;line-height:1.4;min-height:34pt;margin-bottom:3pt">'+findingsHtml+'</div>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin-bottom:1pt">'+N.findingsHdr+'</div>'
+    + '<div class="vb" style="font-size:11pt;line-height:1.4;min-height:34pt;margin-bottom:3pt">'+findingsHtml+'</div>'
     + medHistHtml
-    + '<div style="font-weight:700;font-size:10pt;margin:3pt 0 1pt">'+N.planHdr+'</div>'
-    + '<div class="vb" style="font-size:9.5pt;line-height:1.4;min-height:22pt;margin-bottom:3pt">'+planHtml+'</div>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin:3pt 0 1pt">'+N.planHdr+'</div>'
+    + '<div class="vb" style="font-size:11pt;line-height:1.4;min-height:22pt;margin-bottom:3pt">'+planHtml+'</div>'
     + procTypeHtml
     + optionsHtml
-    + '<div style="font-weight:700;font-size:10pt;margin:3pt 0 1pt">'+N.purposeHdr+'</div>'
-    + '<p style="font-size:9.5pt;line-height:1.4;margin-bottom:3pt">'+purposeText+'</p>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin:3pt 0 1pt">'+N.purposeHdr+'</div>'
+    + '<p style="font-size:11pt;line-height:1.4;margin-bottom:3pt">'+purposeText+'</p>'
     + benefitsHtml
     + risksHtml
     + conditionsHtml
-    + '<div style="font-weight:700;font-size:10pt;margin:3pt 0 1pt">'+N.consentForTreatment+data.title[lang]+N.consentSuffix+'</div>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin:3pt 0 1pt">'+N.consentForTreatment+data.title[lang]+N.consentSuffix+'</div>'
     + clauses
-    + '<div style="font-weight:700;font-size:10pt;margin:3pt 0 1pt">'+N.paymentHdr+'</div>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin:3pt 0 1pt">'+N.paymentHdr+'</div>'
     + feeHtml
     + dutyHtml
-    + '<div style="font-weight:700;font-size:10pt;margin:3pt 0 1pt">'+N.endorsementHdr+'</div>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin:3pt 0 1pt">'+N.endorsementHdr+'</div>'
     + closingHtml
-    + '<p style="font-size:9pt;line-height:1.4;margin:4pt 0;font-style:italic">'+N.certify+'</p>'
+    + '<p style="font-size:10.5pt;line-height:1.4;margin:4pt 0;font-style:italic">'+N.certify+'</p>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14pt;margin-top:8pt;padding-top:6pt;border-top:.5pt solid #ccc">'
     + [[N.sigPatient,pat&&pat.name||""],[N.sigWitness,""],[N.sigDoctor, signingDoctor()],[N.sigStaff,""]].map(function(pair){
         return '<div><div style="border:.5pt solid #bbb;border-radius:3pt;height:30pt;background:#fafafa;margin-bottom:3pt"></div>'
-          +'<div style="font-size:8pt;color:#2e2e2e;line-height:1.4">'+pair[0]+'</div>'
-          +(pair[1]?'<div style="font-size:8.5pt;color:#333;margin-top:1pt">'+pair[1]+'</div>':"")+'</div>';
+          +'<div style="font-size:9.5pt;color:#2e2e2e;line-height:1.4">'+pair[0]+'</div>'
+          +(pair[1]?'<div style="font-size:10pt;color:#333;margin-top:1pt">'+pair[1]+'</div>':"")+'</div>';
       }).join("")
     + '</div>'
-    + '<div style="margin-top:6pt;font-size:8.5pt">'+N.sigDate+' ___________________</div>';
+    + '<div style="margin-top:6pt;font-size:10pt">'+N.sigDate+' ___________________</div>';
 
   return pW(page1, data.formNo);
 }
@@ -12326,24 +12331,24 @@ function pwForm(body, formNo) {
   var logo = window.LOGO_B64;
   var CSS = "@page{size:A4 portrait;margin:8mm 11mm}"
     + "*{box-sizing:border-box;margin:0;padding:0}"
-    + "html,body{font-family:'Segoe UI',Arial,sans-serif;font-size:11pt;color:#111;background:#fff}"
+    + "html,body{font-family:'Segoe UI',Arial,sans-serif;font-size:12.5pt;color:#111;background:#fff}"
     + "table.pgt{width:100%;border-collapse:collapse}"
     + "table.pgt > thead{display:table-header-group}table.pgt > tfoot{display:table-footer-group}"
     + "table.pgt > thead td,table.pgt > tfoot td,table.pgt > tbody td{padding:0}"
     + ".rhdr{display:flex;align-items:center;gap:9pt;border-bottom:1.2pt solid #0078B4;padding-bottom:3pt;margin-bottom:4pt}"
     + ".rlogo{width:36pt;height:36pt;object-fit:contain;mix-blend-mode:multiply}"
     + ".rmid{flex:1;text-align:center}"
-    + ".rcares{font-size:11pt;font-weight:800;color:#C0392B;letter-spacing:.1em;text-decoration:underline}"
-    + ".rtag{font-size:7pt;font-weight:700;color:#0078B4}"
-    + ".rsub{font-size:7pt;color:#2e2e2e}"
-    + ".rftr{border-top:.5pt solid #ddd;padding-top:2pt;margin-top:4pt;display:flex;justify-content:space-between;font-size:7pt;color:#444444}"
-    + ".sec{background:#f0f6fb;border-left:3pt solid #0078B4;padding:2pt 6pt;font-size:8.5pt;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#0078B4;page-break-after:avoid;break-after:avoid}"
-    + ".chk{font-size:9pt;font-weight:700;color:#0078B4;text-transform:uppercase;margin:1pt 0 2pt;page-break-after:avoid;break-after:avoid}"
-    + ".fl{margin-bottom:2pt}.lbl{font-size:7pt;font-weight:700;color:#383838;text-transform:uppercase;letter-spacing:.04em;margin-bottom:1pt}"
-    + ".val{font-size:10pt;border-bottom:.5pt solid #ccc;padding-bottom:1pt;min-height:13pt}"
+    + ".rcares{font-size:12.5pt;font-weight:800;color:#C0392B;letter-spacing:.1em;text-decoration:underline}"
+    + ".rtag{font-size:9.5pt;font-weight:700;color:#0078B4}"
+    + ".rsub{font-size:9.5pt;color:#2e2e2e}"
+    + ".rftr{border-top:.5pt solid #ddd;padding-top:2pt;margin-top:4pt;display:flex;justify-content:space-between;font-size:9.5pt;color:#444444}"
+    + ".sec{background:#f0f6fb;border-left:3pt solid #0078B4;padding:2pt 6pt;font-size:10pt;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#0078B4;page-break-after:avoid;break-after:avoid}"
+    + ".chk{font-size:10.5pt;font-weight:700;color:#0078B4;text-transform:uppercase;margin:1pt 0 2pt;page-break-after:avoid;break-after:avoid}"
+    + ".fl{margin-bottom:2pt}.lbl{font-size:9.5pt;font-weight:700;color:#383838;text-transform:uppercase;letter-spacing:.04em;margin-bottom:1pt}"
+    + ".val{font-size:11.5pt;border-bottom:.5pt solid #ccc;padding-bottom:1pt;min-height:13pt}"
     + ".vb{border:.5pt solid #ccc;padding:3pt 6pt;border-radius:2pt}"
     + ".g2{display:grid;grid-template-columns:1fr 1fr}"
-    + ".tk{display:grid;grid-template-columns:1fr 1fr;gap:1pt 14pt;font-size:9pt;margin:1pt 0 3pt}"
+    + ".tk{display:grid;grid-template-columns:1fr 1fr;gap:1pt 14pt;font-size:10.5pt;margin:1pt 0 3pt}"
     + ".tk span{display:inline-block;width:11pt}"
     + ".blk,.keep{page-break-inside:avoid;break-inside:avoid}"
     + ".pb{page-break-before:always}";
@@ -12383,14 +12388,14 @@ function buildRCTFormHTML(pat, findings, proposedPlan, medHistory, medFlags, fee
 
   var sec = function(t){ return '<div class="sec" style="margin:2pt 0 1pt">'+t+'</div>'; };
   var fl = function(l,v){ return '<div class="fl"><div class="lbl">'+l+'</div><div class="val">'+(v||"&nbsp;")+'</div></div>'; };
-  var box = function(html,mh){ return '<div class="vb" style="font-size:10.3pt;line-height:1.28;min-height:'+(mh||16)+'pt">'+html+'</div>'; };
+  var box = function(html,mh){ return '<div class="vb" style="font-size:12pt;line-height:1.28;min-height:'+(mh||16)+'pt">'+html+'</div>'; };
   var para = function(txt,fs){ return '<p style="font-size:'+(fs||10.3)+'pt;line-height:1.26;margin-bottom:2pt">'+txt+'</p>'; };
   var ol = function(arr,fs){ return '<ol style="margin:0 0 1pt;padding-left:16pt;font-size:'+(fs||10.3)+'pt;line-height:1.24">'+arr.map(function(i){return'<li style="margin-bottom:1pt">'+i+'</li>';}).join("")+'</ol>'; };
   var bul = function(arr,fs){ return '<ul style="margin:0 0 1pt;padding-left:15pt;font-size:'+(fs||10.3)+'pt;line-height:1.24">'+arr.map(function(i){return'<li style="margin-bottom:1pt">'+i+'</li>';}).join("")+'</ul>'; };
 
   // ---- KYC block
-  var kyc = '<div style="text-align:center;margin-bottom:3pt"><div style="font-size:13pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:.05em">'+R.title+'</div>'
-    + '<div style="font-size:9.2pt;font-weight:700;color:#2e2e2e;letter-spacing:.08em">'+R.sub+'</div></div>'
+  var kyc = '<div style="text-align:center;margin-bottom:3pt"><div style="font-size:14pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:.05em">'+R.title+'</div>'
+    + '<div style="font-size:10.5pt;font-weight:700;color:#2e2e2e;letter-spacing:.08em">'+R.sub+'</div></div>'
     + '<div style="display:grid;grid-template-columns:2fr 1.2fr 1.4fr 1.1fr;gap:1pt 8pt;background:#f8f9fa;padding:3pt 8pt;border-radius:3pt;border:.5pt solid #ddd;margin-bottom:3pt">'
     + fl(R.lName,'<strong>'+((pat&&pat.name)||"&nbsp;")+'</strong>')
     + fl(R.lUHID,(pat&&pat.uhid)||"&nbsp;")
@@ -12406,17 +12411,17 @@ function buildRCTFormHTML(pat, findings, proposedPlan, medHistory, medFlags, fee
 
   // ---- Consent section: top clauses → risk intro → common|uncommon → conditions → tail clauses
   var riskCols = '<div class="g2" style="gap:2pt 14pt;margin:2pt 0 3pt">'
-    + '<div><div style="font-size:9.2pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:1pt">'+R.cCommon+'</div>'+bul(R.commonRisks,9.3)+'</div>'
-    + '<div><div style="font-size:9.2pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:1pt">'+R.cUncommon+'</div>'+bul(R.uncommonRisks,9.3)+'</div>'
+    + '<div><div style="font-size:10.5pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:1pt">'+R.cCommon+'</div>'+bul(R.commonRisks,9.3)+'</div>'
+    + '<div><div style="font-size:10.5pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:1pt">'+R.cUncommon+'</div>'+bul(R.uncommonRisks,9.3)+'</div>'
     + '</div>';
-  var condList = '<ol style="margin:1pt 0 2pt;padding-left:18pt;font-size:9.6pt;line-height:1.3;list-style-type:lower-alpha;column-count:2;column-gap:16pt">'+R.conditions.map(function(i){return'<li style="margin-bottom:1.5pt;break-inside:avoid">'+i+'</li>';}).join("")+'</ol>';
-  var consentTopHtml = R.consentTop.map(function(c){ return '<p style="font-size:10pt;line-height:1.28;margin-bottom:1.5pt">&bull; '+c.replace("{TOOTH}", toothNo)+'</p>'; }).join("");
-  var consentTailHtml = '<div style="column-count:2;column-gap:14pt">'+R.consentTail.map(function(c){ return '<p style="font-size:9.6pt;line-height:1.24;margin-bottom:1.5pt;break-inside:avoid">&bull; '+c+'</p>'; }).join("")+'</div>';
+  var condList = '<ol style="margin:1pt 0 2pt;padding-left:18pt;font-size:11pt;line-height:1.3;list-style-type:lower-alpha;column-count:2;column-gap:16pt">'+R.conditions.map(function(i){return'<li style="margin-bottom:1.5pt;break-inside:avoid">'+i+'</li>';}).join("")+'</ol>';
+  var consentTopHtml = R.consentTop.map(function(c){ return '<p style="font-size:11.5pt;line-height:1.28;margin-bottom:1.5pt">&bull; '+c.replace("{TOOTH}", toothNo)+'</p>'; }).join("");
+  var consentTailHtml = '<div style="column-count:2;column-gap:14pt">'+R.consentTail.map(function(c){ return '<p style="font-size:11pt;line-height:1.24;margin-bottom:1.5pt;break-inside:avoid">&bull; '+c+'</p>'; }).join("")+'</div>';
   var consentLead = consentTopHtml;
   // keep the risk intro + Common/Uncommon headers + lists together on one page
-  var riskBlock = '<div class="keep"><p style="font-size:9.6pt;line-height:1.28;margin:1pt 0 1pt">'+R.riskLine+'</p>'+riskCols+'</div>';
+  var riskBlock = '<div class="keep"><p style="font-size:11pt;line-height:1.28;margin:1pt 0 1pt">'+R.riskLine+'</p>'+riskCols+'</div>';
   var consentRest = riskBlock
-    + '<p style="font-size:10pt;line-height:1.33;margin:2pt 0 1pt;font-weight:600">'+R.condIntro+'</p>'
+    + '<p style="font-size:11.5pt;line-height:1.33;margin:2pt 0 1pt;font-weight:600">'+R.condIntro+'</p>'
     + condList
     + consentTailHtml;
 
@@ -12425,16 +12430,16 @@ function buildRCTFormHTML(pat, findings, proposedPlan, medHistory, medFlags, fee
   // ---- Signatures (4-up)
   var sigCell = function(role,nm,extra){
     return '<div><div style="border:.5pt solid #bbb;border-radius:3pt;height:28pt;background:#fafafa;margin-bottom:2pt"></div>'
-      + '<div style="font-size:8pt;font-weight:700;color:#333">'+role+'</div>'
-      + '<div style="font-size:7.5pt;color:#3d3d3d">'+(extra||R.sSigName)+'</div>'
-      + (nm?'<div style="font-size:9.2pt;color:#333;margin-top:1pt">'+nm+'</div>':'')+'</div>';
+      + '<div style="font-size:9.5pt;font-weight:700;color:#333">'+role+'</div>'
+      + '<div style="font-size:9.5pt;color:#3d3d3d">'+(extra||R.sSigName)+'</div>'
+      + (nm?'<div style="font-size:10.5pt;color:#333;margin-top:1pt">'+nm+'</div>':'')+'</div>';
   };
   var sigHtml = '<div class="keep" style="margin-top:6pt;padding-top:5pt;border-top:.5pt solid #ccc"><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12pt">'
     + sigCell(R.sPatient, (pat&&pat.name)||"", R.sSigName)
     + sigCell(R.sWitness, "", R.sSigName)
     + sigCell(R.sDoctorName, "", R.sDoctorLine.replace("{DOCTOR}", signingDoctor() || "Doctor"))
     + sigCell(R.sStaff, "", R.sSigName)
-    + '</div><div style="margin-top:6pt;font-size:9.2pt">'+R.sDate+' ___________________</div></div>';
+    + '</div><div style="margin-top:6pt;font-size:10.5pt">'+R.sDate+' ___________________</div></div>';
 
   // Sections flow and pack naturally; .sec headers use break-after:avoid so a
   // header never sits alone at a page bottom, and the risk block / signatures
@@ -12448,7 +12453,7 @@ function buildRCTFormHTML(pat, findings, proposedPlan, medHistory, medFlags, fee
     + sec(R.hBenefits) + bul(R.benefits)
     + sec(R.hConsent) + consentLead + consentRest
     + sec(R.hCost) + costHtml
-    + sec(R.hEndorsement) + '<p style="font-size:10pt;line-height:1.34;margin-bottom:3pt;font-style:italic">'+R.certify+'</p>'
+    + sec(R.hEndorsement) + '<p style="font-size:11.5pt;line-height:1.34;margin-bottom:3pt;font-style:italic">'+R.certify+'</p>'
     + sigHtml;
 
   return pwForm(body, data.formNo);
@@ -12478,15 +12483,15 @@ function buildStyledConsentHTML(pat, key, findings, medHistory, medFlags, procTy
 
   var sec = function(t){ return '<div class="sec" style="margin:2pt 0 1pt">'+t+'</div>'; };
   var fl = function(l,v){ return '<div class="fl"><div class="lbl">'+l+'</div><div class="val">'+(v||"&nbsp;")+'</div></div>'; };
-  var box = function(html,mh){ return '<div class="vb" style="font-size:10.3pt;line-height:1.28;min-height:'+(mh||16)+'pt">'+html+'</div>'; };
+  var box = function(html,mh){ return '<div class="vb" style="font-size:12pt;line-height:1.28;min-height:'+(mh||16)+'pt">'+html+'</div>'; };
   var para = function(txt,fs){ return '<p style="font-size:'+(fs||10.3)+'pt;line-height:1.26;margin-bottom:2pt">'+txt+'</p>'; };
   var ol = function(arr,fs){ return '<ol style="margin:0 0 1pt;padding-left:16pt;font-size:'+(fs||10.3)+'pt;line-height:1.24">'+arr.map(function(i){return'<li style="margin-bottom:1pt">'+i+'</li>';}).join("")+'</ol>'; };
   var bul = function(arr,fs){ return '<ul style="margin:0 0 1pt;padding-left:15pt;font-size:'+(fs||10.3)+'pt;line-height:1.24">'+arr.map(function(i){return'<li style="margin-bottom:1pt">'+i+'</li>';}).join("")+'</ul>'; };
-  var clauseList = function(arr){ return arr.map(function(c){ return '<p style="font-size:10pt;line-height:1.3;margin-bottom:1.5pt">&bull; '+c+'</p>'; }).join(""); };
-  var colHd = 'font-size:9.2pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:1pt';
+  var clauseList = function(arr){ return arr.map(function(c){ return '<p style="font-size:11.5pt;line-height:1.3;margin-bottom:1.5pt">&bull; '+c+'</p>'; }).join(""); };
+  var colHd = 'font-size:10.5pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:1pt';
 
-  var kyc = '<div style="text-align:center;margin-bottom:3pt"><div style="font-size:13pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:.05em">'+title+'</div>'
-    + '<div style="font-size:9.2pt;font-weight:700;color:#2e2e2e;letter-spacing:.08em">'+R.sub+'</div></div>'
+  var kyc = '<div style="text-align:center;margin-bottom:3pt"><div style="font-size:14pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:.05em">'+title+'</div>'
+    + '<div style="font-size:10.5pt;font-weight:700;color:#2e2e2e;letter-spacing:.08em">'+R.sub+'</div></div>'
     + '<div style="display:grid;grid-template-columns:2fr 1.2fr 1.4fr 1.1fr;gap:1pt 8pt;background:#f8f9fa;padding:3pt 8pt;border-radius:3pt;border:.5pt solid #ddd;margin-bottom:3pt">'
     + fl(R.lName,'<strong>'+((pat&&pat.name)||"&nbsp;")+'</strong>') + fl(R.lUHID,(pat&&pat.uhid)||"&nbsp;")
     + fl(R.lDOB,((pat&&pat.dob)||"")+age||"&nbsp;") + fl(R.lDate,dateStr)
@@ -12520,20 +12525,20 @@ function buildStyledConsentHTML(pat, key, findings, medHistory, medFlags, procTy
     if (data.uncommonRisks && data.uncommonRisks[lang]) cols += '<div><div style="'+colHd+'">'+R.cUncommon+'</div>'+bul(data.uncommonRisks[lang],9.6)+'</div>';
     // keep the risk intro + column headers + lists together so a header never
     // sits alone at the bottom of a page with its list on the next.
-    risksHtml = '<div class="keep"><p style="font-size:10pt;line-height:1.33;margin:2pt 0 2pt">'+N.riskIntro+'</p><div class="g2" style="gap:2pt 14pt;margin:2pt 0 3pt">'+cols+'</div></div>';
+    risksHtml = '<div class="keep"><p style="font-size:11.5pt;line-height:1.33;margin:2pt 0 2pt">'+N.riskIntro+'</p><div class="g2" style="gap:2pt 14pt;margin:2pt 0 3pt">'+cols+'</div></div>';
   } else if (data.risksFlat && data.risksFlat[lang]) {
-    risksHtml = '<div class="keep"><p style="font-size:10pt;line-height:1.33;margin:2pt 0 2pt">'+N.riskIntro
-      + '</p><ol style="margin:0 0 2pt;padding-left:16pt;font-size:9.6pt;line-height:1.3;column-count:2;column-gap:16pt">'
+    risksHtml = '<div class="keep"><p style="font-size:11.5pt;line-height:1.33;margin:2pt 0 2pt">'+N.riskIntro
+      + '</p><ol style="margin:0 0 2pt;padding-left:16pt;font-size:11pt;line-height:1.3;column-count:2;column-gap:16pt">'
       + data.risksFlat[lang].map(function(i){return'<li style="margin-bottom:1.5pt;break-inside:avoid">'+i+'</li>';}).join("")
       + '</ol></div>';
   }
   var condHtml = (data.additionalConditions && data.additionalConditions[lang])
-    ? '<p style="font-size:10pt;line-height:1.33;margin:2pt 0 1pt;font-weight:600">'+N.conditionsHdr+'</p><ol style="margin:1pt 0 2pt;padding-left:18pt;font-size:9.6pt;line-height:1.3;list-style-type:lower-alpha;column-count:2;column-gap:16pt">'+data.additionalConditions[lang].map(function(i){return'<li style="margin-bottom:1.5pt;break-inside:avoid">'+i+'</li>';}).join("")+'</ol>'
+    ? '<p style="font-size:11.5pt;line-height:1.33;margin:2pt 0 1pt;font-weight:600">'+N.conditionsHdr+'</p><ol style="margin:1pt 0 2pt;padding-left:18pt;font-size:11pt;line-height:1.3;list-style-type:lower-alpha;column-count:2;column-gap:16pt">'+data.additionalConditions[lang].map(function(i){return'<li style="margin-bottom:1.5pt;break-inside:avoid">'+i+'</li>';}).join("")+'</ol>'
     : "";
   var dutyHtml = "";
   if (data.patientResponsibilities && data.patientResponsibilities[lang]) {
     var pr = data.patientResponsibilities[lang];
-    dutyHtml = Array.isArray(pr) ? clauseList(pr) : '<p style="font-size:10pt;line-height:1.33;margin-bottom:2pt">&bull; '+pr+'</p>';
+    dutyHtml = Array.isArray(pr) ? clauseList(pr) : '<p style="font-size:11.5pt;line-height:1.33;margin-bottom:2pt">&bull; '+pr+'</p>';
   }
   var consentBlk = sec((HI?"":"Consent for ")+title+(HI?" के लिए सहमति":""))
     + clauseList(clauses) + risksHtml + condHtml + dutyHtml;
@@ -12543,15 +12548,15 @@ function buildStyledConsentHTML(pat, key, findings, medHistory, medFlags, procTy
 
   var sigCell = function(role,nm,extra){
     return '<div><div style="border:.5pt solid #bbb;border-radius:3pt;height:28pt;background:#fafafa;margin-bottom:2pt"></div>'
-      + '<div style="font-size:8pt;font-weight:700;color:#333">'+role+'</div>'
-      + '<div style="font-size:7.5pt;color:#3d3d3d">'+(extra||R.sSigName)+'</div>'
-      + (nm?'<div style="font-size:9.2pt;color:#333;margin-top:1pt">'+nm+'</div>':'')+'</div>';
+      + '<div style="font-size:9.5pt;font-weight:700;color:#333">'+role+'</div>'
+      + '<div style="font-size:9.5pt;color:#3d3d3d">'+(extra||R.sSigName)+'</div>'
+      + (nm?'<div style="font-size:10.5pt;color:#333;margin-top:1pt">'+nm+'</div>':'')+'</div>';
   };
   var sigHtml = '<div class="keep" style="margin-top:6pt;padding-top:5pt;border-top:.5pt solid #ccc"><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12pt">'
     + sigCell(R.sPatient, (pat&&pat.name)||"", R.sSigName) + sigCell(R.sWitness, "", R.sSigName)
     + sigCell(R.sDoctorName, "", R.sDoctorLine.replace("{DOCTOR}", signingDoctor() || "Doctor")) + sigCell(R.sStaff, "", R.sSigName) + '</div>'
-    + '<div style="margin-top:6pt;font-size:9.2pt">'+R.sDate+' ___________________</div></div>';
-  var endorseBlk = sec(R.hEndorsement)+'<p style="font-size:10pt;line-height:1.34;margin-bottom:3pt;font-style:italic">'+R.certify+'</p>'+sigHtml;
+    + '<div style="margin-top:6pt;font-size:10.5pt">'+R.sDate+' ___________________</div></div>';
+  var endorseBlk = sec(R.hEndorsement)+'<p style="font-size:11.5pt;line-height:1.34;margin-bottom:3pt;font-style:italic">'+R.certify+'</p>'+sigHtml;
 
   var body = kyc + findBlk + medBlk + proposedBlk + optionsBlk + extraBlk + purposeBlk + benefitsBlk
     + consentBlk + costBlk + endorseBlk;
@@ -12567,7 +12572,7 @@ function buildStyledConsentHTML(pat, key, findings, medHistory, medFlags, procTy
 function letterFL(l,v){ return '<div class="fl"><div class="lbl">'+l+'</div><div class="val">'+(v||"&nbsp;")+'</div></div>'; }
 function letterSigBlock(pairs){
   return '<div style="display:grid;grid-template-columns:repeat('+pairs.length+',1fr);gap:14pt;margin-top:16pt;padding-top:8pt;border-top:.5pt solid #ccc">'
-    + pairs.map(function(p){ return '<div><div style="border:.5pt solid #bbb;border-radius:3pt;height:30pt;background:#fafafa;margin-bottom:3pt"></div><div style="font-size:8.5pt;color:#2e2e2e">'+p+'</div></div>'; }).join("")
+    + pairs.map(function(p){ return '<div><div style="border:.5pt solid #bbb;border-radius:3pt;height:30pt;background:#fafafa;margin-bottom:3pt"></div><div style="font-size:10pt;color:#2e2e2e">'+p+'</div></div>'; }).join("")
     + '</div>';
 }
 
@@ -12575,18 +12580,18 @@ function buildBracesRemovalHTML(pat, lang) {
   var logo = window.LOGO_B64, dateStr = fmtDMY(new Date());
   var HI = lang==="HI";
   var body = pH(logo, "")
-    + '<div style="text-align:center;font-size:12pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:8pt">'+(HI?"ब्रेसेस निकालना व रिटेनर सहमति फॉर्म":"BRACES REMOVAL AND RETAINER CONSENT FORM")+'</div>'
+    + '<div style="text-align:center;font-size:13.5pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:8pt">'+(HI?"ब्रेसेस निकालना व रिटेनर सहमति फॉर्म":"BRACES REMOVAL AND RETAINER CONSENT FORM")+'</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;background:#f8f9fa;padding:6pt 8pt;border-radius:3pt;border:.5pt solid #ddd;margin-bottom:8pt">'
     + letterFL(HI?"मरीज़ का नाम":"Patient Name", pat&&pat.name) + letterFL("UHID", pat&&pat.uhid) + letterFL(HI?"दिनांक":"Date", dateStr) + '</div>'
-    + '<p style="font-size:10pt;font-weight:700;margin-bottom:6pt">'+(HI?"बधाई हो!":"Congratulations!")+'</p>'
-    + '<p style="font-size:9.5pt;line-height:1.5;margin-bottom:6pt">'+(HI
+    + '<p style="font-size:11.5pt;font-weight:700;margin-bottom:6pt">'+(HI?"बधाई हो!":"Congratulations!")+'</p>'
+    + '<p style="font-size:11pt;line-height:1.5;margin-bottom:6pt">'+(HI
       ? "आज वह दिन है जब आपके ब्रेसेस उतर रहे हैं और आपकी खूबसूरत मुस्कान सामने आ रही है! अब आप इलाज के एक ज़रूरी चरण — रिटेंशन फेज़ — में प्रवेश कर रहे हैं। ऑर्थोडोंटिक इलाज पूरा होने का मतलब यह गारंटी नहीं है कि दांत हमेशा के लिए सीधे रहेंगे। दांतों में एक तरह की \"याददाश्त\" होती है और वे अक्सर अपनी पुरानी स्थिति में वापस जाने की कोशिश करते हैं।"
       : "Today is the day that your braces are coming off to unveil your beautiful smile! You are now entering an important phase of your treatment — the Retention Phase. Completed orthodontic treatment does not guarantee perfectly straight teeth for the rest of your life. Teeth have a memory and often try to move back to their original positions.")+'</p>'
-    + '<p style="font-size:9.5pt;line-height:1.5;margin-bottom:8pt">'+(HI
+    + '<p style="font-size:11pt;line-height:1.5;margin-bottom:8pt">'+(HI
       ? "दांतों को उनकी नई स्थिति में बनाए रखने के लिए रिटेनर ज़रूरी हैं। शरीर के बढ़ते और बदलते रहने के कारण, जीवनभर नियमित रूप से रिटेनर पहनना ज़रूरी है। खासकर नीचे के अगले दांतों में मामूली टेढ़ापन हो सकता है। अच्छे रिटेनर पहनने के बावजूद, दांत थोड़े हिल सकते हैं।"
       : "Retainers are required to keep your teeth in their new positions. Regular retainer wear is necessary for your lifetime as your body is continually undergoing growth and maturation. Minor irregularities, particularly in the lower front teeth, may occur. Even with good retainer wear, your teeth may move slightly.")+'</p>'
-    + '<div style="font-weight:700;font-size:10pt;margin-bottom:4pt">'+(HI?"रिटेनर के निर्देश और ज़िम्मेदारियां":"Retainer Instructions and Responsibilities")+'</div>'
-    + '<ol style="margin:0 0 8pt;padding-left:16pt;font-size:9.5pt;line-height:1.6">'
+    + '<div style="font-weight:700;font-size:11.5pt;margin-bottom:4pt">'+(HI?"रिटेनर के निर्देश और ज़िम्मेदारियां":"Retainer Instructions and Responsibilities")+'</div>'
+    + '<ol style="margin:0 0 8pt;padding-left:16pt;font-size:11pt;line-height:1.6">'
     + (HI ? [
         "डॉक्टर के निर्देशों अनुसार रिमूवेबल रिटेनर पहनूंगा/पहनूंगी।",
         "खाते समय रिमूवेबल रिटेनर नहीं पहनूंगा/पहनूंगी ताकि नुकसान न हो।",
@@ -12607,11 +12612,11 @@ function buildBracesRemovalHTML(pat, lang) {
         "Call the office immediately if my retainer breaks or is not fitting properly, lost, or broken."
       ]).map(function(i){return '<li style="margin-bottom:3pt">'+i+'</li>';}).join("")
     + '</ol>'
-    + '<p style="font-size:9pt;line-height:1.5;margin-bottom:6pt">'+(HI
+    + '<p style="font-size:10.5pt;line-height:1.5;margin-bottom:6pt">'+(HI
       ? "आपके रिटेनर सबसे अच्छी सामग्री से बनाए गए हैं। अगर रिटेनर खो जाए या खराब हो जाए, तो अपॉइंटमेंट के लिए तुरंत हमारे ऑफिस को 7866939786 पर कॉल करें। हर बदली गई रिटेनर के लिए लैब शुल्क लगेगा। अगर अप्रत्याशित बढ़ोतरी या रिटेनर न पहनने के कारण आगे इलाज की ज़रूरत पड़े, तो अतिरिक्त शुल्क लागू होगा।"
       : "Your retainers are made using only the best possible material. If a retainer is lost or damaged, call our office at 7866939786 immediately to schedule an appointment. There will be a laboratory charge per replacement retainer. If further treatment is required due to unexpected growth or noncompliant retainer wear, additional charges will be applied.")+'</p>'
-    + '<div style="font-weight:700;font-size:10pt;margin:6pt 0 2pt">'+(HI?"ब्रेसेस निकालने के लिए सहमति":"Consent for Braces Removal")+'</div>'
-    + '<p style="font-size:9.5pt;line-height:1.5;margin-bottom:6pt">'+(HI
+    + '<div style="font-weight:700;font-size:11.5pt;margin:6pt 0 2pt">'+(HI?"ब्रेसेस निकालने के लिए सहमति":"Consent for Braces Removal")+'</div>'
+    + '<p style="font-size:11pt;line-height:1.5;margin-bottom:6pt">'+(HI
       ? "मैं अपने/अपने बच्चे के ब्रेसेस या उपकरण निकालने के लिए सहमति देता/देती हूं। मुझे ऊपर दी गई जानकारी समझ आ गई है। मुझे अपने सवाल पूछने का मौका मिला और उनके संतोषजनक जवाब मिले।"
       : "I consent to the removal of my / my child's braces or appliances. I understand the above information. I have had an opportunity to ask any questions and I have had those questions adequately answered.")+'</p>'
     + letterSigBlock([(HI?"मरीज़ / अभिभावक के हस्ताक्षर":"Patient / Guardian Signature"),(HI?"डॉक्टर के हस्ताक्षर":"Dentist Signature")]);
@@ -12622,15 +12627,15 @@ function buildTelemedicineHTML(pat, lang) {
   var logo = window.LOGO_B64, dateStr = fmtDMY(new Date());
   var HI = lang==="HI";
   var body = pH(logo, "")
-    + '<div style="text-align:center;font-size:11pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:8pt">'+(HI?"टेलीमेडिसिन परामर्श में भाग लेने की सहमति":"CONSENT TO PARTICIPATE IN TELEMEDICINE CONSULTATION")+'</div>'
+    + '<div style="text-align:center;font-size:12.5pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:8pt">'+(HI?"टेलीमेडिसिन परामर्श में भाग लेने की सहमति":"CONSENT TO PARTICIPATE IN TELEMEDICINE CONSULTATION")+'</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;background:#f8f9fa;padding:6pt 8pt;border-radius:3pt;border:.5pt solid #ddd;margin-bottom:8pt">'
     + letterFL(HI?"मरीज़ का नाम":"Patient Name", pat&&pat.name) + letterFL("UHID", pat&&pat.uhid) + letterFL(HI?"दिनांक":"Date", dateStr) + '</div>'
-    + '<div style="font-weight:700;font-size:10pt;margin-bottom:2pt">'+(HI?"परिचय:":"Introduction:")+'</div>'
-    + '<p style="font-size:9.5pt;line-height:1.5;margin-bottom:6pt">'+(HI
+    + '<div style="font-weight:700;font-size:11.5pt;margin-bottom:2pt">'+(HI?"परिचय:":"Introduction:")+'</div>'
+    + '<p style="font-size:11pt;line-height:1.5;margin-bottom:6pt">'+(HI
       ? "टेलीमेडिसिन का अर्थ है वीडियो/ऑडियो कॉन्फ्रेंसिंग के ज़रिए दूसरी जगह मौजूद डॉक्टर द्वारा स्वास्थ्य सेवा या परामर्श देना। यह सीधे क्लिनिक विज़िट जैसा नहीं है, क्योंकि आप और डॉक्टर एक ही जगह नहीं होते। यह लंबी दूरी की यात्रा या होम आइसोलेशन की स्थिति में सेवा देने में मदद करता है। टेलीमेडिसिन परामर्श में भाग लेना पूरी तरह स्वैच्छिक है।"
       : "Telemedicine is the use of video/audio conferencing to enable healthcare providers at a different location to provide health care treatment to you and/or consult with you and your health care provider about your health care options and decisions. Telemedicine consultations are not the same as direct patient/healthcare provider visits, as you will not be in the same location as the consulting provider. It allows the clinic to provide services that may otherwise require long travel or where home isolation is advised. Participation in any telemedicine consultation is completely voluntary.")+'</p>'
-    + '<div style="font-weight:700;font-size:10pt;margin-bottom:2pt">'+(HI?"प्रक्रिया:":"Process:")+'</div>'
-    + '<ul style="margin:0 0 6pt;padding-left:16pt;font-size:9.5pt;line-height:1.55">'
+    + '<div style="font-weight:700;font-size:11.5pt;margin-bottom:2pt">'+(HI?"प्रक्रिया:":"Process:")+'</div>'
+    + '<ul style="margin:0 0 6pt;padding-left:16pt;font-size:11pt;line-height:1.55">'
     + (HI ? [
         "स्वास्थ्य इतिहास का विवरण, जिसमें इमेज, एक्स-रे और जांचें शामिल हैं, इलेक्ट्रॉनिक रूप से साझा की जा सकती हैं।",
         "फिज़िकल जांच हो भी सकती है और नहीं भी।",
@@ -12647,8 +12652,8 @@ function buildTelemedicineHTML(pat, lang) {
         "Your provider as well as the consulting provider may keep a record of the consultation."
       ]).map(function(i){return '<li style="margin-bottom:2pt">'+i+'</li>';}).join("")
     + '</ul>'
-    + '<div style="font-weight:700;font-size:10pt;margin-bottom:2pt">'+(HI?"संभावित जोखिम:":"Possible Risks:")+'</div>'
-    + '<ul style="margin:0 0 6pt;padding-left:16pt;font-size:9.5pt;line-height:1.55">'
+    + '<div style="font-weight:700;font-size:11.5pt;margin-bottom:2pt">'+(HI?"संभावित जोखिम:":"Possible Risks:")+'</div>'
+    + '<ul style="margin:0 0 6pt;padding-left:16pt;font-size:11pt;line-height:1.55">'
     + (HI ? [
         "मरीज़ की जानकारी की निजता बचाने की पूरी कोशिश के बावजूद, सुरक्षा प्रोटोकॉल फेल होने से गोपनीयता भंग हो सकती है।",
         "टेलीमेडिसिन के ज़रिए दी गई जानकारी इलाज व सामान्य निर्णय के लिए पर्याप्त न हो सकती।",
@@ -12659,12 +12664,12 @@ function buildTelemedicineHTML(pat, lang) {
         "Delays in medical/dental evaluation and treatment may occur due to failures of the electronic equipment."
       ]).map(function(i){return '<li style="margin-bottom:2pt">'+i+'</li>';}).join("")
     + '</ul>'
-    + '<div style="font-weight:700;font-size:10pt;margin-bottom:2pt">'+(HI?"सहमति:":"Consent:")+'</div>'
-    + '<p style="font-size:9.5pt;line-height:1.5;margin-bottom:8pt">'+(HI
+    + '<div style="font-weight:700;font-size:11.5pt;margin-bottom:2pt">'+(HI?"सहमति:":"Consent:")+'</div>'
+    + '<p style="font-size:11pt;line-height:1.5;margin-bottom:8pt">'+(HI
       ? "इस फॉर्म पर हस्ताक्षर करके, आप टेलीमेडिसिन परामर्श में भाग लेने की सहमति दे रहे हैं। आप स्वीकार कर रहे हैं कि आपने इस फॉर्म में दी गई शर्तों को पढ़ और समझ लिया है। अगर आप पढ़ नहीं सकते, तो आप स्वीकार कर रहे हैं कि आपके डॉक्टर ने यह फॉर्म आपको पढ़कर सुनाया है और टेलीमेडिसिन वीडियो कॉन्फ्रेंसिंग कैसे काम करती है यह समझाया है।"
       : "By signing this form, you are consenting to participate in a telemedicine consultation. You are acknowledging that you have read and understand the provisions in this form. If you are unable to read, you are acknowledging that your health care provider has read this form to you and has explained to you how telemedicine video conferencing works.")+'</p>'
     + letterSigBlock([(HI?"मरीज़ / अभिभावक के हस्ताक्षर":"Patient / Guardian Signature"),(HI?"डॉक्टर के हस्ताक्षर":"Dentist Signature")])
-    + '<p style="font-size:9pt;margin-top:8pt">'+(HI?"अधिकृत प्रतिनिधि के हस्ताक्षर व मरीज़ से संबंध: ___________________________":"Signature of Authorized Representative & Relationship to Patient: ___________________________")+'</p>';
+    + '<p style="font-size:10.5pt;margin-top:8pt">'+(HI?"अधिकृत प्रतिनिधि के हस्ताक्षर व मरीज़ से संबंध: ___________________________":"Signature of Authorized Representative & Relationship to Patient: ___________________________")+'</p>';
   return pW(body, "KBDC/FORMS/CONSENT-28");
 }
 
@@ -12672,21 +12677,21 @@ function buildOutsideSpecialistHTML(pat, lang) {
   var logo = window.LOGO_B64, dateStr = fmtDMY(new Date());
   var HI = lang==="HI";
   var body = pH(logo, "")
-    + '<div style="text-align:center;font-size:11pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:8pt">'+(HI?"बाहरी विशेषज्ञ के लिए सहमति":"INFORMED CONSENT FOR OUTSIDE SPECIALIST")+'</div>'
+    + '<div style="text-align:center;font-size:12.5pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:8pt">'+(HI?"बाहरी विशेषज्ञ के लिए सहमति":"INFORMED CONSENT FOR OUTSIDE SPECIALIST")+'</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;background:#f8f9fa;padding:6pt 8pt;border-radius:3pt;border:.5pt solid #ddd;margin-bottom:8pt">'
     + letterFL(HI?"मरीज़ का नाम":"Patient Name", pat&&pat.name) + letterFL("UHID", pat&&pat.uhid) + letterFL(HI?"दिनांक":"Date", dateStr) + '</div>'
-    + '<p style="font-size:9.5pt;line-height:1.8;margin-bottom:6pt">'+(HI
+    + '<p style="font-size:11pt;line-height:1.8;margin-bottom:6pt">'+(HI
       ? "मैं ___________________________________________________, निवासी ___________________________________________________, यह घोषित करता/करती हूं कि मेरे माता / पिता / पुत्र / पुत्री ___________________________________________________ के.बी. डेंटल क्लिनिक में इलाज करा रहे/रही हैं।"
       : "I ___________________________________________________, resident of ___________________________________________________, declare that my mother / father / son / daughter ___________________________________________________ is undergoing treatment at K. B. Dental Clinic.")+'</p>'
-    + '<p style="font-size:9.5pt;line-height:1.8;margin-bottom:6pt">'+(HI
+    + '<p style="font-size:11pt;line-height:1.8;margin-bottom:6pt">'+(HI
       ? "मैं के.बी. डेंटल क्लिनिक में विज़िटिंग कंसल्टेंट/विशेषज्ञ डॉ. ___________________________________________________ द्वारा दांत/मुंह के लिए डेंटल / सर्जिकल / एनेस्थीसिया / डायग्नोस्टिक इलाज/प्रक्रिया ___________________________________________________ के लिए सहमति देता/देती हूं।"
       : "I hereby give consent for the performance of Dental / Surgical / Anaesthesia / Diagnostic Treatment / procedure of teeth / oral cavity for ___________________________________________________ by Dr. ___________________________________________________, who is a visiting consultant / specialist at K. B. Dental Clinic.")+'</p>'
-    + '<p style="font-size:9.5pt;line-height:1.8;margin-bottom:8pt">'+(HI
+    + '<p style="font-size:11pt;line-height:1.8;margin-bottom:8pt">'+(HI
       ? "___________________________________ उम्र ___________________ मरीज़ से मेरा संबंध ___________________________________ है। मैं घोषित करता/करती हूं कि मैं 18 वर्ष से अधिक उम्र का/की हूं। मुझे बताया गया है कि इस इलाज/प्रक्रिया में कुछ अंतर्निहित जोखिम शामिल हैं। मैंने बिना किसी दबाव के, अपनी मर्ज़ी से और पूरे होश में यह सहमति दी है।"
       : "___________________________________ aged ___________________ is related to me as ___________________________________. I declare that I am more than 18 years of age. I have been informed that there are inherent risks involved in the treatment/procedure. I have signed this consent voluntarily out of my free will without any pressure and in my full senses.")+'</p>'
-    + '<p style="font-size:9.5pt;margin-bottom:4pt">'+(HI?"विज़िटिंग डॉक्टर का नाम":"Name of Visiting Doctor")+': ___________________________________</p>'
-    + '<p style="font-size:9.5pt;margin-bottom:4pt">'+(HI?"स्थान":"Place")+': _______________________ '+(HI?"दिनांक":"Date")+': _______________________</p>'
-    + '<p style="font-size:9.5pt;margin-bottom:4pt">'+(HI?"गवाह का नाम":"Witness Name")+': ___________________________________</p>'
+    + '<p style="font-size:11pt;margin-bottom:4pt">'+(HI?"विज़िटिंग डॉक्टर का नाम":"Name of Visiting Doctor")+': ___________________________________</p>'
+    + '<p style="font-size:11pt;margin-bottom:4pt">'+(HI?"स्थान":"Place")+': _______________________ '+(HI?"दिनांक":"Date")+': _______________________</p>'
+    + '<p style="font-size:11pt;margin-bottom:4pt">'+(HI?"गवाह का नाम":"Witness Name")+': ___________________________________</p>'
     + letterSigBlock([(HI?"मरीज़ / रिश्तेदार के हस्ताक्षर":"Patient / Relative Signature"),(HI?"विज़िटिंग डॉक्टर के हस्ताक्षर":"Visiting Doctor Signature"),(HI?"गवाह के हस्ताक्षर":"Witness Signature")]);
   return pW(body, "KBDC/FORMS/CONSENT-29");
 }
@@ -12695,20 +12700,20 @@ function buildDismissalLetterHTML(pat, lang) {
   var logo = window.LOGO_B64, dateStr = fmtDMY(new Date());
   var HI = lang==="HI";
   var body = pH(logo, "")
-    + '<div style="text-align:center;font-size:11pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:8pt">'+(HI?"पेशेंट डिसमिसल लेटर":"DISMISSAL LETTER")+'</div>'
+    + '<div style="text-align:center;font-size:12.5pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:8pt">'+(HI?"पेशेंट डिसमिसल लेटर":"DISMISSAL LETTER")+'</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;background:#f8f9fa;padding:6pt 8pt;border-radius:3pt;border:.5pt solid #ddd;margin-bottom:8pt">'
     + letterFL(HI?"मरीज़ का नाम":"Patient Name", pat&&pat.name) + letterFL("UHID", pat&&pat.uhid) + letterFL(HI?"दिनांक":"Date", dateStr) + '</div>'
-    + '<p style="font-size:9.5pt;margin-bottom:8pt">'+(HI?"प्रिय":"Dear")+' ________________________________________________,</p>'
-    + '<p style="font-size:9.5pt;line-height:1.6;margin-bottom:8pt">'+(HI
+    + '<p style="font-size:11pt;margin-bottom:8pt">'+(HI?"प्रिय":"Dear")+' ________________________________________________,</p>'
+    + '<p style="font-size:11pt;line-height:1.6;margin-bottom:8pt">'+(HI
       ? "आपने अपनी डेंटल केयर के लिए डॉ. ___________________________________ और हमारे क्लिनिक के.बी. डेंटल क्लिनिक को चुना, इसके लिए धन्यवाद। हालांकि, डॉक्टर-मरीज़ के भरोसे के रिश्ते में आई कमी के कारण, यह बेहतर होगा कि आपकी डेंटल ज़रूरतें कहीं और पूरी हों, इसलिए हमें आपकी देखभाल हमारे क्लिनिक में बंद करनी पड़ रही है।"
       : "I would like to thank you for selecting Dr. ___________________________________ and my practice K. B. Dental Clinic to provide your Dental Care. However, it has become apparent that, due to a breakdown in the doctor/patient trust relationship, it would be better if your dental needs are met elsewhere, and therefore we will have to discontinue your patient care in our office.")+'</p>'
-    + '<p style="font-size:9.5pt;line-height:1.6;margin-bottom:8pt">'+(HI
+    + '<p style="font-size:11pt;line-height:1.6;margin-bottom:8pt">'+(HI
       ? "इस बीच, अगर ज़रूरत हो तो हम अगले 30 दिनों तक आपको आपातकालीन इलाज देंगे।"
       : "In the meantime, we will provide you with emergency treatment for the next 30 days (if required by you).")+'</p>'
-    + '<p style="font-size:9.5pt;line-height:1.6;margin-bottom:10pt">'+(HI
+    + '<p style="font-size:11pt;line-height:1.6;margin-bottom:10pt">'+(HI
       ? "आपके अगले डॉक्टर के अनुरोध पर, हस्ताक्षरित अनुमति के साथ, आपके डेंटल रिकॉर्ड की एक मुफ्त प्रति दी जाएगी।"
       : "A free copy of each of your dental records will be provided to your next doctor upon request by that doctor with a signed release.")+'</p>'
-    + '<p style="font-size:9.5pt;line-height:1.6;margin-bottom:10pt">'+(HI?"आपकी सेवा करना हमारे लिए खुशी की बात थी, और हम आपकी शुभकामनाएं करते हैं।":"Again, it was a pleasure serving you and we wish you well.")+'</p>'
+    + '<p style="font-size:11pt;line-height:1.6;margin-bottom:10pt">'+(HI?"आपकी सेवा करना हमारे लिए खुशी की बात थी, और हम आपकी शुभकामनाएं करते हैं।":"Again, it was a pleasure serving you and we wish you well.")+'</p>'
     + letterSigBlock([(HI?"मरीज़ / अभिभावक के हस्ताक्षर":"Patient / Guardian Signature"),(HI?"डॉक्टर के हस्ताक्षर":"Dentist Signature")]);
   return pW(body, "KBDC/FORMS/CONSENT-30");
 }
@@ -12717,30 +12722,30 @@ function buildRefusalTreatmentHTML(pat, lang) {
   var logo = window.LOGO_B64, dateStr = fmtDMY(new Date());
   var HI = lang==="HI";
   var body = pH(logo, "")
-    + '<div style="text-align:center;font-size:11pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:8pt">'+(HI?"सुझाए गए इलाज से इनकार":"REFUSAL TO RECOMMENDED TREATMENT")+'</div>'
+    + '<div style="text-align:center;font-size:12.5pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:8pt">'+(HI?"सुझाए गए इलाज से इनकार":"REFUSAL TO RECOMMENDED TREATMENT")+'</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;background:#f8f9fa;padding:6pt 8pt;border-radius:3pt;border:.5pt solid #ddd;margin-bottom:8pt">'
     + letterFL(HI?"मरीज़ का नाम":"Patient Name", pat&&pat.name) + letterFL("UHID", pat&&pat.uhid) + letterFL(HI?"दिनांक":"Date", dateStr) + '</div>'
-    + '<p style="font-size:9.5pt;line-height:1.5;margin-bottom:8pt">'+(HI
+    + '<p style="font-size:11pt;line-height:1.5;margin-bottom:8pt">'+(HI
       ? "अपनी स्वास्थ्य सेवा से जुड़े निर्णय लेना आपका अधिकार और ज़िम्मेदारी दोनों है। आपके डॉक्टर आपको ज़रूरी जानकारी और सलाह दे सकते हैं, लेकिन स्वास्थ्य सेवा टीम के सदस्य के तौर पर, निर्णय प्रक्रिया में भाग लेना आपका काम है। यह फॉर्म आपके डॉक्टर द्वारा सुझाए गए इलाज को अस्वीकार करने की पुष्टि करता है।"
       : "You have the right and the obligation to make decisions regarding your healthcare. Your dentist can provide you with necessary information and advice, but as a member of the healthcare team, it is you who must participate in the decision-making process. This form will acknowledge your refusal of recommended treatment by your dentist.")+'</p>'
-    + '<p style="font-size:9.5pt;margin-bottom:4pt">'+(HI?"डॉ.":"Dr.")+' ___________________________________ '+(HI?"ने मुझे निम्नलिखित इलाज की सलाह दी है":"has recommended the following treatment to me")+':</p>'
-    + '<p style="font-size:9.5pt;margin-bottom:4pt">'+(HI?"सुझाया गया इलाज":"Recommended Treatments")+': _________________________________________________________________</p>'
-    + '<p style="font-size:9.5pt;margin-bottom:4pt">'+(HI?"सुझाए गए इलाज का उद्देश्य":"Purpose of Recommended Treatment")+': _________________________________________________________________</p>'
-    + '<p style="font-size:9.5pt;margin-bottom:4pt">'+(HI?"सुझाए गए इलाज के संभावित फायदे":"Possible Benefits of Recommended Treatment")+': _______________________________________________________________________________________</p>'
-    + '<p style="font-size:9.5pt;margin-bottom:8pt">'+(HI?"सुझाए गए इलाज का प्रोग्नोसिस (जोखिम व संभावित जटिलताएं)":"Prognosis of the Recommended Treatment (Risks & Possible Complications)")+': _______________________________________________________________________________________</p>'
-    + '<p style="font-size:9.5pt;line-height:1.5;margin-bottom:6pt">'+(HI
+    + '<p style="font-size:11pt;margin-bottom:4pt">'+(HI?"डॉ.":"Dr.")+' ___________________________________ '+(HI?"ने मुझे निम्नलिखित इलाज की सलाह दी है":"has recommended the following treatment to me")+':</p>'
+    + '<p style="font-size:11pt;margin-bottom:4pt">'+(HI?"सुझाया गया इलाज":"Recommended Treatments")+': _________________________________________________________________</p>'
+    + '<p style="font-size:11pt;margin-bottom:4pt">'+(HI?"सुझाए गए इलाज का उद्देश्य":"Purpose of Recommended Treatment")+': _________________________________________________________________</p>'
+    + '<p style="font-size:11pt;margin-bottom:4pt">'+(HI?"सुझाए गए इलाज के संभावित फायदे":"Possible Benefits of Recommended Treatment")+': _______________________________________________________________________________________</p>'
+    + '<p style="font-size:11pt;margin-bottom:8pt">'+(HI?"सुझाए गए इलाज का प्रोग्नोसिस (जोखिम व संभावित जटिलताएं)":"Prognosis of the Recommended Treatment (Risks & Possible Complications)")+': _______________________________________________________________________________________</p>'
+    + '<p style="font-size:11pt;line-height:1.5;margin-bottom:6pt">'+(HI
       ? "अगर मैं सुझाए गए इलाज को आगे नहीं बढ़ाता/बढ़ाती हूं, तो मुझे मेरे मुंह और समग्र स्वास्थ्य पर होने वाले जोखिम और जटिलताएं समझाई गई हैं। इनमें शामिल हो सकता है: अतिरिक्त मेडिकल या डेंटल इलाज/प्रक्रिया, दांत का गिरना, अस्पताल में भर्ती होना, या बहुत ही दुर्लभ मामलों में, स्थायी विकलांगता या मृत्यु।"
       : "The risks and complications to my oral and overall health have been explained to me if I do not proceed with the recommended treatment. Complications include: additional medical or dental treatment or procedures, tooth loss, hospitalization, or, very rarely, permanent disability or death.")+'</p>'
-    + '<p style="font-size:9.5pt;line-height:1.5;margin-bottom:6pt">'+(HI
+    + '<p style="font-size:11pt;line-height:1.5;margin-bottom:6pt">'+(HI
       ? "मुझे यह इनकार फॉर्म और जानकारी दी गई है ताकि मैं सुझाए गए इलाज को समझ सकूं और इलाज से इनकार करने के नतीजों को समझ सकूं। मुझे सुझावों और विकल्पों पर चर्चा करने और सवाल पूछने का मौका मिला है, और मेरे सभी सवालों के संतोषजनक जवाब मिले हैं।"
       : "I am provided with this refusal form and information so I may understand the recommended treatment and the consequences of refusing treatment. I have had an opportunity to discuss and ask questions concerning the recommendations and alternative treatment recommendations, and all my questions have been answered to my satisfaction.")+'</p>'
-    + '<p style="font-size:9.5pt;line-height:1.5;margin-bottom:6pt">'+(HI
+    + '<p style="font-size:11pt;line-height:1.5;margin-bottom:6pt">'+(HI
       ? "मुझे सुझाए गए इलाज की सिफारिशें, जोखिम व जटिलताओं की जानकारी मिल चुकी है। मुझे सिफारिशें और इलाज से इनकार से जुड़े जोखिम समझ आ गए हैं।"
       : "I have received the proposed treatment recommendations with the risks and complication information. I understand the recommendations and risks related to refusal of care.")+'</p>'
-    + '<p style="font-size:9.5pt;line-height:1.5;margin-bottom:6pt">'+(HI
+    + '<p style="font-size:11pt;line-height:1.5;margin-bottom:6pt">'+(HI
       ? "मैं पुष्टि करता/करती हूं कि मैंने सुझाए गए इलाज के साथ आगे बढ़ने के संभावित फायदे और इलाज से इनकार करने के संभावित जोखिम व नतीजों को पढ़ा और समझा है। सुझाए गए और वैकल्पिक दोनों तरह के डायग्नोसिस/इलाज पर विचार करने के बाद मैंने यह इलाज अस्वीकार करने का फैसला लिया है। मैं डॉ. ___________________________________ और उनके कर्मचारियों, साझेदारों, प्रतिनिधियों या संस्था को इससे होने वाली किसी भी चोट या नुकसान की ज़िम्मेदारी से मुक्त करता/करती हूं।"
       : "I certify that I have read and understand the possible advantages of proceeding with the recommended treatment and possible risks and consequences of refusing the treatment. I have chosen to refuse this treatment after considering both the recommended and alternative forms of diagnosis and/or treatment of my condition. I hereby release Dr. ___________________________________ and his or her employees, partners, agents, or corporation from any liability for any and all injuries and damages I may sustain as a result.")+'</p>'
-    + '<p style="font-size:9.5pt;line-height:1.5;margin-bottom:10pt">'+(HI
+    + '<p style="font-size:11pt;line-height:1.5;margin-bottom:10pt">'+(HI
       ? "मैं पुष्टि करता/करती हूं कि मैंने ऊपर दी गई जानकारी पढ़ ली है, पूरी तरह समझ ली है, और हस्ताक्षर करने से पहले सभी खाली जगहें भरी जा चुकी थीं।"
       : "I confirm that I have read and fully understand the above and that all the blank spaces were completed prior to my signing.")+'</p>'
     + letterSigBlock([(HI?"मरीज़ / अभिभावक के हस्ताक्षर":"Patient / Guardian Signature"),(HI?"डॉक्टर के हस्ताक्षर":"Dentist Signature")]);
@@ -12753,63 +12758,63 @@ function buildDTRHTML(pat, lang) {
   // is intentionally deferred (rather than rushed) given its dense clinical/legal
   // language; English is complete and print-ready.
   var logo = window.LOGO_B64, dateStr = fmtDMY(new Date());
-  var pIt = function(t){ return '<p style="font-size:9pt;line-height:1.5;margin-bottom:5pt">'+t+'</p>'; };
+  var pIt = function(t){ return '<p style="font-size:10.5pt;line-height:1.5;margin-bottom:5pt">'+t+'</p>'; };
   var page1 = pH(logo, "")
-    + '<div style="text-align:center;font-size:11pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:8pt">DISCLUSION TIME REDUCTION THERAPY ("DTR")</div>'
+    + '<div style="text-align:center;font-size:12.5pt;font-weight:800;color:#0078B4;text-transform:uppercase;margin-bottom:8pt">DISCLUSION TIME REDUCTION THERAPY ("DTR")</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;background:#f8f9fa;padding:6pt 8pt;border-radius:3pt;border:.5pt solid #ddd;margin-bottom:8pt">'
     + letterFL("Patient Name", pat&&pat.name) + letterFL("UHID", pat&&pat.uhid) + letterFL("Date", dateStr) + '</div>'
-    + '<div style="font-weight:700;font-size:10pt;margin-bottom:2pt">DIAGNOSIS</div>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin-bottom:2pt">DIAGNOSIS</div>'
     + pIt("We believe you have Occluso-muscle Dystonia (\"OMD\"), a muscular temporomandibular joint (\"TMJ\") problem, which may be at least partially responsible for your TMJ problem, based on clinical examination, history, and metrics-centred diagnostic protocol (3D imaging/CBCT, TMJ Joint Vibration Analysis/JVA, electromyography/EMG, digital bite analysis, and Jaw Tracking technologies).")
     + pIt("You may additionally have other TMJ-complex issues directly related to your symptoms, including damage of cartilage, bone, ligaments, or other structural/neuro-anatomic components, which can include tumors, cervical issues, and other pathologies.")
     + pIt("If such issues exist in addition to muscular spasm due to an imbalanced bite, DTR may not definitively address your TMJ problems, and referral to other doctors/surgeons for additional treatment may become necessary over time.")
     + pIt("It may become necessary to image the TMJs with MRI to visualize soft tissue, bone vitality, and/or abnormal fluid content — this would be taken off-site at a medical imaging centre with additional time and expense, or the dentist may refer you to a specialist in TMJ imaging interpretation.")
-    + '<div style="font-weight:700;font-size:10pt;margin:6pt 0 2pt">PROPOSED TREATMENT</div>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin:6pt 0 2pt">PROPOSED TREATMENT</div>'
     + pIt("The treatment aims to balance the way your teeth fit together using precision digital bite-analysis technology so that both sides hit simultaneously and evenly, both when biting together and when chewing throughout the lower jaw's range of motion.")
     + pIt("This is done by biting onto a computer sensor, marking the teeth with a special bite ribbon, and selectively reshaping by removing tooth structure or prosthetics from some teeth and/or adding a white bonding material to some teeth. EMG technology may also track muscular response to bite changes during therapy.")
-    + '<div style="font-weight:700;font-size:10pt;margin:6pt 0 2pt">BENEFITS OF PROPOSED PROCEDURE / TREATMENT</div>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin:6pt 0 2pt">BENEFITS OF PROPOSED PROCEDURE / TREATMENT</div>'
     + pIt("By balancing the bite using digital metrics, the jaw muscles should be less prone to muscular spasms, decreasing pain relating to chewing muscles as they stop excessive muscular contractions.")
     + pIt("DTR is designed to reduce muscular spasm related to an imbalanced bite in a patient with stable and adapted TMJs, though other issues such as fibrotic muscles or damaged TMJ cartilage may impair healing.")
     + pIt("The bite may feel more natural instantly, or this process may take up to several weeks; if no relief is felt within several weeks, the TMJ problem may extend beyond an imbalanced-bite issue due solely to muscular spasm.")
     + pIt("Relaxed muscles may cause additional secondary benefits including: protection of teeth against sensitivity/breakage; relaxation of facial muscles; decreased propensity for clenching/grinding at night; reduced frequency/intensity of bite-related headaches; increased chewing-muscle efficiency; and potential reduction of pain from accessory muscles around the temples, cheeks, neck and head.")
     + '</div>';
   var page2 = '<div class="pb">' + pH(logo, "")
-    + '<div style="font-weight:700;font-size:10pt;margin-bottom:2pt">RISKS & SIDE EFFECTS</div>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin-bottom:2pt">RISKS & SIDE EFFECTS</div>'
     + pIt("The bite may not be perfectly balanced, especially if TMJs continue to break down due to progressive orthopaedic instability, in which case: relief may not be experienced; heightened cold/air sensitivity may occur; repeated bite adjustment interventions may be required; or symptoms could worsen if new signs/symptoms arise.")
     + pIt("An altered bite may cause previously fabricated plastic/acrylic bite splints to no longer fit. The appearance of some teeth can change. Bonded white fillings used for DTR additive procedures may fail over time. Previously compromised teeth may break during subtractive changes. Prior crowns/bridges may show unsightly under-structure or perforation from adjustment.")
     + pIt("Existing orthopedic issues may worsen and, over time, even the shape of the facial skeleton and face may change slightly due to changes in jaw-skull-teeth connection. There may be a learning curve involved in using the new bite. Future dental, splint, surgical, or orthodontic procedures could introduce new errors into the bite, leading to recurrence of muscular TMJ symptoms.")
     + pIt("Other systemic conditions not yet diagnosed (osteoarthritis, rheumatoid arthritis, Lyme's disease, CRPS, fibromyalgia) may complicate the masticatory system as additional causal conditions appear. If DTR does not definitively address TMJ issues, surgical intervention could ultimately be required. DTR may render previously fabricated orthodontic retainers obsolete, necessitating new retainers. The same risks may apply following any dental treatment that changes the bite, including TMJ surgery.")
-    + '<div style="font-weight:700;font-size:10pt;margin:6pt 0 2pt">ALTERNATIVE TREATMENTS</div>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin:6pt 0 2pt">ALTERNATIVE TREATMENTS</div>'
     + pIt("<strong>Equilibration</strong> — a bite adjustment without computerized force/timing guidance, relying on subjective interpretation of tooth contacts via ink ribbon markings; DTR is instead based on objective, reproducible metrics with objective endpoints, backed by evidence-based research over the last 30 years.")
     + pIt("<strong>Bite splints</strong> — do not involve permanent or immediate changes to how teeth contact; they reduce the body's natural capacity to individually adapt teeth to TMJ hinges, though they may reduce the propensity to break teeth.")
     + pIt("<strong>Orthodontics</strong> — teeth may occasionally be moved into a different arrangement to achieve similar results, with an objective bite-contact measurement recommended at the end of treatment to reduce relapse risk.")
     + pIt("<strong>Surgery</strong> — depending on the situation, correction of diseased TMJ structural anatomy (cartilage or bone) may be required to allow physiologic jaw movement.")
     + pIt("<strong>Do nothing</strong> — a valid but non-corrective option.")
-    + '<div style="font-weight:700;font-size:10pt;margin:6pt 0 2pt">RISK OF NOT PERFORMING TREATMENT</div>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin:6pt 0 2pt">RISK OF NOT PERFORMING TREATMENT</div>'
     + pIt("If no treatment is performed, the bite will likely remain out of balance, which may worsen the ability to swallow or chew, including but not limited to: tooth breakage; inability to chew efficiently; tooth hypersensitivity to cold or air; muscle pain; bite-related headaches; loss of dental implants or other existing dental work; and regions of abfraction formation or bone recession.")
-    + '<div style="font-weight:700;font-size:10pt;margin:6pt 0 2pt">COST</div>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin:6pt 0 2pt">COST</div>'
     + pIt("The estimated cost associated for the above procedure/treatment as advised shall be approximately ____________ which may/may not have an additional cost applicable for investigations, other treatments, or side effects management. The cost quoted is towards the above said treatment only, and any additional contingencies shall have to be paid extra.")
     + '<div style="background:#fafafa;border:.5pt solid #ccc;border-radius:3pt;padding:6pt 8pt;margin-bottom:6pt">'
-    + '<div style="font-weight:800;font-size:9pt;margin-bottom:2pt">DISCLAIMER</div>'
-    + '<p style="font-size:8.5pt;line-height:1.45">Every reasonable effort will be made to ensure that the condition is diagnosed and treated properly. It is not possible to guarantee perfect results and no complete or partial refunds are given. It is possible that DTR therapy will not address the TMJ problems, that the case could worsen by not completing treatment, and that return visits may be necessary over time, especially if the TMJs are not stable and have not adapted from an orthopaedic standpoint. Return visits to repeat DTR therapy may become necessary if subsequent dental work is performed elsewhere without precisely "dialling in" forces and timing via precise digital occlusal/bite metrics.</p>'
+    + '<div style="font-weight:800;font-size:10.5pt;margin-bottom:2pt">DISCLAIMER</div>'
+    + '<p style="font-size:10pt;line-height:1.45">Every reasonable effort will be made to ensure that the condition is diagnosed and treated properly. It is not possible to guarantee perfect results and no complete or partial refunds are given. It is possible that DTR therapy will not address the TMJ problems, that the case could worsen by not completing treatment, and that return visits may be necessary over time, especially if the TMJs are not stable and have not adapted from an orthopaedic standpoint. Return visits to repeat DTR therapy may become necessary if subsequent dental work is performed elsewhere without precisely "dialling in" forces and timing via precise digital occlusal/bite metrics.</p>'
     + '</div>'
-    + '<div style="font-weight:700;font-size:10pt;margin-bottom:4pt">PATIENT\'S ENDORSEMENT</div>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin-bottom:4pt">PATIENT\'S ENDORSEMENT</div>'
     + pIt("By signing below, I acknowledge that I have received adequate information about the proposed treatment, that I understand this information, and that all of my questions have been answered fully.")
     + '<div style="margin:4pt 0 8pt">'
-    + '<div style="font-size:9.5pt;margin-bottom:3pt">☐ I consent to undergo Disclusion Time Reduction Therapy (DTR) and I have no unanswered questions about the treatment.</div>'
-    + '<div style="font-size:9pt;margin-left:14pt;margin-bottom:2pt">○ I use orthodontic retainers and understand that new appliances could be needed following DTR therapy.</div>'
-    + '<div style="font-size:9pt;margin-left:14pt;margin-bottom:2pt">○ I do not use orthodontic retainers.</div>'
-    + '<div style="font-size:9pt;margin-left:14pt;margin-bottom:2pt">○ I understand that crowns, fixed bridges, or other prior dental treatment may need replacement following DTR therapy.</div>'
-    + '<div style="font-size:9pt;margin-left:14pt;margin-bottom:2pt">○ I understand that any subsequent dental needs following DTR treatment are my own financial responsibility.</div>'
-    + '<div style="font-size:9pt;margin-left:14pt;margin-bottom:2pt">○ I understand that dentistry performed after DTR should be dialled in using DTR concepts, otherwise symptoms may return, and there will be a charge to correct dentistry done elsewhere.</div>'
-    + '<div style="font-size:9.5pt;margin-top:4pt">☐ I refuse to undergo DTR.</div>'
+    + '<div style="font-size:11pt;margin-bottom:3pt">☐ I consent to undergo Disclusion Time Reduction Therapy (DTR) and I have no unanswered questions about the treatment.</div>'
+    + '<div style="font-size:10.5pt;margin-left:14pt;margin-bottom:2pt">○ I use orthodontic retainers and understand that new appliances could be needed following DTR therapy.</div>'
+    + '<div style="font-size:10.5pt;margin-left:14pt;margin-bottom:2pt">○ I do not use orthodontic retainers.</div>'
+    + '<div style="font-size:10.5pt;margin-left:14pt;margin-bottom:2pt">○ I understand that crowns, fixed bridges, or other prior dental treatment may need replacement following DTR therapy.</div>'
+    + '<div style="font-size:10.5pt;margin-left:14pt;margin-bottom:2pt">○ I understand that any subsequent dental needs following DTR treatment are my own financial responsibility.</div>'
+    + '<div style="font-size:10.5pt;margin-left:14pt;margin-bottom:2pt">○ I understand that dentistry performed after DTR should be dialled in using DTR concepts, otherwise symptoms may return, and there will be a charge to correct dentistry done elsewhere.</div>'
+    + '<div style="font-size:11pt;margin-top:4pt">☐ I refuse to undergo DTR.</div>'
     + '</div>'
-    + '<p style="font-size:9pt;line-height:1.5;margin-bottom:8pt">By signing below, I certify that I have received and reviewed this document and that my consent (or refusal thereof) is accurately indicated above.</p>'
-    + '<div style="font-weight:700;font-size:10pt;margin-bottom:2pt">PATIENT\'S UNDERTAKING:</div>'
+    + '<p style="font-size:10.5pt;line-height:1.5;margin-bottom:8pt">By signing below, I certify that I have received and reviewed this document and that my consent (or refusal thereof) is accurately indicated above.</p>'
+    + '<div style="font-weight:700;font-size:11.5pt;margin-bottom:2pt">PATIENT\'S UNDERTAKING:</div>'
     + pIt("The fees quoted for the above proposed treatment is __________________ and I understand that I will have to pay 70% of the above said in advance, remaining 30% on subsequent visits.")
     + letterSigBlock(["Patient / Guardian Signature","Dentist Signature"])
     + '</div>';
   var page3 = '<div class="pb">' + pH(logo, "")
-    + '<div style="text-align:center;font-weight:700;font-size:10pt;margin-bottom:6pt">Photography Release</div>'
+    + '<div style="text-align:center;font-weight:700;font-size:11.5pt;margin-bottom:6pt">Photography Release</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4pt 8pt;background:#f8f9fa;padding:6pt 8pt;border-radius:3pt;border:.5pt solid #ddd;margin-bottom:8pt">'
     + letterFL("Patient Name", pat&&pat.name) + letterFL("Date", dateStr) + '</div>'
     + pIt("I hereby consent and authorize the treating doctor and/or assistants to take photographs and videos of my face, jaws, mouth, and teeth, including digital photographs, video, scans, or any other image as may be necessary.")
@@ -13250,7 +13255,7 @@ function ConsentForms(props) {
 // ════════════════════════════════════════════════════════
 
 // ── Print CSS for both documents ─────────────────────────
-const TP_PCSS = `@page{size:A4 portrait;margin:12mm 13mm 10mm 13mm}*{box-sizing:border-box;margin:0;padding:0}html,body{font-family:'Segoe UI',Arial,sans-serif;font-size:10.5pt;color:#111;background:#fff}.hdr{display:flex;align-items:center;gap:10pt;border-bottom:1.5pt solid #0078B4;padding-bottom:7pt;margin-bottom:8pt}.logo{width:52pt;height:52pt;object-fit:contain;mix-blend-mode:multiply}.hdr-mid{flex:1;text-align:center}.cares{font-size:14pt;font-weight:800;color:#C0392B;letter-spacing:0.12em;text-decoration:underline;margin-bottom:1pt}.tagline{font-size:8pt;font-weight:700;color:#0078B4;margin-bottom:1pt}.sub{font-size:8pt;color:#2e2e2e;margin-bottom:1pt}.dtitle{text-align:center;font-size:13pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8pt}.patrow{display:grid;grid-template-columns:1fr auto auto;gap:6pt 14pt;background:#f0f6fb;border:0.5pt solid #0090CC;border-radius:3pt;padding:6pt 10pt;margin-bottom:8pt;align-items:center}.pname{font-size:12pt;font-weight:800}.puhid{font-size:10pt;font-weight:700;color:#0078B4}.pdate{font-size:9pt;color:#2e2e2e}table{width:100%;border-collapse:collapse;margin-bottom:0}th{background:#0078B4;color:#fff;padding:5pt 7pt;font-size:8.5pt;font-weight:700;text-align:left}td{padding:5pt 7pt;border-bottom:0.5pt solid #eee;font-size:10pt;vertical-align:top}tr:nth-child(even) td{background:#f8fbfe}.sno{text-align:center;font-weight:700;color:#0078B4;width:28pt}.dcol{width:68pt;font-weight:600;color:#333;white-space:nowrap}.sigrow{display:grid;grid-template-columns:1fr 1fr;gap:14pt;margin-top:14pt;padding-top:8pt;border-top:0.5pt solid #ccc}.sigbox{border:0.5pt solid #bbb;border-radius:3pt;height:42pt;background:#fafafa;margin-bottom:3pt}.foot{margin-top:8pt;border-top:0.5pt solid #ddd;padding-top:4pt;display:flex;justify-content:space-between;font-size:7.5pt;color:#444444}.amt{text-align:right;font-weight:700;color:#0078B4}.totrow td{font-weight:800;font-size:11pt;background:#f0f6fb!important;border-top:1.5pt solid #0078B4}.docname{font-size:9pt;color:#2e2e2e;margin-top:2pt}`;
+const TP_PCSS = `@page{size:A4 portrait;margin:10mm 12mm 8mm 12mm}*{box-sizing:border-box;margin:0;padding:0}html,body{font-family:'Segoe UI',Arial,sans-serif;font-size:12pt;color:#111;background:#fff}.hdr{display:flex;align-items:center;gap:10pt;border-bottom:1.5pt solid #0078B4;padding-bottom:7pt;margin-bottom:8pt}.logo{width:52pt;height:52pt;object-fit:contain;mix-blend-mode:multiply}.hdr-mid{flex:1;text-align:center}.cares{font-size:15pt;font-weight:800;color:#C0392B;letter-spacing:0.12em;text-decoration:underline;margin-bottom:1pt}.tagline{font-size:9.5pt;font-weight:700;color:#0078B4;margin-bottom:1pt}.sub{font-size:9.5pt;color:#2e2e2e;margin-bottom:1pt}.dtitle{text-align:center;font-size:14pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8pt}.patrow{display:grid;grid-template-columns:1fr auto auto;gap:6pt 14pt;background:#f0f6fb;border:0.5pt solid #0090CC;border-radius:3pt;padding:6pt 10pt;margin-bottom:8pt;align-items:center}.pname{font-size:13.5pt;font-weight:800}.puhid{font-size:11.5pt;font-weight:700;color:#0078B4}.pdate{font-size:10.5pt;color:#2e2e2e}table{width:100%;border-collapse:collapse;margin-bottom:0}th{background:#0078B4;color:#fff;padding:5pt 7pt;font-size:10pt;font-weight:700;text-align:left}td{padding:5pt 7pt;border-bottom:0.5pt solid #eee;font-size:11.5pt;vertical-align:top}tr:nth-child(even) td{background:#f8fbfe}.sno{text-align:center;font-weight:700;color:#0078B4;width:28pt}.dcol{width:68pt;font-weight:600;color:#333;white-space:nowrap}.sigrow{display:grid;grid-template-columns:1fr 1fr;gap:14pt;margin-top:14pt;padding-top:8pt;border-top:0.5pt solid #ccc}.sigbox{border:0.5pt solid #bbb;border-radius:3pt;height:32pt;background:#fafafa;margin-bottom:3pt}.foot{margin-top:8pt;border-top:0.5pt solid #ddd;padding-top:4pt;display:flex;justify-content:space-between;font-size:9.5pt;color:#444444}.amt{text-align:right;font-weight:700;color:#0078B4}.totrow td{font-weight:800;font-size:12.5pt;background:#f0f6fb!important;border-top:1.5pt solid #0078B4}.docname{font-size:10.5pt;color:#2e2e2e;margin-top:2pt}`;
 
 function buildProcedureDoneHTML(pat, entries) {
   const logo = window.LOGO_B64;
@@ -13260,7 +13265,7 @@ function buildProcedureDoneHTML(pat, entries) {
     return `<tr>
       <td class="sno">${i+1}</td>
       <td class="dcol">${d}</td>
-      <td style="font-size:10pt;line-height:1.5">${e.workDone || e.clinicalNotes || "—"}</td>
+      <td style="font-size:11.5pt;line-height:1.5">${e.workDone || e.clinicalNotes || "—"}</td>
       <td style="width:90pt">
         <div style="border:.5pt solid #bbb;border-radius:2pt;height:32pt;background:#fafafa;margin-bottom:2pt">${e.sigDataUrl ? `<img src="${e.sigDataUrl}" style="height:30pt;width:100%;object-fit:contain"/>` : ""}</div>
         <div class="docname">${e.doctor || "—"}</div>
@@ -13395,9 +13400,9 @@ function buildProgressNotesHTML(pat, entries) {
       <td class="sno">${i+1}</td>
       <td class="dcol">${d}</td>
       <td style="width:52pt;text-align:center;font-weight:700">${e.toothNo || "—"}</td>
-      <td style="width:110pt;font-size:9.5pt">${e.treatmentRendered || "—"}</td>
-      <td style="font-size:9.5pt;line-height:1.45">${e.clinicalNotes || "—"}</td>
-      <td style="width:62pt;font-size:9pt">${e.paymentMode || "—"}</td>
+      <td style="width:110pt;font-size:11pt">${e.treatmentRendered || "—"}</td>
+      <td style="font-size:11pt;line-height:1.45">${e.clinicalNotes || "—"}</td>
+      <td style="width:62pt;font-size:10.5pt">${e.paymentMode || "—"}</td>
       <td class="amt" style="width:60pt">${amt ? "₹"+amt.toLocaleString("en-IN") : "—"}</td>
     </tr>`;
   }).join("");
@@ -13957,7 +13962,7 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
 // or two dated columns printed across a wide page and left most of it blank.
 const CL_PAGE_LANDSCAPE = "@page{size:A4 landscape;margin:10mm 12mm}";
 const CL_PAGE_PORTRAIT  = "@page{size:A4 portrait;margin:12mm 12mm}";
-const CL_PCSS = `@page{size:A4 landscape;margin:10mm 12mm}*{box-sizing:border-box;margin:0;padding:0}html,body{font-family:'Segoe UI',Arial,sans-serif;font-size:12pt;color:#111;background:#fff}.hdr{display:flex;align-items:center;gap:10pt;border-bottom:2pt solid #0078B4;padding-bottom:8pt;margin-bottom:8pt}.logo{width:50pt;height:50pt;object-fit:contain;mix-blend-mode:multiply}.hdr-mid{flex:1;text-align:center}.cares{font-size:14pt;font-weight:800;color:#C0392B;letter-spacing:0.12em;text-decoration:underline}.tagline{font-size:8.5pt;font-weight:700;color:#0078B4}.sub{font-size:8.5pt;color:#2e2e2e}.dtitle{text-align:center;font-size:13pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:7pt}.patrow{display:flex;gap:20pt;background:#f0f6fb;border:0.5pt solid #0090CC;border-radius:4pt;padding:6pt 14pt;margin-bottom:8pt;align-items:center}.pname{font-size:13pt;font-weight:800}.puhid{font-size:10.5pt;font-weight:700;color:#0078B4}.pdate{font-size:9.5pt;color:#2e2e2e}table{width:100%;table-layout:fixed;border-collapse:collapse}th{background:#0078B4;color:#fff;padding:8pt 9pt;font-size:11.5pt;font-weight:700;text-align:left;vertical-align:middle;border:0.5pt solid #005f99}td{padding:8pt 9pt;border:0.5pt solid #ddd;font-size:12pt;vertical-align:top;word-wrap:break-word}.row-lbl{background:#f0f6fb;font-weight:700;color:#0078B4;font-size:11.5pt;width:165pt}.sigbox{border:0.5pt solid #bbb;height:44pt;background:#fafafa}.foot{margin-top:7pt;border-top:0.5pt solid #ddd;padding-top:4pt;display:flex;justify-content:space-between;font-size:9.5pt;color:#444444}.pg{margin-bottom:10pt}.pg-brk{page-break-after:always}`;
+const CL_PCSS = `@page{size:A4 landscape;margin:10mm 12mm}*{box-sizing:border-box;margin:0;padding:0}html,body{font-family:'Segoe UI',Arial,sans-serif;font-size:12pt;color:#111;background:#fff}.hdr{display:flex;align-items:center;gap:10pt;border-bottom:2pt solid #0078B4;padding-bottom:8pt;margin-bottom:8pt}.logo{width:50pt;height:50pt;object-fit:contain;mix-blend-mode:multiply}.hdr-mid{flex:1;text-align:center}.cares{font-size:14pt;font-weight:800;color:#C0392B;letter-spacing:0.12em;text-decoration:underline}.tagline{font-size:9.5pt;font-weight:700;color:#0078B4}.sub{font-size:9.5pt;color:#2e2e2e}.dtitle{text-align:center;font-size:13pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:7pt}.patrow{display:flex;gap:20pt;background:#f0f6fb;border:0.5pt solid #0090CC;border-radius:4pt;padding:6pt 14pt;margin-bottom:8pt;align-items:center}.pname{font-size:13pt;font-weight:800}.puhid{font-size:10.5pt;font-weight:700;color:#0078B4}.pdate{font-size:9.5pt;color:#2e2e2e}table{width:100%;table-layout:fixed;border-collapse:collapse}th{background:#0078B4;color:#fff;padding:8pt 9pt;font-size:11.5pt;font-weight:700;text-align:left;vertical-align:middle;border:0.5pt solid #005f99}td{padding:8pt 9pt;border:0.5pt solid #ddd;font-size:12pt;vertical-align:top;word-wrap:break-word}.row-lbl{background:#f0f6fb;font-weight:700;color:#0078B4;font-size:11.5pt;width:165pt}.sigbox{border:0.5pt solid #bbb;height:44pt;background:#fafafa}.foot{margin-top:7pt;border-top:0.5pt solid #ddd;padding-top:4pt;display:flex;justify-content:space-between;font-size:9.5pt;color:#444444}.pg{margin-bottom:10pt}.pg-brk{page-break-after:always}`;
 
 // ── Shared print header ──────────────────────────────────
 function clHdr(logo,title,pat){
@@ -14006,7 +14011,7 @@ function chunkTeeth(teeth) {
 // ── Shared: render section-grouped rows (bold section header + optional date row + field rows) ──
 function renderSectionedRows(sections, merged, numCols) {
   return sections.map(sec => {
-    const headerRow = `<tr><td colspan="${numCols+1}" style="background:#0078B4;color:#fff;font-weight:800;padding:7pt 9pt;font-size:11.5pt;text-transform:uppercase;letter-spacing:.04em;">${sec.title}</td></tr>`;
+    const headerRow = `<tr><td colspan="${numCols+1}" style="background:#0078B4;color:#fff;font-weight:800;padding:7pt 9pt;font-size:13pt;text-transform:uppercase;letter-spacing:.04em;">${sec.title}</td></tr>`;
     const dateRow = sec.dateKey ? `<tr><td class="row-lbl">Date</td>${merged.map(c=>`<td>${c[sec.dateKey]||""}</td>`).join("")}</tr>` : "";
     const fieldRows = sec.fields.map(f=>`<tr><td class="row-lbl">${f.l}</td>${merged.map(c=>`<td>${c[f.k]||""}</td>`).join("")}</tr>`).join("");
     return headerRow + dateRow + fieldRows;
@@ -14028,7 +14033,7 @@ function mergeVisits(cols) {
   });
 }
 function sigRowHTML(merged, sigSrc) {
-  return `<tr><td class="row-lbl">SIGNATURE OF THE DOCTOR</td>${merged.map(c=>`<td><div class="sigbox">${sigSrc?`<img src="${sigSrc}" style="height:34pt;width:100%;object-fit:contain"/>`:"" }</div><div style="font-size:7pt;color:#2e2e2e">${c.doctor||""}</div></td>`).join("")}</tr>`;
+  return `<tr><td class="row-lbl">SIGNATURE OF THE DOCTOR</td>${merged.map(c=>`<td><div class="sigbox">${sigSrc?`<img src="${sigSrc}" style="height:34pt;width:100%;object-fit:contain"/>`:"" }</div><div style="font-size:9.5pt;color:#2e2e2e">${c.doctor||""}</div></td>`).join("")}</tr>`;
 }
 // Builds one <div> per group of 4 teeth (page-break between groups) and wraps in clDoc.
 function buildSheetPages(pat, sections, teeth, sigSrc, title, docRef, colHeaderFn) {
@@ -14046,7 +14051,7 @@ function buildSheetPages(pat, sections, teeth, sigSrc, title, docRef, colHeaderF
       const h = colHeaderFn(c);
       const d = c.date ? fmtDMY(c.date) : "";
       if (!d) return h;
-      const stamp = `<br/><span style="font-size:9pt;font-weight:700">${d}</span>`;
+      const stamp = `<br/><span style="font-size:10.5pt;font-weight:700">${d}</span>`;
       return h.replace(/<\/th>\s*$/, stamp + "</th>");
     }).join("");
     const trs = renderSectionedRows(sections, merged, cols.length);
@@ -14062,7 +14067,7 @@ function buildSheetPages(pat, sections, teeth, sigSrc, title, docRef, colHeaderF
 // ── RCT Print ────────────────────────────────────────────
 function buildRCTSheetHTML(pat, teeth, sigSrc) {
   return buildSheetPages(pat, CLINICAL_SECTIONS.rct, teeth, sigSrc, "ROOT CANAL WORK DONE SHEET", "KBDC/FORMS/RCT-WD-01",
-    c=>`<th style="text-align:center;min-width:70pt">Tooth ${c.toothNo||"___"}${c.course&&c.course>1?`<br/><span style="font-size:8.5pt;font-weight:400">Course ${c.course}</span>`:""}</th>`);
+    c=>`<th style="text-align:center;min-width:70pt">Tooth ${c.toothNo||"___"}${c.course&&c.course>1?`<br/><span style="font-size:10pt;font-weight:400">Course ${c.course}</span>`:""}</th>`);
 }
 
 // ── Implant Surgery Print ────────────────────────────────
@@ -15089,8 +15094,8 @@ function DailyRegister({ globalPat, setGlobalPat, setPage }) {
     // Walk-in/Consult (manually entered) duplicated what Check-in/Check-out
     // already track automatically, so TAT is now the clinic-visit duration
     // those two actually give — not the old walk-in-to-consult gap.
-    const rows=filtered.map((e,i)=>{const at=apptTimes[apptKey(e.uhid,e.date)]||{};const waitTat=tatBetween(at.checkin,at.engaged);const tat=tatBetween(at.engaged,at.checkout);return `<tr><td style="text-align:center">${i+1}</td><td style="font-weight:700;color:#0078B4">${e.uhid||"—"}</td><td>${e.patientName||"—"}</td><td style="text-align:center">${e.age||"—"}</td><td>${e.phoneNo||"—"}</td><td>${e.date?fmtDMY(e.date+"T00:00:00"):""}</td><td>${e.procedureDone||"—"}</td><td style="text-align:center">${e.toothNo||"—"}</td><td style="font-size:8.5pt;line-height:1.4">${e.workDone||"—"}</td><td>${e.operatingDoctor||"—"}</td><td style="text-align:center">${at.checkin||"—"}</td><td style="text-align:center">${at.engaged||"—"}</td><td style="text-align:center">${at.checkout||"—"}</td><td style="text-align:center;font-weight:700;color:#B45309">${waitTat||"—"}</td><td style="text-align:center;font-weight:700;color:#059669">${tat||"—"}</td></tr>`}).join("");
-    const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>@page{size:A4 landscape;margin:8mm 10mm}*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Arial,sans-serif;font-size:9pt}table{width:100%;border-collapse:collapse}th{background:#0078B4;color:#fff;padding:4pt 5pt;font-size:8pt;font-weight:700;border:0.5pt solid #005f99}td{padding:4pt 5pt;border:0.5pt solid #ddd;vertical-align:top}tr:nth-child(even)td{background:#f8fbfe}.hdr{border-bottom:1.5pt solid #0078B4;padding-bottom:5pt;margin-bottom:6pt;text-align:center}.cares{font-size:12pt;font-weight:800;color:#C0392B;letter-spacing:.1em}.tagline{font-size:7pt;font-weight:700;color:#0078B4}.sub{font-size:7pt;color:#2e2e2e}.dtitle{font-size:11pt;font-weight:800;color:#0078B4;margin:5pt 0 4pt;text-transform:uppercase}</style></head><body><div class="hdr"><div class="cares">C. A. R. E. S.</div><div class="tagline">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div><div class="sub">BLOCK R-74B, DILSHAD GARDEN, DELHI-110095 | 7866939786, 9319990912</div></div><div class="dtitle">Daily Register</div><div style="font-size:9pt;margin-bottom:5pt;color:#2e2e2e">Date Range: ${fmtDMY(fromDate)} to ${fmtDMY(toDate)} &nbsp;|&nbsp; ${filtered.length} entries &nbsp;|&nbsp; Printed: ${dateStr}</div><table><thead><tr><th style="width:20pt">S.No.</th><th style="width:46pt">UHID</th><th style="width:80pt">Patient Name</th><th style="width:24pt">Age</th><th style="width:56pt">Phone</th><th style="width:50pt">Date</th><th style="width:88pt">Procedure Done</th><th style="width:34pt">Tooth</th><th>Work Done</th><th style="width:78pt">Doctor</th><th style="width:40pt">Check-in</th><th style="width:40pt">Engaged</th><th style="width:42pt">Check-out</th><th style="width:34pt">Wait TAT</th><th style="width:34pt">Total TAT</th></tr></thead><tbody>${rows}</tbody></table><div style="margin-top:6pt;border-top:0.5pt solid #ddd;padding-top:3pt;display:flex;justify-content:space-between;font-size:7pt;color:#444444"><span>KBDC/FORMS/DR-01</span><span>K.B. Dental Clinic · kbdentaldelhi@gmail.com</span></div></body></html>`;
+    const rows=filtered.map((e,i)=>{const at=apptTimes[apptKey(e.uhid,e.date)]||{};const waitTat=tatBetween(at.checkin,at.engaged);const tat=tatBetween(at.engaged,at.checkout);return `<tr><td style="text-align:center">${i+1}</td><td style="font-weight:700;color:#0078B4">${e.uhid||"—"}</td><td>${e.patientName||"—"}</td><td style="text-align:center">${e.age||"—"}</td><td>${e.phoneNo||"—"}</td><td>${e.date?fmtDMY(e.date+"T00:00:00"):""}</td><td>${e.procedureDone||"—"}</td><td style="text-align:center">${e.toothNo||"—"}</td><td style="font-size:10pt;line-height:1.4">${e.workDone||"—"}</td><td>${e.operatingDoctor||"—"}</td><td style="text-align:center">${at.checkin||"—"}</td><td style="text-align:center">${at.engaged||"—"}</td><td style="text-align:center">${at.checkout||"—"}</td><td style="text-align:center;font-weight:700;color:#B45309">${waitTat||"—"}</td><td style="text-align:center;font-weight:700;color:#059669">${tat||"—"}</td></tr>`}).join("");
+    const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>@page{size:A4 landscape;margin:8mm 10mm}*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Arial,sans-serif;font-size:10.5pt}table{width:100%;border-collapse:collapse}th{background:#0078B4;color:#fff;padding:4pt 5pt;font-size:9.5pt;font-weight:700;border:0.5pt solid #005f99}td{padding:4pt 5pt;border:0.5pt solid #ddd;vertical-align:top}tr:nth-child(even)td{background:#f8fbfe}.hdr{border-bottom:1.5pt solid #0078B4;padding-bottom:5pt;margin-bottom:6pt;text-align:center}.cares{font-size:13.5pt;font-weight:800;color:#C0392B;letter-spacing:.1em}.tagline{font-size:9.5pt;font-weight:700;color:#0078B4}.sub{font-size:9.5pt;color:#2e2e2e}.dtitle{font-size:12.5pt;font-weight:800;color:#0078B4;margin:5pt 0 4pt;text-transform:uppercase}</style></head><body><div class="hdr"><div class="cares">C. A. R. E. S.</div><div class="tagline">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div><div class="sub">BLOCK R-74B, DILSHAD GARDEN, DELHI-110095 | 7866939786, 9319990912</div></div><div class="dtitle">Daily Register</div><div style="font-size:10.5pt;margin-bottom:5pt;color:#2e2e2e">Date Range: ${fmtDMY(fromDate)} to ${fmtDMY(toDate)} &nbsp;|&nbsp; ${filtered.length} entries &nbsp;|&nbsp; Printed: ${dateStr}</div><table><thead><tr><th style="width:20pt">S.No.</th><th style="width:46pt">UHID</th><th style="width:80pt">Patient Name</th><th style="width:24pt">Age</th><th style="width:56pt">Phone</th><th style="width:50pt">Date</th><th style="width:88pt">Procedure Done</th><th style="width:34pt">Tooth</th><th>Work Done</th><th style="width:78pt">Doctor</th><th style="width:40pt">Check-in</th><th style="width:40pt">Engaged</th><th style="width:42pt">Check-out</th><th style="width:34pt">Wait TAT</th><th style="width:34pt">Total TAT</th></tr></thead><tbody>${rows}</tbody></table><div style="margin-top:6pt;border-top:0.5pt solid #ddd;padding-top:3pt;display:flex;justify-content:space-between;font-size:9.5pt;color:#444444"><span>KBDC/FORMS/DR-01</span><span>K.B. Dental Clinic · kbdentaldelhi@gmail.com</span></div></body></html>`;
     const w=window.open("","_blank"); w.document.write(html); w.document.close(); setTimeout(()=>w.print(),600);
   };
 
@@ -28142,31 +28147,31 @@ function ClinicalSheetRecordView({ formId, sheetType, uhid, onNewEntry }) {
 const CR_PAGE_CSS = `
 @page{ size:A4 landscape; margin:10mm 12mm 14mm 12mm; }
 *{ box-sizing:border-box; margin:0; padding:0; }
-html,body{ font-family:'Segoe UI',Arial,sans-serif; font-size:9.5pt; color:#111; background:#fff; }
+html,body{ font-family:'Segoe UI',Arial,sans-serif; font-size:11pt; color:#111; background:#fff; }
 .sheet{ page-break-after:always; }
 .sheet:last-child{ page-break-after:auto; }
 .hdr{ display:flex; align-items:center; gap:10pt; border-bottom:1.5pt solid #0078B4;
       padding-bottom:6pt; margin-bottom:7pt; }
 .logo{ width:46pt; height:46pt; object-fit:contain; mix-blend-mode:multiply; }
 .hdr-mid{ flex:1; text-align:center; }
-.cares{ font-size:13pt; font-weight:800; color:#C0392B; letter-spacing:.12em;
+.cares{ font-size:14pt; font-weight:800; color:#C0392B; letter-spacing:.12em;
         text-decoration:underline; margin-bottom:1pt; }
-.tagline{ font-size:7.5pt; font-weight:700; color:#0078B4; }
-.sub{ font-size:7.5pt; color:#2e2e2e; }
-.dtitle{ text-align:center; font-size:12pt; font-weight:800; color:#0078B4;
+.tagline{ font-size:9.5pt; font-weight:700; color:#0078B4; }
+.sub{ font-size:9.5pt; color:#2e2e2e; }
+.dtitle{ text-align:center; font-size:13.5pt; font-weight:800; color:#0078B4;
          text-transform:uppercase; letter-spacing:.07em; margin-bottom:6pt; }
 table{ width:100%; border-collapse:collapse; table-layout:fixed; }
 .pat{ margin-bottom:6pt; }
-.pat td{ border:0.5pt solid #bbb; padding:3pt 6pt; font-size:9pt; }
+.pat td{ border:0.5pt solid #bbb; padding:3pt 6pt; font-size:10.5pt; }
 .pat td.k{ font-weight:700; background:#f4f4f0; width:52pt; }
-.rec td{ border:0.6pt solid #000; padding:3pt 6pt; font-size:9pt;
+.rec td{ border:0.6pt solid #000; padding:3pt 6pt; font-size:10.5pt;
          vertical-align:top; line-height:1.45; word-wrap:break-word; }
 .rec td.l{ font-weight:700; width:120pt; background:#fafafa; }
 .rec td.b{ font-weight:700; }
-.rec td.sec{ font-weight:800; font-size:8.5pt; background:#E0F7FA; color:#0B2D4E;
+.rec td.sec{ font-weight:800; font-size:10pt; background:#E0F7FA; color:#0B2D4E;
              text-transform:uppercase; letter-spacing:.05em; }
 .foot{ display:flex; justify-content:space-between; border-top:0.5pt solid #ddd;
-       padding-top:4pt; margin-top:7pt; font-size:7.5pt; color:#444444; }
+       padding-top:4pt; margin-top:7pt; font-size:9.5pt; color:#444444; }
 `;
 function crEscape(v) {
   return String(v == null ? "" : v).replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
@@ -28270,7 +28275,7 @@ function printClinicalRecord(cfg, data, items, sheetType) {
                      v.doctor || ""].filter(Boolean).join(" · ");
         body += `<tr><td class="l">Visit ${esc(v.n || i + 1)} — ${esc(v.date || "")}</td>` +
                 `<td colspan="${CS_COLS_PER_SHEET}">${esc(what || "—")}` +
-                (who ? `<br/><span style="color:#383838;font-size:8pt;">${esc(who)}</span>` : "") +
+                (who ? `<br/><span style="color:#383838;font-size:9.5pt;">${esc(who)}</span>` : "") +
                 `</td></tr>`;
       });
     }
@@ -30735,12 +30740,12 @@ function TemplateListEditor({ items, onAdd, onRemove, onEdit }) {
       }).join("");
       return `<tr><td colspan="2" style="background:#0078B4;color:#fff;font-weight:700;padding:5pt 7pt;">${cat}</td></tr>${catRows}`;
     }).join("");
-    const html = `<style>@page{size:A4 portrait;margin:14mm 16mm;}*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Outfit,Arial,sans-serif;font-size:10.5pt;color:#111;}
-      .dtitle{text-align:center;font-size:15pt;font-weight:800;color:#0078B4;margin-bottom:4pt;}
-      .sub{text-align:center;font-size:9pt;color:#2e2e2e;margin-bottom:12pt;}
+    const html = `<style>@page{size:A4 portrait;margin:14mm 16mm;}*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Outfit,Arial,sans-serif;font-size:12pt;color:#111;}
+      .dtitle{text-align:center;font-size:16pt;font-weight:800;color:#0078B4;margin-bottom:4pt;}
+      .sub{text-align:center;font-size:10.5pt;color:#2e2e2e;margin-bottom:12pt;}
       table{width:100%;border-collapse:collapse;table-layout:fixed;}
-      th{border:1px solid #333;padding:5pt 7pt;text-align:left;background:#fafafa;font-size:9.5pt;}
-      td{border:1px solid #333;padding:5pt 7pt;vertical-align:top;font-size:10pt;}
+      th{border:1px solid #333;padding:5pt 7pt;text-align:left;background:#fafafa;font-size:11pt;}
+      td{border:1px solid #333;padding:5pt 7pt;vertical-align:top;font-size:11.5pt;}
       .blank{color:#bbb;}</style>
       <div class="dtitle">Clinical Note Templates</div>
       <div class="sub">${items.length} template${items.length===1?"":"s"} · printed ${new Date().toLocaleDateString('en-GB')} · mark up edits below and hand back to update Master</div>
@@ -30961,12 +30966,12 @@ function InstructionListEditor({ items, onAdd, onRemove, onEdit, onFillHindi }) 
       }).join("");
       return `<tr><td colspan="2" style="background:#0078B4;color:#fff;font-weight:700;padding:5pt 7pt;">${cat}</td></tr>${catRows}`;
     }).join("");
-    const html = `<style>@page{size:A4 portrait;margin:14mm 16mm;}*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Outfit,Arial,sans-serif;font-size:10.5pt;color:#111;}
-      .dtitle{text-align:center;font-size:15pt;font-weight:800;color:#0078B4;margin-bottom:4pt;}
-      .sub{text-align:center;font-size:9pt;color:#2e2e2e;margin-bottom:12pt;}
+    const html = `<style>@page{size:A4 portrait;margin:14mm 16mm;}*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Outfit,Arial,sans-serif;font-size:12pt;color:#111;}
+      .dtitle{text-align:center;font-size:16pt;font-weight:800;color:#0078B4;margin-bottom:4pt;}
+      .sub{text-align:center;font-size:10.5pt;color:#2e2e2e;margin-bottom:12pt;}
       table{width:100%;border-collapse:collapse;table-layout:fixed;}
-      th{border:1px solid #333;padding:5pt 7pt;text-align:left;background:#fafafa;font-size:9.5pt;}
-      td{border:1px solid #333;padding:5pt 7pt;vertical-align:top;font-size:10pt;}</style>
+      th{border:1px solid #333;padding:5pt 7pt;text-align:left;background:#fafafa;font-size:11pt;}
+      td{border:1px solid #333;padding:5pt 7pt;vertical-align:top;font-size:11.5pt;}</style>
       <div class="dtitle">Instructions</div>
       <div class="sub">${items.length} instruction${items.length===1?"":"s"} · printed ${new Date().toLocaleDateString('en-GB')}</div>
       <table><thead><tr><th style="width:28%;">Situation</th><th>Instruction</th></tr></thead><tbody>${rows || '<tr><td colspan="2" style="text-align:center;color:#5a5a5a;padding:10pt;">No instructions yet.</td></tr>'}</tbody></table>`;
@@ -34024,19 +34029,19 @@ function buildReceiptHTML(r) {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>
 @page{size:A5 landscape;margin:8mm}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',Arial,sans-serif;font-size:10.5pt;color:#111}
+body{font-family:'Segoe UI',Arial,sans-serif;font-size:12pt;color:#111}
 .sheet{border:1.5pt solid #000;padding:10pt 14pt 14pt;}
 .hdr{text-align:center;margin-bottom:8pt;display:flex;align-items:center;gap:10pt;}
 .logo{width:48pt;height:48pt;object-fit:contain;flex-shrink:0;}
 .hdrmid{flex:1;}
-.cares{font-size:14pt;font-weight:800;color:#C0392B;text-align:center;}
-.tagline{font-size:8.5pt;font-weight:700;color:#0078B4;text-align:center;}
-.addr{font-size:8.5pt;font-weight:700;text-align:center;}
-.contact{font-size:8.5pt;text-align:center;}
+.cares{font-size:15pt;font-weight:800;color:#C0392B;text-align:center;}
+.tagline{font-size:10pt;font-weight:700;color:#0078B4;text-align:center;}
+.addr{font-size:10pt;font-weight:700;text-align:center;}
+.contact{font-size:10pt;text-align:center;}
 .contact a{color:#0078B4;}
 .fld{margin:7pt 0;}
 .two{display:flex;gap:14pt;}
-.foot{margin-top:14pt;font-size:7.5pt;color:#444444;text-align:center;}
+.foot{margin-top:14pt;font-size:9.5pt;color:#444444;text-align:center;}
 </style></head><body>
 <div class="sheet">
 <div class="hdr">
@@ -34070,10 +34075,10 @@ body{font-family:'Segoe UI',Arial,sans-serif;font-size:10.5pt;color:#111}
   <span>on Account of</span>
   <span style="font-weight:800;font-style:italic;border-bottom:1pt solid #333;flex:1;padding-bottom:2pt;">Dental Treatment</span>
 </div>
-<div style="text-align:right;font-size:9.5pt;margin-top:10pt;">For K.B. Dental Clinic Delhi</div>
+<div style="text-align:right;font-size:11pt;margin-top:10pt;">For K.B. Dental Clinic Delhi</div>
 <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:20pt;">
   ${box("Rs.", fmtRs(r.fee), { width: "180pt" })}
-  <div style="font-size:9.5pt;">Authorised Signatory</div>
+  <div style="font-size:11pt;">Authorised Signatory</div>
 </div>
 </div>
 <div class="foot">This is a computer-generated receipt — K.B. Dental Clinic</div>
@@ -35204,7 +35209,7 @@ function FinanceCghsBillsTab({ globalPat }) {
       `<div class="words">${esc(rupeesInWords(b.amount))}</div>` +
       `<div class="sigrow"><div><div class="lbl">Patient Signature</div><div class="sigbox"></div></div>` +
       `<div><div class="lbl">For ${esc((window.CLINIC && window.CLINIC.name) || "the clinic")}</div>` +
-      `<div class="sigbox"></div><div style="font-size:8.5pt;color:#2e2e2e">Authorised Signatory</div></div></div>` +
+      `<div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">Authorised Signatory</div></div></div>` +
       `</body></html>`);
   };
 

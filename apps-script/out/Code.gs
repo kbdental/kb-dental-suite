@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-14";
+var BACKEND_BUILD = "2026-11-19";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -1437,7 +1437,7 @@ function saveRegistration(p) {
     // What the staff need to know before this patient sits down. Written the
     // same way as conditions and allergies, so it reads back the same way.
     "Safety Flags": safeJSON(p.safetyFlags),
-    "What is your chief complaint?|Complaint": p.complaint,
+    "What is your chief complaint?|Chief Complaint|Complaint": p.complaint,
     "Are you in Pain?": p.painLevel ? "Yes" : "",
     "What is your level of pain on a scale of 0-10?|Pain Level": p.painLevel,
     "Registration Status": p.regStatus || "",
@@ -1577,6 +1577,50 @@ function mobileMatches_(row, mobile) {
   return (!!onFile && entered === onFile) || (!!wa && entered === wa);
 }
 
+// ── READ-ONLY. Which column is each field actually coming from? ────
+// Registration fields are resolved by NAME against whatever the sheet's
+// header row says, with several spellings accepted per field. That is what
+// lets one app serve a book set up years ago and one created last week --
+// and it is also why a field can quietly resolve to the wrong column, or
+// to none, with nothing on any screen to show it.
+//
+// Run this from the editor when a field that was typed at the desk does
+// not appear where it should. It writes nothing.
+function reportRegistrationColumns() {
+  // Every book a lookup actually searches, not just this one: a patient
+  // registered in the panel book and looked up from the main app is a
+  // different way for the same field to come back empty.
+  var fields = [
+    ["Chief complaint", ["What is your chief complaint?", "Chief Complaint", "Complaint"]],
+    ["Full name",       ["Full Name", "Name"]],
+    ["UHID",            ["UHID", "Registration ID"]],
+    ["Mobile",          ["Mobile No.", "Mobile"]],
+    ["Date of birth",   ["Date of Birth", "DOB"]],
+    ["Patient Type",    ["Patient Type"]],
+    ["Conditions",      ["Have you ever suffered/suffering from any of the following?", "Conditions"]],
+    ["Allergies",       ["Are you allergic to any of the following?", "Allergies"]],
+    ["Medicines",       ["Medicines you are taking currently:", "Medicines"]]
+  ];
+  regSheets_().forEach(function (sh) {
+    var headers = sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0];
+    Logger.log('%s \u2014 "%s", %s columns:',
+      sh.getParent().getName(), sh.getName(), headers.length);
+    Logger.log("   " + headers.join(" | "));
+    Logger.log("");
+    fields.forEach(function (f) {
+      var col = findRegColumn_(headers, f[1]);
+      Logger.log(col < 0
+        ? "  NOT FOUND  " + f[0] + "  \u2014 no column matches " + f[1].join(" / ")
+        : "  column " + (col + 1) + "  " + f[0] + "  \u2190  " + headers[col]);
+    });
+    Logger.log("");
+  });
+  Logger.log("A field reading NOT FOUND is never saved and never read back.");
+  Logger.log("A field pointing at a column you did not expect is being");
+  Logger.log("written there instead -- rename that column, or the real one.");
+  return { success: true };
+}
+
 function patientLookup(p) {
   var row = regRow_(p.uhid);
   // Identical answer whether the UHID is wrong or the mobile is wrong, so this
@@ -1603,7 +1647,14 @@ function patientLookup(p) {
     conditions:        regGet_(row, ["Have you ever suffered/suffering from any of the following?", "Conditions"]),
     medicines:         regGet_(row, ["Medicines you are taking currently:", "Medicines"]),
     allergies:         regGet_(row, ["Are you allergic to any of the following?", "Allergies"]),
-    complaint:         regGet_(row, ["What is your chief complaint?", "Complaint"])
+    // "Chief Complaint" named explicitly, not left to the loose pass.
+    // findRegColumn_ tries every candidate as an exact header first and only
+    // then falls back to "a header that CONTAINS this word" -- and on that
+    // fallback a column called "Complaint Duration" is as good a match for
+    // "Complaint" as the real one, whichever comes first in the sheet. A
+    // complaint typed at the desk then never reached the iPad, and nothing
+    // anywhere said why.
+    complaint:         regGet_(row, ["What is your chief complaint?", "Chief Complaint", "Complaint"])
   }};
 }
 
@@ -1631,7 +1682,7 @@ function patientCompleteRegistration(p) {
     "Medicines you are taking currently:|Medicines": p.medicines,
     "Are you allergic to any of the following?|Allergies": p.allergies,
     "How did you know about this clinic?": p.howKnown,
-    "What is your chief complaint?|Complaint": p.complaint,
+    "What is your chief complaint?|Chief Complaint|Complaint": p.complaint,
     "Are you in Pain?": p.painLevel ? "Yes" : "",
     "What is your level of pain on a scale of 0-10?|Pain Level": p.painLevel,
     "Habits [Do you Smoke Beedi/Cigarette?]": habitsStr.indexOf("Smoking") >= 0 ? "Yes" : "",
@@ -1838,7 +1889,7 @@ function getPatient(p) {
         allergies:         regList_(get("Allergies", "Are you allergic to any of the following?")),
         safetyFlags:       regList_(get("Safety Flags")),
         habits:            get("Habits"),
-        complaint:         get("Complaint", "What is your chief complaint?"),
+        complaint:         get("Complaint", "Chief Complaint", "What is your chief complaint?"),
         painLevel:         get("Pain Level", "What is your level of pain on a scale of 0-10?"),
         // The panel a patient is on, and the card it is claimed against.
         // These were written by the registration and then never handed back:
