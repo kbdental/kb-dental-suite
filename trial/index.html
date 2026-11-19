@@ -240,7 +240,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-19a";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-19a";
+const KB_APP_BUILD = "2026-11-19b";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -13259,10 +13259,85 @@ function ConsentForms(props) {
 // ── Print CSS for both documents ─────────────────────────
 const TP_PCSS = `@page{size:A4 portrait;margin:10mm 12mm 8mm 12mm}*{box-sizing:border-box;margin:0;padding:0}html,body{font-family:'Segoe UI',Arial,sans-serif;font-size:12pt;color:#111;background:#fff}.hdr{display:flex;align-items:center;gap:10pt;border-bottom:1.5pt solid #0078B4;padding-bottom:7pt;margin-bottom:8pt}.logo{width:52pt;height:52pt;object-fit:contain;mix-blend-mode:multiply}.hdr-mid{flex:1;text-align:center}.cares{font-size:15pt;font-weight:800;color:#C0392B;letter-spacing:0.12em;text-decoration:underline;margin-bottom:1pt}.tagline{font-size:9.5pt;font-weight:700;color:#0078B4;margin-bottom:1pt}.sub{font-size:9.5pt;color:#2e2e2e;margin-bottom:1pt}.dtitle{text-align:center;font-size:14pt;font-weight:800;color:#0078B4;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8pt}.patrow{display:grid;grid-template-columns:1fr auto auto;gap:6pt 14pt;background:#f0f6fb;border:0.5pt solid #0090CC;border-radius:3pt;padding:6pt 10pt;margin-bottom:8pt;align-items:center}.pname{font-size:13.5pt;font-weight:800}.puhid{font-size:11.5pt;font-weight:700;color:#0078B4}.pdate{font-size:10.5pt;color:#2e2e2e}table{width:100%;border-collapse:collapse;margin-bottom:0}th{background:#0078B4;color:#fff;padding:5pt 7pt;font-size:10pt;font-weight:700;text-align:left}td{padding:5pt 7pt;border-bottom:0.5pt solid #eee;font-size:11.5pt;vertical-align:top}tr:nth-child(even) td{background:#f8fbfe}.sno{text-align:center;font-weight:700;color:#0078B4;width:28pt}.dcol{width:68pt;font-weight:600;color:#333;white-space:nowrap}.sigrow{display:grid;grid-template-columns:1fr 1fr;gap:14pt;margin-top:14pt;padding-top:8pt;border-top:0.5pt solid #ccc}.sigbox{border:0.5pt solid #bbb;border-radius:3pt;height:32pt;background:#fafafa;margin-bottom:3pt}.foot{margin-top:8pt;border-top:0.5pt solid #ddd;padding-top:4pt;display:flex;justify-content:space-between;font-size:9.5pt;color:#444444}.amt{text-align:right;font-weight:700;color:#0078B4}.totrow td{font-weight:800;font-size:12.5pt;background:#f0f6fb!important;border-top:1.5pt solid #0078B4}.docname{font-size:10.5pt;color:#2e2e2e;margin-top:2pt}`;
 
+// ── One row per thing done, not one per visit ───────────────────────────
+//
+// A visit where the obturation was finished on 16 and 14 was prepared for a
+// crown is ONE entry: tooth "16, 14", and both notes in the Work Done box,
+// one per line, because that is how they were picked. Printed straight it
+// came out as a single row with a comma-joined tooth cell and one long
+// paragraph -- unreadable, and not what a case paper is for. Each thing
+// done wants its own box, against its own tooth.
+//
+// The split is by NOTE LINE, because the lines are already one per picked
+// template. Nothing changes about how a visit is recorded.
+//
+// And only when the lines are about DIFFERENT teeth. One composite
+// restoration across 37 and 36 is one thing done and stays one row; a
+// paragraph somebody typed by hand, with no teeth named line by line, is
+// left exactly as it was written. Chopping either up would be worse than
+// the merged row.
+//
+// A tooth is read only where the clinic actually writes one -- after "wrt",
+// or behind a "#". Scanning for any two-digit number finds the 16 in
+// "MB=16mm-25/04" and files a canal length as a tooth.
+function kbTeethInLine(line) {
+  const s = String(line === undefined || line === null ? "" : line);
+  const found = [];
+  const add = (tok) => {
+    const t = String(tok || "").toUpperCase();
+    // FDI 11-48 and the quadrant-letter deciduous notation the clinic uses.
+    if (!/^(?:[1-8][1-8]|[1-8][A-E])$/.test(t)) return;
+    if (found.indexOf(t) < 0) found.push(t);
+  };
+  (s.match(/#\s*[0-9A-Ea-e]{1,2}/g) || []).forEach(m => add(m.replace(/[#\s]/g, "")));
+  // "wrt 46, 47 occlusally" -- to the end of the clause, so the next
+  // sentence's numbers do not come along.
+  const re = /\bw\.?\s?r\.?\s?t\.?\b([^.;:]*)/gi;
+  let m;
+  while ((m = re.exec(s))) (m[1].match(/[0-9A-Ea-e]{1,2}/g) || []).forEach(add);
+  return found;
+}
+
+// `noteFields` in order of preference: the first one the entry has text in
+// is the one that is split, and the one each row is written back into, so
+// the three sheets can each name their own column without diverging here.
+function kbSplitVisitRows(entries, noteFields) {
+  const F = (noteFields && noteFields.length) ? noteFields
+          : ["clinicalNotes", "workDone", "treatmentRendered"];
+  const out = [];
+  (entries || []).forEach(e => {
+    if (!e) return;
+    const field = F.filter(f => String(e[f] === undefined || e[f] === null ? "" : e[f]).trim())[0];
+    if (!field) { out.push(e); return; }
+    const lines = String(e[field]).split(/\r?\n+/).map(x => x.trim()).filter(Boolean);
+    const groups = lines.map(l => kbTeethInLine(l).join(", "));
+    const distinct = groups.filter((g, i) => g && groups.indexOf(g) === i);
+    if (lines.length < 2 || distinct.length < 2) { out.push(e); return; }
+    // "RCT - Obturation, Tooth Preparation" against two lines pairs up; any
+    // other count and every row keeps the whole label, which repeats but
+    // never mislabels a row with another row's procedure.
+    const treats = String(e.treatmentRendered || "").split(/\s*,\s*/)
+      .map(x => x.trim()).filter(Boolean);
+    lines.forEach((line, i) => {
+      const row = Object.assign({}, e);
+      row[field] = line;
+      row.toothNo = groups[i] || e.toothNo || "";
+      if (treats.length === lines.length && field !== "treatmentRendered") {
+        row.treatmentRendered = treats[i];
+      }
+      // The money was paid once for the visit. It rides on the first row
+      // and nowhere else, or the column totals more than the patient paid.
+      if (i > 0) { row.amountReceived = ""; row.paymentMode = ""; row.fee = ""; }
+      out.push(row);
+    });
+  });
+  return out;
+}
+
 function buildProcedureDoneHTML(pat, entries) {
   const logo = window.LOGO_B64;
   const dateStr = fmtDMY(new Date());
-  const rows = entries.map((e, i) => {
+  const rows = kbSplitVisitRows(entries, ["workDone", "clinicalNotes"]).map((e, i) => {
     const d = e.date ? fmtDMY(e.date) : "—";
     return `<tr>
       <td class="sno">${i+1}</td>
@@ -13287,7 +13362,7 @@ function buildProcedureDoneHTML(pat, entries) {
 // Matches the clinic's printed "Procedure Form with Fee Received" (KBDC/FORMS/REG-07)
 function buildProcedureFeeSheetHTML(pat, procedures, receipts) {
   const logo = window.LOGO_B64;
-  const procRows = procedures.map(e => `<tr>
+  const procRows = kbSplitVisitRows(procedures, ["treatmentRendered", "clinicalNotes"]).map(e => `<tr>
       <td class="dcol">${e.date ? fmtDMY(e.date) : "—"}</td>
       <td style="text-align:center;font-weight:700">${e.toothNo || "—"}</td>
       <td>${e.treatmentRendered || e.clinicalNotes || "—"}</td>
@@ -13394,7 +13469,7 @@ function buildProgressNotesHTML(pat, entries) {
   const logo = window.LOGO_B64;
   const dateStr = fmtDMY(new Date());
   let totalAmt = 0;
-  const rows = entries.map((e, i) => {
+  const rows = kbSplitVisitRows(entries, ["clinicalNotes", "workDone"]).map((e, i) => {
     const d = e.date ? fmtDMY(e.date) : "—";
     const amt = e.amountReceived ? Number(e.amountReceived) : 0;
     totalAmt += amt;
