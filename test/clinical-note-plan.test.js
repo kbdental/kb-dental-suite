@@ -208,17 +208,18 @@ ok('and the plan carries no copy of the note text',
   // ── the shape the eighteen forms already expect ──────────────────────
   const flat = ctx.getTpl();
   eq('the templates come from the library', flat.source, 'library');
-  // One record per template now, carrying both lengths: which one is wanted
-  // follows from whether the text is being saved or printed, not from a
-  // second choice at the chair. which-length-goes-where.test.js has the rest.
+  // One record per template, carrying one note: there were two lengths and
+  // the clinic found the longer one was not needed.
+  // which-length-goes-where.test.js has the rest, including the part that
+  // matters -- the column it came out of is still written.
   eq('one record per template', flat.templates.length, 3);
   eq('named for the procedure, with no length in the name',
      flat.templates.map(t => t.situation),
      ['Access Opening', 'Working Length', 'Flap Surgery']);
-  eq('and what the forms insert is the full record',
+  eq('and what the forms insert is the one note there is',
      [flat.templates[0].category, flat.templates[0].text],
-     ['RCT', 'Access opening done wrt {tooth} under {anaesthesia}.']);
-  eq('with the concise one alongside for the printed sheet',
+     ['RCT', 'Access opening done wrt {tooth}.']);
+  eq('which is the same text the printed sheet asks for',
      flat.templates[0].concise, 'Access opening done wrt {tooth}.');
   eq('the department rides along, because the forms filter on it',
      [...new Set(flat.templates.map(t => t.category))].sort(), ['Periodontics', 'RCT']);
@@ -364,8 +365,8 @@ ok('and the plan carries no copy of the note text',
      await headings(), ['Periodontics  ·  1', 'RCT  ·  2']);
   eq('and the templates sit under them', await names(),
      ['Flap Surgery', 'Access Opening', 'Working Length']);
-  ok('both lengths are on the card, labelled',
-     /TYPE 1 Access opening done wrt \{tooth\}\. TYPE 2 Access opening done wrt \{tooth\} under \{anaesthesia\}\./.test(t), t);
+  ok('the note is on the card, with no length left to label',
+     /Access opening done wrt \{tooth\}\./.test(t) && !/TYPE [12]/.test(t), t);
   eq('every row has an Edit', await rowBtns('Edit'), 3);
   eq('and a Remove', await rowBtns('Remove'), 3);
 
@@ -388,9 +389,11 @@ ok('and the plan carries no copy of the note text',
       return { areas: [...box.querySelectorAll('textarea')].map(a => a.value),
                inputs: [...box.querySelectorAll('input')].map(i => i.value) };
     });
-    // Three boxes now: the two lengths and the Hindi the toggle uses.
-    eq('the row itself opens with both lengths in it, and the Hindi', card.areas,
-       ['WL recorded wrt {tooth}.', 'Working length recorded wrt {tooth} using {method}.', '']);
+    // Two boxes: the note, and the Hindi the toggle uses. The comprehensive
+    // text is still in the row -- carried through the save -- it just has
+    // no box any more.
+    eq('the row itself opens with its note in it, and the Hindi', card.areas,
+       ['WL recorded wrt {tooth}.', '']);
     eq('and the template name in the row', card.inputs, ['Working Length']);
   }
   // Two states, not one: sharing them meant pressing Edit quietly refilled
@@ -400,9 +403,9 @@ ok('and the plan carries no copy of the note text',
   await page.evaluate(() => {
     const sp = [...document.querySelectorAll('span')]
       .find(s => s.textContent.trim() === 'Working Length');
-    const a = sp.closest('div[style*="border-radius"]').querySelectorAll('textarea')[1];
+    const a = sp.closest('div[style*="border-radius"]').querySelectorAll('textarea')[0];
     const set = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-    set.call(a, 'Rewritten full record.');
+    set.call(a, 'Rewritten note.');
     a.dispatchEvent(new Event('input', { bubbles: true }));
   });
   await page.waitForTimeout(80);
@@ -410,10 +413,14 @@ ok('and the plan carries no copy of the note text',
   await page.waitForTimeout(110);
   out = await saved();
   eq('the edit lands on the row it was opened from',
-     out.map(r => r.type2),
-     ['Access opening done wrt {tooth} under {anaesthesia}.', 'Rewritten full record.',
-      'Flap raised wrt {tooth} under {anaesthesia}.']);
+     out.map(r => r.type1),
+     ['Access opening done wrt {tooth}.', 'Rewritten note.', 'Flap raised wrt {tooth}.']);
   eq('and nothing else about it moved', out[1].template, 'Working Length');
+  // The box came out of the editor. The text did not come out of the row:
+  // an edit saves back what it was handed, so nothing written into the
+  // comprehensive column is lost by passing through here.
+  eq('the comprehensive text the editor no longer shows is saved back untouched',
+     out.map(r => r.type2), LIB.map(r => r.type2));
 
   // Adding, through the same form.
   await mount('ClinicalTemplateLibEditor', { rows: LIB, seed: TPL });

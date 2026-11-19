@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-19";
+var BACKEND_BUILD = "2026-11-19a";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -6177,10 +6177,12 @@ function saveChairsList(p) {
 
 // ── Three things, kept apart ────────────────────────────────────────────
 //
-//   the TEMPLATES   156 of them, one per procedure, each written in two
-//                   lengths -- Type 1 (Concise) for a routine visit, Type 2
-//                   (Comprehensive) for a record somebody else, or a panel,
-//                   may read back
+//   the TEMPLATES   156 of them, one per procedure, one note each. There
+//                   were two lengths for a while; the clinic found the
+//                   longer one was not needed, so the concise note serves
+//                   the pad and the record alike. The second column is
+//                   still read and still written back, untouched, so not a
+//                   word written into it was lost
 //
 //   the PLAN        277 treatments that can go on a plan -- 156 on the
 //                   clinic's own and 121 on the CGHS rate card -- each
@@ -6209,9 +6211,6 @@ var CLINICAL_PLAN_HEADERS = ["Plan", "Plan Treatment", "Category", "Templates", 
                              // The treatment as a patient reads it. A plan is
                              // handed to the patient, so this one is theirs.
                              "Hindi"];
-
-var TYPE1_SUFFIX = " \u00b7 Type 1 (Concise)";
-var TYPE2_SUFFIX = " \u00b7 Type 2 (Comprehensive)";
 
 function getClinicalNoteTemplatesV3_() {
   var sh = getSheet(CLINICAL_TPL_LIB_SHEET);
@@ -6377,35 +6376,38 @@ function saveClinicalNotePlan(p) {
 
 // One record per template, not one per length.
 //
-// Which length is wanted is not the clinician's decision to make twice at
-// the chair -- it follows from what the text is FOR:
+// ONE length, where there were two. The split was by purpose: the concise
+// line printed on the pad, the comprehensive paragraph was saved into the
+// register, the progress note and the procedure-done sheet. Keeping the
+// two in step across 156 procedures cost more than the second one earned,
+// and the clinic asked for it to go. The concise note is now what prints
+// AND what is saved.
 //
-//   saved   the daily register, the progress note, the procedure-done
-//           sheet: the full record, because this is the one that has to
-//           stand on its own years later, read by somebody else
-//   printed the prescription: the concise line, because a paragraph under
-//           every item on a pad is unreadable
+// The comprehensive column is still read off the sheet above and still
+// written back on every save, so everything written into it is where it
+// was left and this is reversible. It simply no longer reaches anything
+// that inserts text.
 //
-// So `text` -- the field the eighteen work-done forms insert, and
-// therefore the field that gets SAVED -- is the comprehensive one. Both
-// lengths ride along beside it, so the prescription can take the concise
-// one without a second lookup. Nothing in those forms, base64 blobs every
-// one, had to change for this either.
+// Nothing in the eighteen work-done forms, base64 blobs every one, had to
+// change: they insert `text`, and `text` is now the concise note.
 //
-// Type 2 missing falls back to Type 1 rather than offering a blank: a
-// dropdown entry that inserts nothing is worse than a short note.
+// A template with only the long form written -- there are a few -- hands
+// that over rather than offering a blank, because a dropdown entry that
+// inserts nothing is worse than a long note.
 function clinicalTemplatesFlat_() {
   var out = [];
   getClinicalNoteTemplatesV3_().forEach(function (r) {
     var concise = String(r.type1 || "");
     var full = String(r.type2 || "");
     if (!concise.trim() && !full.trim()) return;
+    var note = concise.trim() ? concise : full;
     out.push({
       situation: r.template,
-      text: full.trim() ? full : concise,
+      text: note,
       category: r.category,
-      concise: concise.trim() ? concise : full,
-      comprehensive: full.trim() ? full : concise,
+      // Still sent under its own name, because the prescription asks for
+      // `concise` and a page cached in an open tab will go on asking.
+      concise: note,
       // Carried so the Hindi toggle can hand the form the Hindi note
       // instead. Empty where nobody has written one, and the toggle then
       // leaves that template in English rather than blanking it.

@@ -86,12 +86,10 @@ const fnOf = (name) => {
   const TPL = [
     { situation: 'Flap Surgery', category: 'Periodontics',
       concise: 'Flap surgery wrt {tooth}, debridement, sutured.',
-      comprehensive: 'Full-thickness flap raised wrt {tooth} under LA, sutured.',
-      hindi: '', text: 'Full-thickness flap raised wrt {tooth} under LA, sutured.' },
+      hindi: '', text: 'Flap surgery wrt {tooth}, debridement, sutured.' },
     { situation: 'Suture Removal', category: 'Minor Surgery',
       concise: 'Sutures removed wrt {tooth}, healing satisfactory.',
-      comprehensive: 'Sutures removed wrt {tooth}. Healing satisfactory.',
-      hindi: '', text: 'Sutures removed wrt {tooth}. Healing satisfactory.' }
+      hindi: '', text: 'Sutures removed wrt {tooth}, healing satisfactory.' }
   ];
 
   await page.evaluate(({ lines, templates }) => {
@@ -180,14 +178,11 @@ const fnOf = (name) => {
               r: { procedure: 'Root Canal Treatment- Posterior', tooth: '36' }, card: null }],
     templates: [
       { situation: 'RCT - Access Opening', concise: 'Access opening done wrt {tooth} under LA.',
-        comprehensive: 'Access cavity prepared wrt {tooth}, pulp extirpated.', hindi: '',
-        text: 'Access cavity prepared wrt {tooth}.' },
+        hindi: '', text: 'Access opening done wrt {tooth} under LA.' },
       { situation: 'RCT - Biomechanical Preparation', concise: 'BMP done wrt {tooth}.',
-        comprehensive: 'Bio-mechanical preparation completed wrt {tooth}.', hindi: '',
-        text: 'Bio-mechanical preparation completed wrt {tooth}.' },
+        hindi: '', text: 'BMP done wrt {tooth}.' },
       { situation: 'RCT - Obturation', concise: 'Obturation completed wrt {tooth}.',
-        comprehensive: 'Obturation completed wrt {tooth} by lateral condensation.', hindi: '',
-        text: 'Obturation completed wrt {tooth}.' }
+        hindi: '', text: 'Obturation completed wrt {tooth}.' }
     ],
     plan: [{ plan: 'CGHS', treatment: 'Root Canal Treatment',
              templates: 'RCT - Access Opening \u2192 RCT - Biomechanical Preparation \u2192 RCT - Obturation' }]
@@ -198,7 +193,7 @@ const fnOf = (name) => {
      await page.locator('input[data-kb-line-date]').count(), 1);
   ok('and the plan lists the three steps it is made of',
      (await page.locator('select[data-kb-plan-pick]').first()
-       .evaluate(e => Array.from(e.options).map(o => o.textContent))).length === 7, '');
+       .evaluate(e => Array.from(e.options).map(o => o.textContent))).length === 4, '');
 
   // Sitting 1 on the 7th.
   await page.locator('select[data-kb-plan-pick]').first().selectOption({ index: 1 });
@@ -208,13 +203,13 @@ const fnOf = (name) => {
   await page.locator('button', { hasText: /Add a sitting/ }).first().click();
   await page.waitForTimeout(150);
   await page.locator('input[data-kb-line-date]').nth(1).fill('2026-11-09');
-  await page.locator('select[data-kb-plan-pick]').nth(1).selectOption({ index: 3 });
+  await page.locator('select[data-kb-plan-pick]').nth(1).selectOption({ index: 2 });
   await page.waitForTimeout(150);
   // Sitting 3 on the 14th.
   await page.locator('button', { hasText: /Add a sitting/ }).first().click();
   await page.waitForTimeout(150);
   await page.locator('input[data-kb-line-date]').nth(2).fill('2026-11-14');
-  await page.locator('select[data-kb-plan-pick]').nth(2).selectOption({ index: 5 });
+  await page.locator('select[data-kb-plan-pick]').nth(2).selectOption({ index: 3 });
   await page.waitForTimeout(250);
 
   eq('three sittings, three dates',
@@ -278,7 +273,7 @@ const fnOf = (name) => {
   await page.locator('button', { hasText: /Add a sitting/ }).first().click();
   await page.waitForTimeout(150);
   await page.locator('input[data-kb-line-date]').nth(2).fill('2026-11-14');
-  await page.locator('select[data-kb-plan-pick]').nth(2).selectOption({ index: 5 });
+  await page.locator('select[data-kb-plan-pick]').nth(2).selectOption({ index: 3 });
   await page.waitForTimeout(200);
 
   // A sitting added by mistake can go.
