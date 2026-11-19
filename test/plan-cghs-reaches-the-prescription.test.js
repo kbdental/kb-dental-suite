@@ -69,22 +69,21 @@ const fnOf = (name) => {
     { at: 2, code: 'DX900', qty: 1, amt: 0, rate: 0, priced: true,
       r: { procedure: 'Orthodontic Retainer', tooth: '' }, card: null }
   ];
-  // The library carries both lengths and, where it has been written, Hindi.
+  // The library carries one note per template and, where it has been
+  // written, Hindi.
   const TPL = [
     { situation: 'Flap Surgery', category: 'Periodontics',
       concise: 'Flap surgery wrt {tooth}, debridement, sutured.',
-      comprehensive: 'Full-thickness flap raised wrt {tooth} under LA, root surfaces debrided, sutured.',
       hindi: 'मसूड़ों का ऑपरेशन किया गया।',
-      text: 'Full-thickness flap raised wrt {tooth} under LA, root surfaces debrided, sutured.' },
+      text: 'Flap surgery wrt {tooth}, debridement, sutured.' },
     { situation: 'Suture Removal', category: 'Minor Surgery',
       concise: 'Sutures removed wrt {tooth}, healing satisfactory.',
-      comprehensive: 'Sutures removed wrt {tooth}. Healing satisfactory, no signs of infection.',
-      hindi: '', text: 'Sutures removed wrt {tooth}. Healing satisfactory, no signs of infection.' },
+      hindi: '', text: 'Sutures removed wrt {tooth}, healing satisfactory.' },
     { situation: 'Scaling', category: 'Periodontics',
-      concise: 'Ultrasonic scaling done.', comprehensive: 'Full-mouth ultrasonic scaling and polishing done.',
-      hindi: '', text: 'Full-mouth ultrasonic scaling and polishing done.' },
+      concise: 'Ultrasonic scaling done.',
+      hindi: '', text: 'Ultrasonic scaling done.' },
     { situation: 'Oral Prophylaxis', category: 'Periodontics',
-      concise: 'Oral prophylaxis done.', comprehensive: 'Oral prophylaxis done.',
+      concise: 'Oral prophylaxis done.',
       hindi: '', text: 'Oral prophylaxis done.' }
   ];
   // Two plans share the sheet. Only the CGHS one belongs on a CGHS
@@ -125,23 +124,20 @@ const fnOf = (name) => {
   // "Flap Surgery- Per Tooth" is the rate-card name; the plan is filed under
   // "Flap Surgery". That is the normal case on this sheet, not the exception.
   eq('the plan row is found through the rate-card wording', p[0].options, [
-    'Pick from the plan (5)…',
-    'Flap Surgery · Type 1 (Concise)',
-    'Flap Surgery · Type 2 (Comprehensive)',
+    'Pick from the plan (3)…',
+    'Flap Surgery',
     'Flap Surgery · Hindi',
-    'Suture Removal · Type 1 (Concise)',
-    'Suture Removal · Type 2 (Comprehensive)'
+    'Suture Removal'
   ]);
   ok('a template with no Hindi written yet is not offered in Hindi',
      p[0].options.indexOf('Suture Removal · Hindi') < 0, JSON.stringify(p[0].options));
 
   // The second line's only plan row is a Normal one.
   eq('the other plan is not offered on a CGHS prescription',
-     p[1].options.indexOf('Oral Prophylaxis · Type 1 (Concise)') < 0, true);
+     p[1].options.indexOf('Oral Prophylaxis') < 0, true);
   eq('it falls back to the template that matches the name', p[1].options, [
-    'Pick from the plan (2)…',
-    'Type 1 (Concise)',
-    'Type 2 (Comprehensive)'
+    'Pick from the plan (1)…',
+    'Scaling'
   ]);
 
   // Picking is the whole point: the detail has to change to what was picked.
@@ -149,14 +145,14 @@ const fnOf = (name) => {
   eq('the box starts on the concise note, as it printed before', vals[0],
      'Flap surgery wrt 16, 26, debridement, sutured.');
 
-  await page.locator('select[data-kb-plan-pick]').first().selectOption({ index: 5 });
+  await page.locator('select[data-kb-plan-pick]').first().selectOption({ index: 3 });
   await page.waitForTimeout(100);
   vals = await boxes();
   eq('what is picked lands in the box, with the teeth filled in', vals[0],
-     'Sutures removed wrt 16, 26. Healing satisfactory, no signs of infection.');
+     'Sutures removed wrt 16, 26, healing satisfactory.');
   eq('and the other lines are left alone', vals[1], 'Ultrasonic scaling done.');
 
-  await page.locator('select[data-kb-plan-pick]').first().selectOption({ index: 3 });
+  await page.locator('select[data-kb-plan-pick]').first().selectOption({ index: 2 });
   await page.waitForTimeout(100);
   vals = await boxes();
   eq('the Hindi version can be picked too', vals[0], 'मसूड़ों का ऑपरेशन किया गया।');
@@ -168,16 +164,15 @@ const fnOf = (name) => {
   vals = await boxes();
   eq('and it can still be typed over afterwards', vals[0], 'Flap surgery wrt 16, 26. Reviewed.');
   eq('the dropdown goes back to its prompt, so the same note can be picked twice',
-     (await picks())[0].options[0], 'Pick from the plan (5)…');
+     (await picks())[0].options[0], 'Pick from the plan (3)…');
 
   // No plan read at all -- an older backend, or the sheet not filled in.
   await mount([]);
   p = await picks();
   eq('with no plan it still offers what the name matches', p.length, 2);
-  eq('and the first is the two lengths of the matching template', p[0].options, [
-    'Pick from the plan (3)…',
-    'Type 1 (Concise)',
-    'Type 2 (Comprehensive)',
+  eq('and the first is the matching template, in both languages', p[0].options, [
+    'Pick from the plan (2)…',
+    'Flap Surgery',
     'Hindi'
   ]);
   eq('nothing threw', errors, []);

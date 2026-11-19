@@ -52,14 +52,11 @@ vm.runInContext(fnOf('cghsFillTokens') + fnOf('cghsTemplateFor')
 
 const TPL = [
   { situation: 'RCT - Access Opening', concise: 'Access opening done wrt {tooth} under LA.',
-    comprehensive: 'Access cavity prepared wrt {tooth} under 2% lignocaine, pulp extirpated.',
-    hindi: '', text: 'Access cavity prepared wrt {tooth}.' },
+    hindi: '', text: 'Access opening done wrt {tooth} under LA.' },
   { situation: 'RCT - Obturation', concise: 'Obturation completed wrt {tooth}.',
-    comprehensive: 'Obturation completed wrt {tooth} by lateral condensation.',
     hindi: 'रूट कैनाल भरा गया।', text: 'Obturation completed wrt {tooth}.' },
   { situation: 'Scaling', concise: 'Ultrasonic scaling done.',
-    comprehensive: 'Full-mouth ultrasonic scaling and polishing done.', hindi: '',
-    text: 'Full-mouth ultrasonic scaling and polishing done.' }
+    hindi: '', text: 'Ultrasonic scaling done.' }
 ];
 const PLAN = [
   { plan: 'Normal', treatment: 'Root Canal Treatment',
@@ -69,23 +66,20 @@ const PLAN = [
 ];
 
 let o = ctx.opts('Root Canal Treatment', TPL, PLAN, 'Normal', { tooth: '36' });
-eq('the plan\'s steps are offered, at both lengths and in Hindi where it exists',
+eq('the plan\'s steps are offered, each once, and in Hindi where it exists',
    o.map(x => x.label),
-   ['RCT - Access Opening · Type 1 (Concise)', 'RCT - Access Opening · Type 2 (Comprehensive)',
-    'RCT - Obturation · Type 1 (Concise)', 'RCT - Obturation · Type 2 (Comprehensive)',
-    'RCT - Obturation · Hindi']);
+   ['RCT - Access Opening', 'RCT - Obturation', 'RCT - Obturation · Hindi']);
 eq('with the tooth already written in', o[0].text, 'Access opening done wrt 36 under LA.');
 // The same treatment, the other plan: a different list. That is the whole
 // reason the plan is keyed by plan.
 eq('the other plan is a different answer, for the same treatment',
    ctx.opts('Root Canal Treatment', TPL, PLAN, 'CGHS', { tooth: '36' }).map(x => x.label),
-   ['RCT - Obturation · Type 1 (Concise)', 'RCT - Obturation · Type 2 (Comprehensive)',
-    'RCT - Obturation · Hindi']);
+   ['RCT - Obturation', 'RCT - Obturation · Hindi']);
 eq('nothing named, nothing offered', ctx.opts('', TPL, PLAN, 'Normal', {}).length, 0);
 // A treatment the plan has not been filled in for still offers something.
 eq('a treatment the plan does not list falls back to the name it matches',
    ctx.opts('Scaling - Full Mouth', TPL, [], 'Normal', {}).map(x => x.label),
-   ['Type 1 (Concise)', 'Type 2 (Comprehensive)']);
+   ['Scaling']);
 eq('and a treatment nothing matches offers an empty list, not a blank box',
    ctx.opts('Orthodontic Retainer', TPL, [], 'Normal', {}).length, 0);
 
@@ -137,10 +131,8 @@ const LOCAL = {
   eq('naming the procedure brings up its notes', await noteSel().count(), 1);
   eq('which are the ones Plan Normal lists for it',
      await noteSel().first().evaluate(e => Array.from(e.options).map(o => o.textContent)),
-     ['Pick the note from the plan (5)…',
-      'RCT - Access Opening · Type 1 (Concise)', 'RCT - Access Opening · Type 2 (Comprehensive)',
-      'RCT - Obturation · Type 1 (Concise)', 'RCT - Obturation · Type 2 (Comprehensive)',
-      'RCT - Obturation · Hindi']);
+     ['Pick the note from the plan (3)…',
+      'RCT - Access Opening', 'RCT - Obturation', 'RCT - Obturation · Hindi']);
 
   const box = () => page.locator('textarea[placeholder="Describe what was done..."]').first().inputValue();
   await noteSel().first().selectOption({ index: 1 });
@@ -149,11 +141,11 @@ const LOCAL = {
      await box(), 'Access opening done wrt 36 under LA.');
   // Two things done in one visit build the note up. Replacing would throw
   // away the first, and a register entry is the record of the whole visit.
-  await noteSel().first().selectOption({ index: 4 });
+  await noteSel().first().selectOption({ index: 2 });
   await page.waitForTimeout(200);
   eq('picking a second adds it on its own line rather than replacing the first',
      await box(),
-     'Access opening done wrt 36 under LA.\nObturation completed wrt 36 by lateral condensation.');
+     'Access opening done wrt 36 under LA.\nObturation completed wrt 36.');
   ok('and the dropdown goes back to its prompt, so the same note can be picked twice',
      await noteSel().first().inputValue() === '', '');
 

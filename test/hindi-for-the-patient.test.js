@@ -237,7 +237,7 @@ ok('the work-done templates follow the toggle',
   eq('with the toggle on the form is handed the Hindi note',
      on[0].text, '{tooth} \u092a\u0930 \u0930\u0942\u091f \u0915\u0948\u0928\u093e\u0932 \u0916\u094b\u0932\u093e \u0917\u092f\u093e\u0964');
   eq('a template with no Hindi keeps its English rather than going blank',
-     on[1].text, 'WL recorded fully.');
+     on[1].text, 'WL recorded.');
   eq('with the toggle off nothing changes at all',
      JSON.stringify(swap(false, flat)), JSON.stringify(flat));
   ok('the swap is in the page, on the way to the form',
