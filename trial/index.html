@@ -240,7 +240,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-19a";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-19d";
+const KB_APP_BUILD = "2026-11-19e";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -1290,12 +1290,19 @@ function ToothMultiSelect({ selected, onToggle }) {
 // tap-to-select FDI grid instead of a free-text box — for Hard Tissue items
 // where the answer is always a tooth number, typos and inconsistent formats
 // (e.g. "16" vs "tooth 16" vs "#16") aren't worth the risk.
+// `onChange` here must accept a function of the stored answer, which the
+// care plan's u2 does: the next selection is built out of the current one,
+// and taps come faster than React re-renders.
 function ToothPRow({ label, val, onChange }) {
   const selected = (val.area || "").split(",").map(s => s.trim()).filter(Boolean);
   const toggle = t => {
     const tStr = String(t);
-    const next = selected.includes(tStr) ? selected.filter(x => x !== tStr) : [...selected, tStr];
-    onChange({ ...val, area: next.join(", ") });
+    onChange(prev => {
+      const base = prev && typeof prev === "object" ? prev : val;
+      const cur = String(base.area || "").split(",").map(x => x.trim()).filter(Boolean);
+      const next = cur.includes(tStr) ? cur.filter(x => x !== tStr) : cur.concat([tStr]);
+      return { ...base, area: next.join(", ") };
+    });
   };
   return /*#__PURE__*/React.createElement("div", {
     style: { marginBottom: 5, padding: "3px 0", borderBottom: `0.5px solid ${BORDER}` }
@@ -4401,9 +4408,15 @@ function CarePlan({
     ...p,
     [k]: e.target.value
   }));
+  // `v` may be a function of the answer already stored. A row that builds
+  // its next answer out of its current one -- the tooth grid, which adds a
+  // tooth to a list -- loses teeth otherwise: three quick taps on an iPad
+  // land in one React batch, each computes its answer from the same stale
+  // list, and only the last tooth survives. A plain value still behaves
+  // exactly as it did.
   const u2 = (k, v) => setP2(p => ({
     ...p,
-    [k]: v
+    [k]: typeof v === "function" ? v(p[k]) : v
   }));
 
   // The examination, off the master list. A row knows which component draws
@@ -4427,7 +4440,7 @@ function CarePlan({
       React.createElement("input", { style: inp, value: p2[k] || "",
         onChange: e => u2(k, e.target.value) }));
     const healthy = kind === "healthy";
-    const Row = healthy ? HRow : PRow;
+    const Row = healthy ? HRow : (clinicalExamIsToothGrid(r) ? ToothPRow : PRow);
     // Parafunctional was saved with its note under `description`; every
     // other present-row uses `area`. Read both so a plan saved before this
     // was a list still shows what was written on it.
@@ -4437,8 +4450,14 @@ function CarePlan({
     return React.createElement(Row, { key: k, label: r.finding,
       val: val, onChange: v => u2(k, v) });
   };
+  // A tooth-grid row is a present row with a better answer box, so it is
+  // listed under Present rather than falling out of both columns on a
+  // screen that splits a section by kind.
   const examKind = (section, kind) => examIn(section)
-    .filter(r => String(r.kind || "present") === kind).map(examRow);
+    .filter(r => {
+      const k = String(r.kind || "present");
+      return kind === "present" ? (k === "present" || k === "teeth") : k === kind;
+    }).map(examRow);
   // Sections the clinic has added. Drawn after the four the page was built
   // around, so a new one appears rather than being quietly dropped.
   const examExtra = examList.map(r => String(r.section || ""))
@@ -29360,15 +29379,15 @@ const CLINICAL_EXAM_SEED = [
   ["Intra-Oral Check", "Palate",              "healthy", "palate"],
   ["Intra-Oral Check", "Floor of Mouth",      "healthy", "floorMouth"],
   ["Intra-Oral Check", "Buccal Mucosa",       "healthy", "buccalMucosa"],
-  ["Gum Assessment",   "Bleeding on Probing", "present", "bleedingProbing"],
-  ["Gum Assessment",   "Gum Recession",       "present", "gumRecession"],
-  ["Gum Assessment",   "Furcation",           "present", "furcation"],
-  ["Gum Assessment",   "Mobility",            "present", "mobility"],
-  ["Wasting Disease",  "Abrasion",            "present", "abrasion"],
-  ["Wasting Disease",  "Attrition",           "present", "attrition"],
-  ["Wasting Disease",  "Abfraction",          "present", "abfraction"],
-  ["Wasting Disease",  "Erosion",             "present", "erosion"],
-  ["Parafunctional Habits", "Parafunctional",   "present", "parafunctional"],
+  ["Gum Assessment",   "Bleeding on Probing", "teeth",   "bleedingProbing"],
+  ["Gum Assessment",   "Gum Recession",       "teeth",   "gumRecession"],
+  ["Gum Assessment",   "Furcation",           "teeth",   "furcation"],
+  ["Gum Assessment",   "Mobility",            "teeth",   "mobility"],
+  ["Wasting Disease",  "Abrasion",            "teeth",   "abrasion"],
+  ["Wasting Disease",  "Attrition",           "teeth",   "attrition"],
+  ["Wasting Disease",  "Abfraction",          "teeth",   "abfraction"],
+  ["Wasting Disease",  "Erosion",             "teeth",   "erosion"],
+  ["Parafunctional Habits", "Parafunctional",   "teeth",   "parafunctional"],
   ["Investigations Required", "IOPA",                "check", "iopa"],
   ["Investigations Required", "OPG",                 "check", "opg"],
   ["Investigations Required", "Lateral Cephalogram", "check", "latCeph"],
@@ -29389,9 +29408,34 @@ const CLINICAL_EXAM_SEED = [
 const CLINICAL_EXAM_KINDS = [
   ["healthy", "Healthy, or an observation"],
   ["present", "Present, with a note"],
+  ["teeth",   "Present, on a tooth grid"],
   ["check",   "A tick, nothing to write"],
   ["text",    "A line of text"]
 ];
+// ── Findings answered by tapping a tooth ───────────────────────────────
+//
+// Gum and wasting findings are always ABOUT teeth. Typed into a free box,
+// "Mobility" gets answered "36", "tooth 36", "#36" and "36,37" by four
+// people in one week -- four spellings of one answer, none of which can be
+// counted, charted or carried onto a sheet later.
+//
+// Any finding can be put on the grid from Master, by its kind. These nine
+// are ALSO charted by their key, because a clinic that pressed "Load the
+// clinic's findings" before the kind existed has them stored as plain
+// present rows -- and the stored list wins over the seed, so otherwise the
+// only way to get the grid would be to re-load the list and throw away
+// every finding the clinic has edited since.
+const CLINICAL_TOOTH_KEYS = ["bleedingProbing", "gumRecession", "furcation", "mobility",
+  "abrasion", "attrition", "abfraction", "erosion", "parafunctional"];
+function clinicalExamIsToothGrid(r) {
+  if (!r) return false;
+  const kind = String(r.kind || "present");
+  if (kind === "teeth") return true;
+  // Only a present row is upgraded. A finding somebody deliberately turned
+  // into a tick or a line of text stays what they made it.
+  if (kind !== "present") return false;
+  return CLINICAL_TOOTH_KEYS.indexOf(String(r.key || "")) >= 0;
+}
 // A finding the clinic adds needs a key of its own that will not collide
 // with one already in a saved plan, and will not change when it is renamed.
 function clinicalExamKey(finding, taken) {
