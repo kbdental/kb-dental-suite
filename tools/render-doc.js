@@ -1,13 +1,24 @@
-// Renders docs/WORKFLOW.md to a readable page. Handles only what that file
-// uses -- headings, tables, fenced code, lists (wrapped items included) and
-// paragraphs -- and nothing it does not.
+// Renders a doc in docs/ to a readable page:
+//   node tools/render-doc.js docs/SETUP.md [out.html]
+//
+// Handles what these files use -- headings (with anchors, so a contents
+// list works), tables, fenced code, blockquotes, links, and lists whose
+// items wrap -- and nothing they do not.
 const fs = require('fs');
 const path = require('path');
 const SRC = process.argv[2] || path.join(__dirname, '..', 'docs', 'WORKFLOW.md');
 const OUT = process.argv[3] || SRC.replace(/\.md$/, '.html');
 const md = fs.readFileSync(SRC, 'utf8');
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// A heading's anchor, worked out the way GitHub does it, so a contents
+// list written for the Markdown file works on the rendered page too.
+const slug = s => s.toLowerCase().trim()
+  // Each space becomes a hyphen; runs are NOT collapsed. A dash dropped
+  // out of a heading leaves two spaces behind, and GitHub's anchor keeps
+  // both -- "Route A -- Apps Script" is route-a--apps-script.
+  .replace(/[^\w\s-]/g, '').replace(/\s/g, '-');
 const inline = s => esc(s)
+  .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
   .replace(/`([^`]+)`/g, '<code>$1</code>')
   .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
@@ -25,9 +36,9 @@ while (i < lines.length) {
       + '</tr></thead><tbody>' + rows.slice(2).map(r =>
         '<tr>' + cells(r).map(c => '<td>' + inline(c) + '</td>').join('') + '</tr>').join('')
       + '</tbody></table>'); continue; }
-  if (/^### /.test(l)) { out.push('<h3>' + inline(l.slice(4)) + '</h3>'); i++; continue; }
-  if (/^## /.test(l)) { out.push('<h2>' + inline(l.slice(3)) + '</h2>'); i++; continue; }
-  if (/^# /.test(l)) { out.push('<h1>' + inline(l.slice(2)) + '</h1>'); i++; continue; }
+  if (/^### /.test(l)) { const t = l.slice(4); out.push('<h3 id="' + slug(t) + '">' + inline(t) + '</h3>'); i++; continue; }
+  if (/^## /.test(l)) { const t = l.slice(3); out.push('<h2 id="' + slug(t) + '">' + inline(t) + '</h2>'); i++; continue; }
+  if (/^# /.test(l)) { const t = l.slice(2); out.push('<h1 id="' + slug(t) + '">' + inline(t) + '</h1>'); i++; continue; }
   if (/^---\s*$/.test(l)) { out.push('<hr>'); i++; continue; }
   // A blockquote is an aside the page sets apart, and its wrapped lines
   // belong to it the same way a list item's do.
@@ -71,6 +82,9 @@ table{width:100%;border-collapse:collapse;margin:0 0 18px;font-size:14.5px;displ
 th{text-align:left;font-weight:700;color:var(--acc);border-bottom:1.5px solid var(--line);padding:7px 10px;white-space:nowrap}
 td{border-bottom:1px solid var(--line);padding:7px 10px;vertical-align:top}
 strong{font-weight:700}
+a{color:var(--acc);text-decoration:none;border-bottom:1px solid transparent}
+a:hover{border-bottom-color:var(--acc)}
+h1,h2,h3{scroll-margin-top:16px}
 blockquote{margin:0 0 16px;padding:11px 15px;border-left:3px solid var(--acc);
 background:var(--code);border-radius:0 7px 7px 0;color:var(--mute);font-size:15px}
 blockquote code{background:var(--bg)}`;
