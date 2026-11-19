@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-19a";
+var BACKEND_BUILD = "2026-11-19b";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -7263,6 +7263,77 @@ function savePrescription(p) {
       "Prescribing Doctor": p.doctor || ""
     }
   });
+}
+
+// ── Saved CGHS prescriptions ───────────────────────────────────────────
+//
+// "In CGHS prescription there is no option to save what all we have
+//  entered need a save button and also need a search button with date
+//  option so that later if required we can get it and if required take a
+//  print out"
+//
+// A prescription was printed once and existed nowhere else. The panel
+// queries a bill three months on, the patient loses the sheet, a course
+// runs over three visits and the last one needs the first one's wording --
+// and every time it had to be rebuilt from the endorsement by hand, if it
+// could be rebuilt at all.
+//
+// Seven of the eight columns are there to be READ: the clinic opens this
+// tab and scans it. The last one is the document itself as JSON, because
+// reprinting has to give back the sheet that was signed, not an
+// approximation reassembled out of columns.
+var CGHS_RX_SHEET = "CGHS Prescriptions";
+var CGHS_RX_HEADERS = ["Saved At", "Date", "UHID", "Name of Patient",
+                       "Treatments", "Tooth Numbers", "Sittings", "Document"];
+
+function saveCghsPrescription(p) {
+  var uhid = String(p.uhid || "").trim();
+  if (!uhid) return { success: false, error: "A patient is needed before a prescription can be saved." };
+  var doc = String(p.document || "").trim();
+  if (!doc) return { success: false, error: "There is nothing on the prescription to save." };
+  var sh = getClinicalSheet(CGHS_RX_SHEET);
+  if (sh.getLastRow() === 0) sh.appendRow(CGHS_RX_HEADERS);
+  sh.appendRow([new Date().toISOString(), String(p.date || ""), uhid.toUpperCase(),
+                String(p.patientName || ""), String(p.treatments || ""),
+                String(p.teeth || ""), String(p.sittings || ""), doc]);
+  return { success: true };
+}
+
+// Read-only: a search must never bring the tab into being. A clinic that
+// has saved nothing gets an empty list and no new tab in its spreadsheet.
+function listCghsPrescriptions(p) {
+  var sh = getClinicalSheetIfExists_(CGHS_RX_SHEET);
+  if (!sh) return { success: true, prescriptions: [] };
+  var last = sh.getLastRow();
+  if (last < 2) return { success: true, prescriptions: [] };
+
+  var uhid = String((p && p.uhid) || "").trim().toUpperCase();
+  // Both ends are inclusive, because "1st to the 30th" means the 30th.
+  var from = String((p && p.from) || "").trim();
+  var to   = String((p && p.to) || "").trim();
+  var limit = parseInt((p && p.limit), 10) || 50;
+  if (limit < 1) limit = 1;
+  if (limit > 200) limit = 200;
+
+  var vals = sh.getRange(2, 1, last - 1, CGHS_RX_HEADERS.length).getValues();
+  var out = [];
+  // Newest first: the one wanted again is nearly always the last one made.
+  for (var i = vals.length - 1; i >= 0 && out.length < limit; i--) {
+    var r = vals[i];
+    var when = String(r[1] || "").slice(0, 10);
+    if (uhid && String(r[2] || "").trim().toUpperCase() !== uhid) continue;
+    // A row with no date of its own cannot be ruled in by a date search,
+    // but must still be found by UHID alone.
+    if (from && (!when || when < from)) continue;
+    if (to && (!when || when > to)) continue;
+    out.push({
+      savedAt: String(r[0] || ""), date: when, uhid: String(r[2] || ""),
+      patientName: String(r[3] || ""), treatments: String(r[4] || ""),
+      teeth: String(r[5] || ""), sittings: String(r[6] || ""),
+      document: String(r[7] || "")
+    });
+  }
+  return { success: true, prescriptions: out };
 }
 
 function saveScaling(p) {

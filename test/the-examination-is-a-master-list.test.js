@@ -47,11 +47,21 @@ eq('under the seven sections the page was built around',
    ['Extra-Oral Check', 'Intra-Oral Check', 'Gum Assessment', 'Wasting Disease',
     'Parafunctional Habits', 'Investigations Required', 'Post Radiograph Findings']);
 eq('six are answered Healthy-or-observation', SEED.filter(r => r[2] === 'healthy').length, 6);
-eq('twelve Present-with-a-note', SEED.filter(r => r[2] === 'present').length, 12);
+eq('three Present-with-a-note', SEED.filter(r => r[2] === 'present').length, 3);
+// Gum and wasting findings are always ABOUT teeth, so they are answered by
+// tapping the grid rather than typing an area into a box.
+eq('nine Present-on-a-tooth-grid', SEED.filter(r => r[2] === 'teeth').length, 9);
+eq('and the grid is on the findings that are about teeth',
+   SEED.filter(r => r[2] === 'teeth').map(r => r[3]).sort(),
+   ['abfraction', 'abrasion', 'attrition', 'bleedingProbing', 'erosion', 'furcation',
+    'gumRecession', 'mobility', 'parafunctional']);
 eq('nine are a tick and nothing else', SEED.filter(r => r[2] === 'check').length, 9);
 eq('and three a line of text', SEED.filter(r => r[2] === 'text').length, 3);
-eq('only those four shapes exist',
-   KINDS.map(k => k[0]).sort(), ['check', 'healthy', 'present', 'text']);
+eq('only those five shapes exist',
+   KINDS.map(k => k[0]).sort(), ['check', 'healthy', 'present', 'teeth', 'text']);
+// Master has to offer it, or a finding can never be put on the grid.
+ok('and the grid is one Master can choose',
+   KINDS.some(k => k[0] === 'teeth' && /tooth grid/i.test(k[1])), JSON.stringify(KINDS));
 // The keys are the ones saved care plans already use. A typo here loses a
 // column of answers on every plan in the sheet.
 ['jawJoints', 'lymphNodes', 'swelling', 'lipCompetency', 'facialAsymmetry', 'tongue',
@@ -64,8 +74,10 @@ const defaults = cut('const emptyCP2 = {', '\n};');
 // object per finding, a tick lives under inv, and a line of text is a plain
 // string. All three must already be there, or the answer has nowhere to go.
 SEED.forEach(r => {
+  // A tooth-grid answer is a present answer with a better box, so it is
+  // stored in the same slot and a plan saved before the grid still reads.
   const pat = r[2] === 'healthy' ? '\\b' + r[3] + ':\\s*hp\\(\\)'
-            : r[2] === 'present' ? '\\b' + r[3] + ':\\s*pp\\(\\)'
+            : (r[2] === 'present' || r[2] === 'teeth') ? '\\b' + r[3] + ':\\s*pp\\(\\)'
             : r[2] === 'check'   ? '\\b' + r[3] + ':\\s*false'
             :                      '\\b' + r[3] + ':\\s*""';
   ok('the care plan has a slot for ' + r[3], new RegExp(pat).test(defaults), '');
@@ -204,7 +216,16 @@ ok('and Master is given the same list', /rows: examWithBuiltInSections\(examFind
 ok('and falls back to the list the page was built with when there is none',
    /CLINICAL_EXAM_SEED\.map\(r => \(\{ section:r\[0\]/.test(html), '');
 ok('each row is drawn by its shape',
-   /const Row = healthy \? HRow : PRow;/.test(carePlan), '');
+   /const Row = healthy \? HRow : \(clinicalExamIsToothGrid\(r\) \? ToothPRow : PRow\);/.test(carePlan), '');
+// The clinic's stored list has these nine as plain present rows, saved
+// before the grid existed. Waiting for a re-load would mean throwing away
+// every finding edited since, so they are charted by key as well.
+ok('a stored present row that is about teeth gets the grid anyway',
+   /const CLINICAL_TOOTH_KEYS = \["bleedingProbing"/.test(html), '');
+ok('but only a present one -- a tick or a line of text stays what it was made',
+   /if \(kind !== "present"\) return false;/.test(html), '');
+ok('and a grid row is still listed under Present where a screen splits by kind',
+   /kind === "present" \? \(k === "present" \|\| k === "teeth"\) : k === kind/.test(carePlan), '');
 ok('a finding with no answer yet does not crash the plan',
    /p2\[k\] \|\| \(healthy \? hp\(\) : pp\(\)\)/.test(carePlan), '');
 // The two new shapes are drawn, not ignored: a tick reads and writes
