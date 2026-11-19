@@ -240,7 +240,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-19a";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-19c";
+const KB_APP_BUILD = "2026-11-19d";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -4571,7 +4571,7 @@ function CarePlan({
       const on = !!p2.inv[r.key || r.finding];
       return `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:9.5pt;font-weight:${on ? 700 : 400};background:${on ? "#DCF4FB" : "#f5f5f5"};color:${on ? "#0078B4" : "#8a8a8a"};border:0.5pt solid ${on ? "#0090CC" : "#ddd"}">${r.finding}</span>`;
     }).join("");
-    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="sec">Extra-Oral Check</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Extra-Oral Check")}<div class="fl"><div class="lbl">Facial Profile</div><div class="val">${p2.facialProfile || "—"}</div></div></div><div class="sec">Intra-Oral — Soft Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Intra-Oral Check")}<div class="fl"><div class="lbl">Frenum</div><div class="val">${p2.frenum || "—"}</div></div><div class="fl"><div class="lbl">Pigmentation</div><div class="val">${p2.pigmentation || "—"}</div></div></div><div class="sec">Intra-Oral — Hard Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${[["silverFillings", "Silver Fillings"], ["whiteFillings", "White Fillings"], ["decayedTeeth", "Decayed Teeth"], ["chippedTeeth", "Chipped Teeth"], ["missingTeeth", "Missing Teeth"], ["crowns", "Crowns"], ["bridges", "Bridges"], ["veneers", "Veneers"], ["crowding", "Crowding"], ["dentures", "Dentures"], ["stainsCalculus", "Stains & Calculus"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="val">${pf(p2[k])}</div></div>`).join("")}</div><div class="sec">Gum &amp; Parafunctional &amp; Wasting</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Gum Assessment")}${examCells("Parafunctional Habits")}${examCells("Wasting Disease")}${examExtra.map(sec => examCells(sec)).join("")}</div><div class="sec">Investigations Required</div><div style="margin-bottom:5pt">${examChips("Investigations Required")}${p2.inv.blood ? `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:9.5pt;font-weight:700;background:#DCF4FB;color:#0078B4;border:0.5pt solid #0090CC">Blood Exam${p2.inv.bloodText ? " — " + p2.inv.bloodText : ""}</span>` : ""}</div><div class="sec">Post Radiograph Findings</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:5pt">${examCells("Post Radiograph Findings")}</div>${p2.otherFindings ? `<div class="fl"><div class="lbl">Any Other Findings</div><div class="val">${p2.otherFindings}</div></div>` : ""}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
+    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="sec">Extra-Oral Check</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Extra-Oral Check")}<div class="fl"><div class="lbl">Facial Profile</div><div class="val">${p2.facialProfile || "—"}</div></div></div><div class="sec">Intra-Oral — Soft Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Intra-Oral Check")}<div class="fl"><div class="lbl">Frenum</div><div class="val">${p2.frenum || "—"}</div></div><div class="fl"><div class="lbl">Pigmentation</div><div class="val">${p2.pigmentation || "—"}</div></div></div><div class="sec">Intra-Oral — Hard Tissue</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${[["silverFillings", "Silver Fillings"], ["whiteFillings", "White Fillings"], ["decayedTeeth", "Decayed Teeth"], ["chippedTeeth", "Chipped Teeth"], ["missingTeeth", "Missing Teeth"], ["crowns", "Crowns"], ["bridges", "Bridges"], ["veneers", "Veneers"], ["crowding", "Crowding"], ["dentures", "Dentures"], ["stainsCalculus", "Stains & Calculus"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="val">${pf(p2[k])}</div></div>`).join("")}</div><div class="sec">Gum &amp; Parafunctional &amp; Wasting</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:6pt">${examCells("Gum Assessment")}${examCells("Parafunctional Habits")}${examCells("Wasting Disease")}${examExtra.map(sec => examCells(sec)).join("")}</div><div class="sec">Investigations Required</div><div style="margin-bottom:5pt">${examChips("Investigations Required")}${p2.inv.blood ? `<span style="display:inline-block;padding:2pt 7pt;margin:2pt;border-radius:3pt;font-size:9.5pt;font-weight:700;background:#DCF4FB;color:#0078B4;border:0.5pt solid #0090CC">Blood Exam${p2.inv.bloodText ? " — " + p2.inv.bloodText : ""}</span>` : ""}</div><div class="sec">Post Radiograph Findings</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4pt 8pt;margin-bottom:5pt">${examCells("Post Radiograph Findings")}</div>${p2.inv.anyOther ? `<div class="fl"><div class="lbl">Any Other Investigation</div><div class="val">${p2.inv.anyOther}</div></div>` : ""}${p2.otherFindings ? `<div class="fl"><div class="lbl">Any Other Findings</div><div class="val">${p2.otherFindings}</div></div>` : ""}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
   }
   function buildCPPage3HTML() {
     return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="sec">Radiograph Findings</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8pt;margin-bottom:10pt">${[["iopa", "IOPA"], ["opg", "OPG"], ["latCeph", "Lateral Cephalogram"], ["cbct", "CBCT"], ["digScan", "Digital Scan"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="vb" style="min-height:50pt">${p3[k] || "&nbsp;"}</div></div>`).join("")}</div><div class="sec">Medication Record</div><table><thead><tr><th style="width:38%">Name of Drug</th><th style="width:14%">Dose</th><th style="width:18%">Route</th><th style="width:30%">Frequency</th></tr></thead><tbody>${p3.meds.filter(m => m.drug).map(m => `<tr><td>${m.drug}</td><td>${m.dose}</td><td>${m.route}</td><td>${m.frequency}</td></tr>`).join("") || "<tr><td colspan='4' style='color:#5a5a5a;text-align:center;padding:8pt'>No medications recorded</td></tr>"}</tbody></table>${[["medCorrelation", "Medical Correlation (if any)"], ["provisionalDiagnosis", "Provisional Diagnosis"], ["specialNotes", "Special Notes (if any)"]].map(([k, l]) => `<div class="fl"><div class="lbl">${l}</div><div class="vb">${p3[k] || "&nbsp;"}</div></div>`).join("")}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
@@ -4585,6 +4585,142 @@ function CarePlan({
     const lo = LOWER_T.slice(0, 8).map(cell).join("") + gap + LOWER_T.slice(8).map(cell).join("");
     return pW(pH(window.LOGO_B64, "KBDC/FORMS/CP-01") + `<div class="dtitle">Proposed / Suggested Treatment Plan</div><div class="g3" style="margin-bottom:8pt"><div class="fl"><div class="lbl">Name</div><div class="val" style="font-size:13.5pt;font-weight:700">${pat ? pat.name : "—"}</div></div><div class="fl"><div class="lbl">UHID</div><div class="val" style="font-weight:700">${pat ? pat.uhid : "—"}</div></div><div class="fl"><div class="lbl">Date</div><div class="val">${TODAY}</div></div></div><div class="sec">Dental Chart</div><div style="text-align:center;margin-bottom:8pt"><div style="font-size:9.5pt;font-weight:700;color:#0078B4;text-transform:uppercase;margin-bottom:2pt">Upper</div><table class="tgrid"><tr>${up}</tr></table><div style="border-top:1.5pt dashed #0078B4;margin:2pt auto;width:75%;opacity:0.4"></div><table class="tgrid"><tr>${lo}</tr></table><div style="font-size:9.5pt;font-weight:700;color:#0078B4;text-transform:uppercase;margin-top:2pt">Lower</div></div>${rows.length ? `<div class="sec">Treatment Plan</div><table><thead><tr><th style="width:12%">Tooth No.</th><th style="width:30%">Procedure</th><th>Treatment Details</th></tr></thead><tbody>${rows.map(r => `<tr><td style="text-align:center;font-weight:700;font-size:13.5pt">${r.tooth || "—"}</td><td>${r.procedure || "—"}</td><td>${r.details || "&nbsp;"}</td></tr>`).join("")}</tbody></table>` : `<div style="text-align:center;padding:16pt;color:#5a5a5a;border:0.5pt dashed #ddd;border-radius:4pt">No treatment plan entries</div>`}<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div><div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CP-01");
   }
+  // ── Clinical Summary ──────────────────────────────────────────────────
+  //
+  // "give a format which would contain all the observation recorded and
+  //  investigation asked, diagnosis given and any plan advised"
+  //
+  // The four care plan pages are the full record: every finding the clinic
+  // examines, answered or not, across four sheets. That is what you file.
+  // It is not what you read at the start of the next visit, and it is not
+  // what you hand a patient or another dentist.
+  //
+  // This is one page of what was actually FOUND. Five rows, in the order a
+  // case is thought through: what they came with, what was seen, what was
+  // asked for, what it was called, what was advised.
+  //
+  // Only what was recorded appears. An untouched finding defaults to
+  // healthy:false with no observation written -- print those and the
+  // Observations row becomes every row of the examination, which is the
+  // full record again and no summary at all.
+  function buildCPSummaryHTML() {
+    const esc = (v) => String(v === undefined || v === null ? "" : v)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const clean = (xs) => xs.map(x => String(x === undefined || x === null ? "" : x).trim())
+      .filter(Boolean);
+    // One item reads as a sentence; several read as pointers.
+    const cell = (items) => {
+      const xs = clean(items);
+      if (!xs.length) return `<span style="color:#8a8a8a">&mdash;</span>`;
+      if (xs.length === 1) return esc(xs[0]).replace(/\n/g, "<br/>");
+      return `<ul style="margin:0;padding-left:13pt">`
+        + xs.map(x => `<li style="margin-bottom:2.5pt">${esc(x).replace(/\n/g, "<br/>")}</li>`).join("")
+        + `</ul>`;
+    };
+
+    // ── what they came with ──
+    const complaints = [p1.chiefComplaint,
+      p1.affectedArea ? "Affected area: " + p1.affectedArea : "",
+      p1.duration ? "Duration & progression: " + p1.duration : "",
+      p1.aggravating ? "Aggravating & relieving: " + p1.aggravating : ""];
+
+    // ── what was seen ──
+    const obs = [];
+    const sections = CP_EXAM_SECTIONS.concat(examExtra)
+      .filter((x, i, a) => a.indexOf(x) === i && x !== "Investigations Required");
+    sections.forEach(sec => examIn(sec).forEach(r => {
+      const kind = String(r.kind || "present");
+      const k = r.key || r.finding;
+      if (kind === "check") return;                       // those are investigations
+      if (kind === "text") { if (String(p2[k] || "").trim()) obs.push(r.finding + ": " + p2[k]); return; }
+      const v = p2[k] || {};
+      if (kind === "healthy") {
+        // Not ticked healthy AND nothing written means nobody looked, not
+        // that something is wrong.
+        if (!v.healthy && String(v.observation || "").trim()) obs.push(r.finding + ": " + v.observation);
+        return;
+      }
+      if (v.present) obs.push(r.finding + (v.area || v.description ? " — " + (v.area || v.description) : ""));
+    }));
+    [["silverFillings", "Silver fillings"], ["whiteFillings", "White fillings"],
+     ["decayedTeeth", "Decayed teeth"], ["chippedTeeth", "Chipped teeth"],
+     ["missingTeeth", "Missing teeth"], ["crowns", "Crowns"], ["bridges", "Bridges"],
+     ["veneers", "Veneers"], ["crowding", "Crowding"], ["dentures", "Dentures"],
+     ["stainsCalculus", "Stains & calculus"]].forEach(([k, l]) => {
+      const v = p2[k] || {};
+      if (v.present) obs.push(l + (v.area || v.description ? " — " + (v.area || v.description) : ""));
+    });
+    [["facialProfile", "Facial profile"], ["frenum", "Frenum"],
+     ["pigmentation", "Pigmentation"], ["shadeOfTeeth", "Shade of teeth"],
+     ["rct", "Root canal treated"], ["implants", "Implants"]].forEach(([k, l]) => {
+      if (String(p2[k] || "").trim()) obs.push(l + ": " + p2[k]);
+    });
+    if (String(p1.extraOral || "").trim()) obs.push("Extra oral: " + p1.extraOral);
+    if (String(p1.intraOral || "").trim()) obs.push("Intra oral: " + p1.intraOral);
+    if (String(p2.otherFindings || "").trim()) obs.push(p2.otherFindings);
+
+    // ── what was asked for ──
+    // The ticked investigations read as one advice line, the way it is
+    // written by hand: "Advised OPG and Lateral Cephalogram."
+    const asked = examIn("Investigations Required")
+      .filter(r => !!p2.inv[r.key || r.finding]).map(r => r.finding);
+    const inv = [];
+    if (asked.length) {
+      inv.push("Advised " + (asked.length === 1 ? asked[0]
+        : asked.slice(0, -1).join(", ") + " and " + asked[asked.length - 1]) + ".");
+    }
+    if (p2.inv.blood) inv.push("Blood examination" + (p2.inv.bloodText ? " — " + p2.inv.bloodText : "") + ".");
+    // Typed in, and until now recorded and never printed anywhere.
+    if (String(p2.inv.anyOther || "").trim()) inv.push(p2.inv.anyOther);
+    [["iopa", "IOPA"], ["opg", "OPG"], ["latCeph", "Lateral cephalogram"],
+     ["cbct", "CBCT"], ["digScan", "Digital scan"]].forEach(([k, l]) => {
+      if (String(p3[k] || "").trim()) inv.push(l + " findings: " + p3[k]);
+    });
+
+    // ── what it was called ──
+    const diag = [p3.provisionalDiagnosis || p1.provisionalDiagnosis,
+      p3.medCorrelation ? "Medical correlation: " + p3.medCorrelation : ""];
+
+    // ── what was advised ──
+    const plan = [];
+    (p1.treatments || []).forEach(t => {
+      if (!t || !String(t.option || "").trim()) return;
+      const bits = [t.option];
+      if (String(t.prognosis || "").trim()) bits.push("prognosis " + t.prognosis);
+      if (String(t.outcome || "").trim()) bits.push(t.outcome);
+      if (String(t.charges || "").trim()) bits.push("₹" + t.charges);
+      plan.push(bits.join(" · "));
+    });
+    (p4.rows || []).forEach(r => {
+      if (!r || !String(r.procedure || "").trim()) return;
+      plan.push((r.tooth ? r.tooth + " — " : "") + r.procedure
+        + (String(r.details || "").trim() ? " (" + r.details + ")" : ""));
+    });
+    if (String(p3.specialNotes || "").trim()) plan.push(p3.specialNotes);
+
+    const row = (label, items) =>
+      `<tr><th style="width:21%;text-align:left;vertical-align:top;background:#f0f6fb;` +
+      `color:#0078B4;font-weight:700">${label}</th><td>${cell(items)}</td></tr>`;
+
+    return pW(pH(window.LOGO_B64, "KBDC/FORMS/CS-01")
+      + `<div class="dtitle">Clinical Summary</div>`
+      + `<div class="g3"><div class="fl"><div class="lbl">Name</div>`
+      + `<div class="val" style="font-size:13.5pt;font-weight:700">${esc(pat ? pat.name : "—")}</div></div>`
+      + `<div class="fl"><div class="lbl">UHID</div><div class="val" style="font-weight:700">`
+      + `${esc(pat ? pat.uhid : "—")}</div></div>`
+      + `<div class="fl"><div class="lbl">Date</div><div class="val">${TODAY}</div></div></div>`
+      + `<table style="margin-top:6pt">`
+      + row("Complaints", complaints)
+      + row("Observations", obs)
+      + row("Investigations", inv)
+      + row("Diagnosis", diag)
+      + row("Plan Advised", plan)
+      + `</table>`
+      + `<div class="sigrow"><div><div class="lbl">Signature of the Doctor</div>`
+      + `<div class="sigbox"></div><div style="font-size:10pt;color:#2e2e2e">`
+      + `${signatureLine(TODAY)}</div></div></div>`, "KBDC/FORMS/CS-01");
+  }
+
   function buildAllCPHTML() {
     const b1 = buildCPPage1HTML().replace("</body></html>", "");
     const b2 = buildCPPage2HTML().replace(/<!DOCTYPE.*?<body>/s, "").replace("</body></html>", "");
@@ -4593,14 +4729,14 @@ function CarePlan({
     return b1 + `<div class="pb">` + b2 + `</div><div class="pb">` + b3 + `</div><div class="pb">` + b4 + `</div></body></html>`;
   }
   const doPrint = which => {
-    const h = which === "1" ? buildCPPage1HTML() : which === "2" ? buildCPPage2HTML() : which === "3" ? buildCPPage3HTML() : which === "4" ? buildCPPage4HTML() : buildAllCPHTML();
+    const h = which === "summary" ? buildCPSummaryHTML() : which === "1" ? buildCPPage1HTML() : which === "2" ? buildCPPage2HTML() : which === "3" ? buildCPPage3HTML() : which === "4" ? buildCPPage4HTML() : buildAllCPHTML();
     const w = window.open("", "_blank");
     w.document.write(h);
     w.document.close();
     setTimeout(() => w.print(), 600);
   };
   const doPreview = which => {
-    setPreviewHTML(which === "1" ? buildCPPage1HTML() : which === "2" ? buildCPPage2HTML() : which === "3" ? buildCPPage3HTML() : which === "4" ? buildCPPage4HTML() : buildAllCPHTML());
+    setPreviewHTML(which === "summary" ? buildCPSummaryHTML() : which === "1" ? buildCPPage1HTML() : which === "2" ? buildCPPage2HTML() : which === "3" ? buildCPPage3HTML() : which === "4" ? buildCPPage4HTML() : buildAllCPHTML());
     setPreview(true);
   };
   const SigR = () => /*#__PURE__*/React.createElement("div", {
@@ -4704,7 +4840,21 @@ function CarePlan({
       background: BORDER,
       margin: "0 2px"
     }
-  }), ["1", "2", "3", "4"].map(n => /*#__PURE__*/React.createElement("button", {
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => doPrint("summary"),
+    title: "One page: what was found, asked for, diagnosed and advised",
+    style: {
+      padding: "6px 12px",
+      fontSize: 12.5,
+      border: `1px solid ${T}`,
+      borderRadius: 6,
+      cursor: "pointer",
+      color: T,
+      background: "#fff",
+      fontWeight: 700,
+      marginRight: 2
+    }
+  }, "\uD83D\uDDA8 Clinical Summary"), ["1", "2", "3", "4"].map(n => /*#__PURE__*/React.createElement("button", {
     key: n,
     onClick: () => doPrint(n),
     style: {
