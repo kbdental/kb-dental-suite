@@ -28,7 +28,12 @@ const sec = HTML.slice(HTML.indexOf('t: "Personal Information"'),
                        HTML.indexOf('c: "Full Name *"'));
 ok("the sheet asks which kind of patient", /c: "Patient Type"/.test(sec), sec.slice(0, 300));
 ok("as two buttons, since it is always one of the two",
-   /\["normal", "Normal", T\], \["panel", "Panel", "#7C3AED"\]/.test(sec));
+   /\["normal", "Private", T\], \["panel", "Panel", "#7C3AED"\]/.test(sec));
+// The clinic says "private". The VALUE behind the button stays "normal"
+// and the cell still reads "Normal": thousands of rows, the CRM's boards,
+// the Patient Types master and every report are keyed on that word.
+ok("the button says Private, and the data still says Normal",
+   /patientType === "normal" \? \{ patientType: "Normal" \}/.test(HTML));
 ok("choosing Panel asks which panel", /c: "Panel"/.test(sec));
 ok("whether the holder is serving or a pensioner", /c: "Card Holder"/.test(sec));
 ok("and the card number", /c: "Card ID"/.test(sec));
