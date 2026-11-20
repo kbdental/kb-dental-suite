@@ -118,6 +118,15 @@ const TPL = { situation: 'BMP', category: 'RCT',
      'BMP done wrt 44. 3 (MB, DB, P) canals. Instrument: ProTaper Gold. '
      + 'Irrigated with NaOCl 3%. Medicament: Calcipex.');
   ok('with nothing left unfilled', note.indexOf('{') < 0, note);
+  // Inserting clears the picker on purpose, so it plainly offers the next
+  // job -- see more-than-one-job-in-a-sitting.test.js. The boxes go with
+  // it, so they are chosen afresh for what follows.
+  eq('and inserting clears the picker, boxes and all',
+     await page.evaluate(() => document.querySelectorAll('#cnTplFields [data-tpl-field]').length), 0);
+  await chooseTemplate();
+  await page.waitForTimeout(300);
+  eq('choosing it again brings the boxes back, filled from the form',
+     (Object.fromEntries(await read())).canals, '3 (MB, DB, P)');
 
   // ── what the dentist types is theirs ─────────────────────────────────
   await page.evaluate(() => {
