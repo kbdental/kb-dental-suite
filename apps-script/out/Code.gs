@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-19b";
+var BACKEND_BUILD = "2026-11-20";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -7320,7 +7320,14 @@ function listCghsPrescriptions(p) {
   // Newest first: the one wanted again is nearly always the last one made.
   for (var i = vals.length - 1; i >= 0 && out.length < limit; i--) {
     var r = vals[i];
-    var when = String(r[1] || "").slice(0, 10);
+    // The Date column is written as "2026-11-14" and Sheets stores that as a
+    // DATE, not as text -- so it reads back as a Date object and
+    // String(it).slice(0,10) is "Mon Nov 14". Compared against "2026-11-14"
+    // that is greater than every `to` a search can carry, so every row was
+    // filtered out and a clinic with a tab full of prescriptions was told
+    // there was nothing in the range. Normalised the way every other date
+    // in this file is.
+    var when = formatDateISO(r[1]);
     if (uhid && String(r[2] || "").trim().toUpperCase() !== uhid) continue;
     // A row with no date of its own cannot be ruled in by a date search,
     // but must still be found by UHID alone.

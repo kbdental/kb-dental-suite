@@ -55,7 +55,15 @@ const makeSheet = (name) => ({
       return out;
     } };
   },
-  appendRow(r) { this._rows.push(r.slice()); }
+  // Google Sheets parses "2026-11-14" on write and hands back a DATE, not
+  // the text that went in. The stub does the same, or a search that works
+  // here fails on the clinic's sheet and nowhere else.
+  appendRow(r) {
+    this._rows.push(r.map(function (v, i) {
+      return (i === 1 && typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v))
+        ? new Date(v + 'T00:00:00Z') : v;
+    }));
+  }
 });
 
 const load = () => {
@@ -65,9 +73,16 @@ const load = () => {
   const ctx = {
     String, Object, Array, Number, Math, Date, JSON, parseInt, console,
     getClinicalSheet: (n) => { if (!tabs[n]) { tabs[n] = makeSheet(n); created.push(n); } return tabs[n]; },
-    getClinicalSheetIfExists_: (n) => tabs[n] || null
+    getClinicalSheetIfExists_: (n) => tabs[n] || null,
+    // The real one, so the stub cannot paper over a date it mishandles.
+    formatDateISO: null
   };
   vm.createContext(ctx);
+  // formatDateISO out of Code.gs itself, not a stand-in.
+  vm.runInContext(gs.slice(gs.indexOf('function formatDateISO(val) {'),
+                           gs.indexOf('\n}', gs.indexOf('function formatDateISO(val) {')) + 2)
+    + '\nthis.formatDateISO = formatDateISO;', ctx);
+  ctx.formatDateISO = ctx.formatDateISO;
   vm.runInContext(gs.slice(a, b)
     + '\nthis.save = saveCghsPrescription; this.list = listCghsPrescriptions;'
     + '\nthis.HEADERS = CGHS_RX_HEADERS; this.SHEET = CGHS_RX_SHEET;', ctx);
@@ -109,8 +124,9 @@ const DOC = JSON.stringify({ date: '2026-11-14',
   const sh = tabs[ctx.SHEET];
   eq('under a heading row', sh._rows[0], ctx.HEADERS);
   eq('with the columns the clinic reads',
-     sh._rows[1].slice(1, 7),
-     ['2026-11-14', 'AH0713', 'Altaf Ahmed Sikunder', 'Flap Surgery- Per Tooth', '16, 26', '2']);
+     [String(sh._rows[1][1]).slice(0, 15)].concat(sh._rows[1].slice(2, 7)),
+     [String(new Date('2026-11-14T00:00:00Z')).slice(0, 15),
+      'AH0713', 'Altaf Ahmed Sikunder', 'Flap Surgery- Per Tooth', '16, 26', '2']);
   // Typed in lower case at the desk, filed in upper so a later search finds it.
   eq('the UHID is filed the way it is searched', sh._rows[1][2], 'AH0713');
   eq('and the document itself is the last column', sh._rows[1][7], DOC);
@@ -143,9 +159,15 @@ const DOC = JSON.stringify({ date: '2026-11-14',
      dates({ uhid: 'AH0713', from: '2026-11-02', to: '2026-11-30' }), ['2026-11-14']);
   eq('a range with nothing in it finds nothing', dates({ from: '2027-01-01' }), []);
 
+  // The bug this guards: the Date column comes back as a Date object, and
+  // read as text it reads "Mon Nov 10" -- larger than any `to` a search can
+  // carry, so every row was filtered out and a full tab searched as empty.
+  eq('a date the sheet stored as a DATE is still searched as a date',
+     dates({ to: '2026-11-10' }), ['2026-11-10', '2026-11-01']);
   const one = ctx.list({ uhid: 'AI0311' }).prescriptions[0];
   eq('a found row carries what is needed to list it',
      [one.uhid, one.patientName, one.date], ['AI0311', 'AI0311', '2026-11-10']);
+  ok('with the date in the shape the screen formats', /^\d{4}-\d{2}-\d{2}$/.test(one.date), one.date);
   eq('and the document, so it can be printed', JSON.parse(one.document).pat.uhid, 'AH0713');
 }
 {
@@ -239,8 +261,8 @@ ok('and to the patient on screen', /setFindUhid\(pat && pat\.uhid \? pat\.uhid :
 
 // The page must ask for the backend that has these two calls.
 ok('the page asks for a backend new enough to answer',
-   /const KB_BACKEND_BUILD_REQUIRED = "2026-11-19b"/.test(html));
-ok('and the backend says it is', /var BACKEND_BUILD = "2026-11-19b"/.test(gs));
+   /const KB_BACKEND_BUILD_REQUIRED = "2026-11-20"/.test(html));
+ok('and the backend says it is', /var BACKEND_BUILD = "2026-11-20"/.test(gs));
 
 console.log('  ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
