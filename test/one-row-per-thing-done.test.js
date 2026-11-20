@@ -157,7 +157,8 @@ ok('and the Treatment Progress Notes split theirs',
     TP_PCSS: '', fmtDMY: (d) => '01/04/2025'
   };
   vm.createContext(pctx);
-  vm.runInContext(fnOf('kbTeethInLine') + fnOf('kbSplitVisitRows') + fnOf('buildProgressNotesHTML')
+  vm.runInContext(fnOf('cghsEsc') + fnOf('kbBulletCell') + fnOf('kbTeethInLine')
+    + fnOf('kbSplitVisitRows') + fnOf('buildProgressNotesHTML')
     + '\nthis.build = buildProgressNotesHTML;', pctx);
   const out = pctx.build({ name: 'Altaf Ahmed Sikunder', uhid: 'AH0713' }, [VISIT]);
   // One S.No. cell per body row; the header and the total row have none.
@@ -214,6 +215,75 @@ ok('the printed register uses it for Work Done',
 ok('and for Procedure Done, which holds several names in one field',
    /<td>\$\{kbBulletCell\(e\.procedureDone, "comma"\)\}<\/td>/.test(html));
 
+// ── three things on ONE tooth: new line, bullet each ───────────────────
+// "if under a date there are 3-4 treatments ven for the same tooth it
+//  should start from a new line and should have bullets to start with"
+//  "so in register also start with a bullet"
+//  "even in prescription separate it by bullets"
+//
+// Splitting into rows only happens where the lines name DIFFERENT teeth --
+// one restoration across 37 and 36 is one thing done and must stay one
+// row. But three things done to tooth 36 in one sitting are three lines
+// inside that row, and dropped into a cell as text they run together into
+// a paragraph. So inside the cell they are bullets.
+{
+  const nctx = { React: { createElement: (t, p, ...c) => ({ t, p, c: c.flat() }) },
+                 String, Object, Array, console };
+  vm.createContext(nctx);
+  vm.runInContext(fnOf('KbNoteLines') + '\nthis.R = KbNoteLines;', nctx);
+  const kind = (o) => o.t;
+  const texts = (o) => o.c.map(x => (x && x.c) ? x.c[0] : x);
+
+  const three = nctx.R({ text: 'A wrt 36.\nB wrt 36.\nC wrt 36.' });
+  eq('three things on one tooth become a list', kind(three), 'ul');
+  eq('one bullet each', texts(three), ['A wrt 36.', 'B wrt 36.', 'C wrt 36.']);
+  // A bullet drawn round a single note is noise.
+  eq('one thing stays a plain line', kind(nctx.R({ text: 'A wrt 36.' })), 'div');
+  eq('nothing recorded still shows something',
+     texts(nctx.R({ text: '' })), ['\u2014']);
+  eq('and the register\'s procedure column splits on its commas',
+     texts(nctx.R({ text: 'RCT - Obturation, Crown Prep', on: 'comma' })),
+     ['RCT - Obturation', 'Crown Prep']);
+  eq('but not a single procedure that happens to have none',
+     kind(nctx.R({ text: 'Restoration - Composite', on: 'comma' })), 'div');
+}
+// Every sheet that shows a visit's notes, on paper...
+ok('the Procedure Done Sheet bullets them',
+   /\$\{kbBulletCell\(e\.workDone \|\| e\.clinicalNotes\)\}/.test(html));
+ok('the Procedure & Fee Sheet too',
+   /\$\{kbBulletCell\(e\.treatmentRendered \|\| e\.clinicalNotes\)\}/.test(html));
+ok('and the Progress Notes', /\$\{kbBulletCell\(e\.clinicalNotes\)\}/.test(html));
+// ...and on screen, where the same list is read.
+eq('both on-screen tables use the same renderer',
+   (html.match(/React\.createElement\(KbNoteLines, \{ text:/g) || []).length, 2);
+ok('the register screen bullets its work done',
+   /React\.createElement\(KbNoteLines,\{text:e\.workDone,size:12\}\)/.test(html));
+ok('and its procedures, on the commas',
+   /React\.createElement\(KbNoteLines,\{text:e\.procedureDone,size:12,on:"comma"\}\)/.test(html));
+// The prescription's Case Paper, which is the sheet the patient keeps.
+{
+  const a = html.indexOf('const PRESCRIPTION_FORM_B64 =');
+  const rx = Buffer.from(html.slice(a, html.indexOf(';\n', a) + 1)
+    .match(/"([A-Za-z0-9+/=]*)"/g).map(s2 => s2.slice(1, -1)).join(''), 'base64').toString('utf8');
+  ok('the case paper bullets a cell with several notes in it',
+     /function bullets\(s\)\{/.test(rx));
+  ok('and uses it for the comments', /bullets\(r\.comments\)/.test(rx));
+  ok('including the row a doctor typed by hand', /bullets\(gv\('notes'\)\)/.test(rx));
+  const fctx = { String, Array, console };
+  vm.createContext(fctx);
+  const fnIn = (src, name) => {
+    const i = src.indexOf('function ' + name + '(');
+    return src.slice(i, src.indexOf('\n}', i) + 2) + '\n';
+  };
+  vm.runInContext(fnIn(rx, 'esc') + fnIn(rx, 'bullets') + '\nthis.b = bullets;', fctx);
+  ok('three notes on one tooth come out as three bullets',
+     (fctx.b('A wrt 36.\nB wrt 36.\nC wrt 36.').match(/<li/g) || []).length === 3);
+  eq('one note stays a sentence', fctx.b('A wrt 36.'), 'A wrt 36.');
+  eq('and nothing stays a dash', fctx.b(''), '\u2014');
+  ok('what goes in a bullet is escaped',
+     fctx.b('A <b>x</b>.\nB & C.').indexOf('&lt;b&gt;') >= 0);
+}
+
 // ── the Procedure Done Sheet gets a column for the tooth ───────────────
 // "why is the tooth number coming under doctor name"
 //
@@ -243,8 +313,9 @@ ok('with the empty-state spanning all five columns now',
     fmtDMY: (d) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || '')); 
                      return m ? m[3] + '/' + m[2] + '/' + m[1] : '\u2014'; } };
   vm.createContext(pctx);
-  vm.runInContext(fnOf('cghsEsc') + fnOf('kbTeethInLine') + fnOf('kbSplitVisitRows')
-    + fnOf('buildProcedureDoneHTML') + '\nthis.build = buildProcedureDoneHTML;', pctx);
+  vm.runInContext(fnOf('cghsEsc') + fnOf('kbBulletCell') + fnOf('kbTeethInLine')
+    + fnOf('kbSplitVisitRows') + fnOf('buildProcedureDoneHTML')
+    + '\nthis.build = buildProcedureDoneHTML;', pctx);
   const out = pctx.build({ name: 'Kamal Chawla', uhid: 'AH0507' }, [
     { date: '2024-05-01', doctor: 'Dr. Manika Mittel', toothNo: '37, 47',
       workDone: 'Cervical caries excavated, composite restoration done wrt 37.\n'
@@ -276,7 +347,10 @@ ok('and the printed table is built from them',
 ok('a doctor who types over the box gets what they typed, as one row',
    /var typedOver = !!\(tch && tch\.dataset && tch\.dataset\.touched\);/.test(form));
 ok('and the cells are escaped, which one hand-typed row never needed',
-   /function esc\(s\)\{/.test(form) && /esc\(r\.comments \|\| '—'\)/.test(form));
+   /function esc\(s\)\{/.test(form) && /esc\(r\.procedure \|\| '—'\)/.test(form));
+// The comments cell goes through bullets(), which escapes each line.
+ok('the comments cell escapes every line it bullets',
+   /bullets\(r\.comments\)/.test(form) && /'<li style="margin-bottom:1\.5pt;">' \+ esc\(x\)/.test(form));
 
 {
   const fctx = { String, Object, Array, Number, console };
