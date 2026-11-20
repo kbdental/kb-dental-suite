@@ -214,6 +214,49 @@ ok('the printed register uses it for Work Done',
 ok('and for Procedure Done, which holds several names in one field',
    /<td>\$\{kbBulletCell\(e\.procedureDone, "comma"\)\}<\/td>/.test(html));
 
+// ── the Procedure Done Sheet gets a column for the tooth ───────────────
+// "why is the tooth number coming under doctor name"
+//
+// Because the table had four columns and none of them was for a tooth, so
+// it was tucked under the doctor's name in small grey type -- the first
+// thing looked for on a line of this sheet, put in the last place anybody
+// would look. The printed sheet did not carry it at all.
+ok('the screen gives the tooth a column of its own',
+   /\["S\.No\.", "Date", "Tooth", "Procedure \/ Work Done", "Doctor"\]/.test(html));
+ok('and no longer hides it under the doctor',
+   !/"Tooth: "\+e\.toothNo/.test(html));
+ok('the screen splits a visit into a row per thing done, like the sheets',
+   /kbSplitVisitRows\(entries, \["clinicalNotes", "workDone"\]\)\.map\(\(e, i\) => \{/.test(html));
+ok('and the printed sheet has the column too',
+   /<th style="width:46pt;text-align:center">Tooth<\/th>/.test(html));
+ok('with the empty-state spanning all five columns now',
+   /colspan="5"[^`]*No entries recorded/.test(html));
+{
+  // Printed, for real: a visit over two teeth becomes two rows, each with
+  // its own tooth and its own sentence.
+  const fnOf = (name) => {
+    const a = html.indexOf('function ' + name + '(');
+    return html.slice(a, html.indexOf('\n}', a) + 2) + '\n';
+  };
+  const pctx = { String, Object, Array, Number, Math, Date, console,
+    window: { LOGO_B64: '' }, TP_PCSS: '',
+    fmtDMY: (d) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || '')); 
+                     return m ? m[3] + '/' + m[2] + '/' + m[1] : '\u2014'; } };
+  vm.createContext(pctx);
+  vm.runInContext(fnOf('cghsEsc') + fnOf('kbTeethInLine') + fnOf('kbSplitVisitRows')
+    + fnOf('buildProcedureDoneHTML') + '\nthis.build = buildProcedureDoneHTML;', pctx);
+  const out = pctx.build({ name: 'Kamal Chawla', uhid: 'AH0507' }, [
+    { date: '2024-05-01', doctor: 'Dr. Manika Mittel', toothNo: '37, 47',
+      workDone: 'Cervical caries excavated, composite restoration done wrt 37.\n'
+              + 'Advised FMA with dental implant wrt 47.' }]);
+  const bodyRows = (out.match(/class="sno"/g) || []).length - 1;
+  eq('one visit over two teeth prints as two rows', bodyRows, 2);
+  ok('the first against 37', />37<\/td>[\s\S]{0,160}composite restoration/.test(out));
+  ok('the second against 47', />47<\/td>[\s\S]{0,160}dental implant/.test(out));
+  ok('and neither row carries the other\'s sentence',
+     !/composite restoration[\s\S]{0,200}dental implant[\s\S]{0,60}<\/td>/.test(out));
+}
+
 // ── and the prescription, which is the one that matters ────────────────
 // The Case Paper is the sheet the patient walks out with. It is built
 // inside the prescription form -- a base64 blob of its own -- so the rule

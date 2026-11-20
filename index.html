@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-20";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-20d";
+const KB_APP_BUILD = "2026-11-20e";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -13687,6 +13687,7 @@ function buildProcedureDoneHTML(pat, entries) {
     return `<tr>
       <td class="sno">${i+1}</td>
       <td class="dcol">${d}</td>
+      <td style="width:46pt;text-align:center;font-weight:700">${cghsEsc(e.toothNo) || "—"}</td>
       <td style="font-size:11.5pt;line-height:1.5">${e.workDone || e.clinicalNotes || "—"}</td>
       <td style="width:90pt">
         <div style="border:.5pt solid #bbb;border-radius:2pt;height:32pt;background:#fafafa;margin-bottom:2pt">${e.sigDataUrl ? `<img src="${e.sigDataUrl}" style="height:30pt;width:100%;object-fit:contain"/>` : ""}</div>
@@ -13698,8 +13699,8 @@ function buildProcedureDoneHTML(pat, entries) {
     <div class="hdr"><img class="logo" src="${logo}"/><div class="hdr-mid"><div class="cares">C. A. R. E. S.</div><div class="tagline">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div><div class="sub">BLOCK R - 74 B, DILSHAD GARDEN, DELHI - 110095</div><div class="sub">Ph.: 011-22131942 &nbsp; Mob: 7866939786, 9319990912 &nbsp; kbdentaldelhi@gmail.com</div></div></div>
     <div class="dtitle">Procedure Done Sheet</div>
     <div class="patrow"><span class="pname">${pat.name || "—"}</span><span class="puhid">UHID: ${pat.uhid || "—"}</span><span class="pdate">${dateStr}</span></div>
-    <table><thead><tr><th class="sno">S.No.</th><th style="width:68pt">Date</th><th>Procedure / Work Done</th><th style="width:90pt">Doctor Signature</th></tr></thead>
-    <tbody>${rows || `<tr><td colspan="4" style="text-align:center;color:#5a5a5a;padding:14pt">No entries recorded.</td></tr>`}</tbody></table>
+    <table><thead><tr><th class="sno">S.No.</th><th style="width:68pt">Date</th><th style="width:46pt;text-align:center">Tooth</th><th>Procedure / Work Done</th><th style="width:90pt">Doctor Signature</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="5" style="text-align:center;color:#5a5a5a;padding:14pt">No entries recorded.</td></tr>`}</tbody></table>
     <div class="foot"><span>KBDC/FORMS/PD-01</span><span>K.B. Dental Clinic &middot; kbdentaldelhi@gmail.com</span></div>
   </body></html>`;
 }
@@ -14177,23 +14178,26 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
       ? React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:"28px", textAlign:"center", color:"#5a5a5a", fontSize:14, border:`1px dashed ${BORDER}` } },
           "No entries yet. Add procedures via the Daily Register page."
         )
+      // The tooth used to be tucked under the doctor's name in small grey
+      // type, because the table had four columns and none of them was for
+      // a tooth. It is the first thing looked for on a line of this sheet,
+      // so it gets a column -- and a visit that covered several teeth gets
+      // a row each, the same split the printed sheets use.
       : React.createElement("div", { style:{ border:`1px solid ${BORDER}`, borderRadius:8, overflow:"hidden" } },
-          React.createElement("div", { style:{ display:"grid", gridTemplateColumns:"40px 90px 1fr 140px", background:T, color:"#fff", padding:"7px 10px", fontSize:12, fontWeight:700, gap:8 } },
-            ["S.No.", "Date", "Procedure / Work Done", "Doctor"].map((h,i) => React.createElement("div", { key:i }, h))
+          React.createElement("div", { style:{ display:"grid", gridTemplateColumns:"40px 90px 64px 1fr 140px", background:T, color:"#fff", padding:"7px 10px", fontSize:12, fontWeight:700, gap:8 } },
+            ["S.No.", "Date", "Tooth", "Procedure / Work Done", "Doctor"].map((h,i) => React.createElement("div", { key:i }, h))
           ),
-          entries.map((e, i) => {
+          kbSplitVisitRows(entries, ["clinicalNotes", "workDone"]).map((e, i) => {
             const d = e.date ? fmtDMY(e.date) : "—";
             return React.createElement("div", {
               key:i,
-              style:{ display:"grid", gridTemplateColumns:"40px 90px 1fr 140px", gap:8, padding:"8px 10px", borderTop:`0.5px solid ${BORDER}`, alignItems:"start", background:i%2===0?"#fff":BGS }
+              style:{ display:"grid", gridTemplateColumns:"40px 90px 64px 1fr 140px", gap:8, padding:"8px 10px", borderTop:`0.5px solid ${BORDER}`, alignItems:"start", background:i%2===0?"#fff":BGS }
             },
               React.createElement("div", { style:{ fontSize:13, fontWeight:700, color:T, textAlign:"center" } }, i+1),
               React.createElement("div", { style:{ fontSize:13, color:"#2e2e2e" } }, d),
+              React.createElement("div", { style:{ fontSize:13, fontWeight:700, textAlign:"center", color:"#2e2e2e" } }, e.toothNo || "—"),
               React.createElement("div", { style:{ fontSize:13, lineHeight:1.6 } }, e.clinicalNotes || e.workDone || "—"),
-              React.createElement("div", null,
-                React.createElement("div", { style:{ fontSize:12, fontWeight:600 } }, e.doctor || "—"),
-                e.toothNo && React.createElement("div", { style:{ fontSize:10, color:"#444444", marginTop:2 } }, "Tooth: "+e.toothNo)
-              )
+              React.createElement("div", { style:{ fontSize:12, fontWeight:600 } }, e.doctor || "—")
             );
           })
         )
