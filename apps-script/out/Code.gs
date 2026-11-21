@@ -3075,7 +3075,7 @@ function getFollowUps() {
       for (var m = 1; m < apptData.length; m++) {
         var mrow = apptData[m];
         var mstatus = String(mrow[aCol("Status")] || "");
-        if (mstatus !== "Cancelled" && mstatus !== "No Show") continue;
+        if (mstatus !== "Cancelled" && mstatus !== "No Show" && mstatus !== "Missed") continue;
         var muhid = String(mrow[aCol("UHID")] || "").trim();
         if (!muhid) continue;
         var mdate = formatDateISO(mrow[aCol("Date")]);
@@ -3487,7 +3487,7 @@ function apptStepOf_(status) {
   for (var i = 0; i < APPT_STEPS.length; i++) {
     if (APPT_STEPS[i].status === status) return i;
   }
-  return -1;   // Cancelled, No Show: not on the line at all
+  return -1;   // Cancelled, Missed, No Show: not on the line at all
 }
 
 function updateAppointmentStatus(p) {
