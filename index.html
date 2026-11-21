@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-20";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-20f";
+const KB_APP_BUILD = "2026-11-21";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -13828,10 +13828,30 @@ function entriesWithPayments(entries, receipts) {
     .map(x => x.r);
 }
 
-function buildProgressNotesHTML(pat, entries) {
+// ── Signed, not left to be signed ──────────────────────────────────────
+// This sheet is not printed and handed over a desk: it goes out as a PDF,
+// so a ruled box for an ink signature is a box that stays empty for good.
+// The doctors' signatures are already drawn once and kept in Master; the
+// sheet draws the right one in.
+//
+// WHICH doctor. The sheet can span a year of visits by several of them,
+// and the Doctor column says who did each. The foot is the clinic signing
+// the document off, so it is the doctor of the most recent entry -- and
+// where others appear on the sheet, it says so rather than letting one
+// signature look like a claim on all of it.
+function kbProgressSigner(entries, sigs) {
+  const named = (entries || []).map(e => String((e && e.doctor) || "").trim()).filter(Boolean);
+  if (!named.length) return null;
+  const who = named[named.length - 1];
+  const others = named.filter((n, i) => n !== who && named.indexOf(n) === i).length;
+  return { doctor: who, dataUrl: (sigs || {})[who] || "", others: others };
+}
+
+function buildProgressNotesHTML(pat, entries, sigs) {
   const logo = window.LOGO_B64;
   const dateStr = fmtDMY(new Date());
   let totalAmt = 0;
+  const signer = kbProgressSigner(entries, sigs);
   const rows = kbSplitVisitRows(entries, ["clinicalNotes", "workDone"]).map((e, i) => {
     const d = e.date ? fmtDMY(e.date) : "—";
     const amt = e.amountReceived ? Number(e.amountReceived) : 0;
@@ -13840,23 +13860,35 @@ function buildProgressNotesHTML(pat, entries) {
       <td class="sno">${i+1}</td>
       <td class="dcol">${d}</td>
       <td style="width:52pt;text-align:center;font-weight:700">${e.toothNo || "—"}</td>
-      <td style="width:110pt;font-size:11pt">${e.treatmentRendered || "—"}</td>
+      <td style="width:104pt;font-size:11pt">${e.treatmentRendered || "—"}</td>
       <td style="font-size:11pt;line-height:1.45">${kbBulletCell(e.clinicalNotes)}</td>
-      <td style="width:62pt;font-size:10.5pt">${e.paymentMode || "—"}</td>
+      <td style="width:78pt;font-size:10.5pt">${cghsEsc(e.doctor) || "—"}</td>
+      <td style="width:58pt;font-size:10.5pt">${e.paymentMode || "—"}</td>
       <td class="amt" style="width:60pt">${amt ? "₹"+amt.toLocaleString("en-IN") : "—"}</td>
     </tr>`;
   }).join("");
-  const totalRow = `<tr class="totrow"><td colspan="6" style="text-align:right;padding-right:8pt">Total Amount Received</td><td class="amt">₹${totalAmt.toLocaleString("en-IN")}</td></tr>`;
+  const totalRow = `<tr class="totrow"><td colspan="7" style="text-align:right;padding-right:8pt">Total Amount Received</td><td class="amt">₹${totalAmt.toLocaleString("en-IN")}</td></tr>`;
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>${TP_PCSS}</style></head><body>
     <div class="hdr"><img class="logo" src="${logo}"/><div class="hdr-mid"><div class="cares">C. A. R. E. S.</div><div class="tagline">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div><div class="sub">BLOCK R - 74 B, DILSHAD GARDEN, DELHI - 110095</div><div class="sub">Ph.: 011-22131942 &nbsp; Mob: 7866939786, 9319990912 &nbsp; kbdentaldelhi@gmail.com</div></div></div>
     <div class="dtitle">Treatment Progress Notes</div>
     <div class="patrow"><span class="pname">${pat.name || "—"}</span><span class="puhid">UHID: ${pat.uhid || "—"}</span><span class="pdate">${dateStr}</span></div>
     <table><thead><tr>
       <th class="sno">S.No.</th><th style="width:68pt">Date</th>
-      <th style="width:52pt;text-align:center">Tooth No.</th><th style="width:110pt">Treatment</th>
-      <th>Clinical Notes</th><th style="width:62pt">Payment</th><th style="width:60pt;text-align:right">Amount</th>
+      <th style="width:52pt;text-align:center">Tooth No.</th><th style="width:104pt">Treatment</th>
+      <th>Clinical Notes</th><th style="width:78pt">Doctor</th>
+      <th style="width:58pt">Payment</th><th style="width:60pt;text-align:right">Amount</th>
     </tr></thead>
     <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:#5a5a5a;padding:14pt">No entries recorded.</td></tr>`}${totalRow}</tbody></table>
+    ${signer ? `<div style="margin-top:16pt;padding-top:8pt;border-top:0.5pt solid #ccc;width:230pt">
+      <div class="lbl">Signature of the Doctor</div>
+      <div style="border:0.5pt solid #bbb;border-radius:3pt;height:40pt;background:#fff;margin:3pt 0;display:flex;align-items:center;justify-content:center;overflow:hidden">${
+        signer.dataUrl
+          ? `<img src="${signer.dataUrl}" style="max-height:38pt;max-width:224pt;object-fit:contain"/>`
+          : `<span style="font-size:9pt;color:#a12e2e;font-weight:700">No signature saved for this doctor &mdash; Master &rarr; Clinic &rarr; Doctors</span>`
+      }</div>
+      <div style="font-size:10pt;color:#2e2e2e">${cghsEsc(signer.doctor)} &nbsp;|&nbsp; Date: ${dateStr}</div>
+      ${signer.others ? `<div style="font-size:8.5pt;color:#5a5a5a;margin-top:2pt">Other doctors appear on this sheet; each entry names its own.</div>` : ""}
+    </div>` : ""}
     <div class="foot"><span>KBDC/FORMS/TPN-01</span><span>K.B. Dental Clinic &middot; kbdentaldelhi@gmail.com</span></div>
   </body></html>`;
 }
@@ -14038,6 +14070,14 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
   const [preview, setPreview] = useState(false);
   const [previewHTML, setPreviewHTML] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  // The doctors' signatures, for the progress notes -- which goes out as a
+  // PDF, where an empty ruled box would never be signed by anybody.
+  const [sigs, setSigs] = useState({});
+  useEffect(() => {
+    api("getSignatures").then(res => {
+      if (res && res.success && res.signatures) setSigs(res.signatures);
+    }).catch(() => {});
+  }, []);
   const doctors = useDoctors();
   const today = new Date().toISOString().split("T")[0];
 
@@ -14122,13 +14162,13 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
   };
 
   const doPrint = (which) => {
-    const h = which === "progress" ? buildProgressNotesHTML(pat, progressRows) : buildProcedureDoneHTML(pat, entries);
+    const h = which === "progress" ? buildProgressNotesHTML(pat, progressRows, sigs) : buildProcedureDoneHTML(pat, entries);
     const w = window.open("", "_blank");
     w.document.write(h); w.document.close();
     setTimeout(() => w.print(), 600);
   };
   const doPreview = (which) => {
-    setPreviewHTML(which === "progress" ? buildProgressNotesHTML(pat, progressRows) : buildProcedureDoneHTML(pat, entries));
+    setPreviewHTML(which === "progress" ? buildProgressNotesHTML(pat, progressRows, sigs) : buildProcedureDoneHTML(pat, entries));
     setPreview(true);
   };
 
@@ -14142,7 +14182,7 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
     const mobile = String(pat.mobile || pat.whatsapp || "").replace(/\D/g, "").slice(-10);
     if (!mobile) { alert("This patient has no mobile number saved, so the PDF can't be sent on WhatsApp. You can still use Print."); return; }
     setPdfBusy(true);
-    const html = which === "progress" ? buildProgressNotesHTML(pat, progressRows) : buildProcedureDoneHTML(pat, entries);
+    const html = which === "progress" ? buildProgressNotesHTML(pat, progressRows, sigs) : buildProcedureDoneHTML(pat, entries);
     const docName = which === "progress" ? "Treatment Progress Notes" : "Procedure Done";
     const res = await apiPost("createDocumentPDF", {
       uhid: pat.uhid, patientName: pat.name || "", html, docName, category: "Progress Notes"
