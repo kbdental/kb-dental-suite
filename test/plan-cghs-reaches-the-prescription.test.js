@@ -182,7 +182,7 @@ const fnOf = (name) => {
   const recs = cut('function CghsRecords(', '// ── Stage 2: the prescription ─');
   ok('the screen reads Plan CGHS', /api\("getClinicalNotePlan"\)/.test(recs), '');
   ok('and hands it to the prescription',
-     /CghsPrescription, \{ pat: pat, lines: e\.approved, plan: notePlan \}/.test(recs), '');
+     /CghsPrescription, \{ pat: pat, lines: onThisRun, plan: notePlan \}/.test(recs), '');
 
   let pass = 0, fail = 0;
   checks.forEach(c => {

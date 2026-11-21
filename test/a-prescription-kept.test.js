@@ -257,7 +257,8 @@ ok('a document that cannot be read back is said so rather than printed blank',
    /could not be read back/.test(html));
 ok('the search defaults to the last month',
    /30 \* 24 \* 60 \* 60 \* 1000/.test(html));
-ok('and to the patient on screen', /setFindUhid\(pat && pat\.uhid \? pat\.uhid : ""\)/.test(html));
+ok('and to the patient on screen',
+   /const u = pat && pat\.uhid \? pat\.uhid : "";/.test(html) && /setFindUhid\(u\);/.test(html));
 
 // The page must ask for the backend that has these two calls.
 ok('the page asks for a backend new enough to answer',
