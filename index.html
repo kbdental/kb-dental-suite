@@ -238,7 +238,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-20";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-21b";
+const KB_APP_BUILD = "2026-11-21c";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -7383,15 +7383,32 @@ function CghsRecords({ globalPat }) {
         background: stage === st.id ? T : "transparent",
         color: stage === st.id ? "#fff" : "#666" } }, st.label)));
 
+  // ── What the next two stages are about ──────────────────────────────
   // Stages 2 and 3 work from the endorsed lines and nothing else. A
   // procedure that was not endorsed cannot be prescribed and cannot be
   // claimed, so it must not reach either of them.
+  //
+  // Endorsed is not the whole of it. Stage 1's ticks say which lines this
+  // run of work is about, and the prescription and the bill are the next
+  // two documents of that same run -- so they follow the same ticks
+  // rather than carrying every line the plan has ever held.
+  //
+  // A line already on a bill is finished with: endorsed long ago, done,
+  // and claimed. It cannot be ticked, and it reaches neither stage. On a
+  // prescription it would advise work carried out months back; on a bill
+  // it is a second claim for money already paid.
+  const onThisRun = e.approved.filter(x =>
+    pickList.indexOf(x.at) >= 0 && !(x.r && x.r.endBilled));
   const nothingEndorsed = React.createElement("div", { style:{ background:"#fffbeb",
     border:"1px solid #f59e0b", borderRadius:8, padding:"12px 14px", fontSize:13.5,
     color:"#92400e", lineHeight:1.6 } },
-    e.endRows.length
-      ? "Nothing on this endorsement is ticked yet. Tick what the Wellness Centre endorsed on stage 1, and it appears here."
-      : "There is no endorsement for this patient yet. Write it on stage 1, or on the Treatment Plan's Document 3.");
+    !e.endRows.length
+      ? "There is no endorsement for this patient yet. Write it on stage 1, or on the Treatment Plan's Document 3."
+      : !e.approved.length
+        ? "Nothing on this endorsement is ticked yet. Tick what the Wellness Centre endorsed on stage 1, and it appears here."
+        : e.approved.every(x => x.r && x.r.endBilled)
+          ? "Every endorsed line here has already been billed. A claimed line is finished with \u2014 it cannot be prescribed or billed again. Put the new treatment on stage 1 and tick it when it comes back endorsed."
+          : "None of the endorsed lines are included. Tick them in the first column on stage 1 \u2014 that column decides what this prescription and this bill are for.");
 
   return React.createElement("div", null,
     tabs,
@@ -7421,12 +7438,12 @@ function CghsRecords({ globalPat }) {
       }
     }),
     preview ? React.createElement(PreviewModal, { html: preview, onClose: () => setPreview(null) }) : null,
-    stage === "prescription" && (e.approved.length
-      ? React.createElement(CghsPrescription, { pat: pat, lines: e.approved, plan: notePlan })
+    stage === "prescription" && (onThisRun.length
+      ? React.createElement(CghsPrescription, { pat: pat, lines: onThisRun, plan: notePlan })
       : nothingEndorsed),
-    stage === "bill" && (e.approved.length
+    stage === "bill" && (onThisRun.length
       ? React.createElement(CghsBill, { pat: pat, panel: e.panel, card: e.card,
-          holder: e.holder, lines: e.approved, onBilled: e.markBilled })
+          holder: e.holder, lines: onThisRun, onBilled: e.markBilled })
       : nothingEndorsed)
   );
 }
@@ -7940,7 +7957,7 @@ function CghsPrescription({ pat, lines, plan }) {
     }).then(res => {
       setSaving(false);
       setSaveMsg(res && res.success
-        ? "\u2713 Saved. It can be found again under Saved Prescriptions."
+        ? "\u2713 Saved. Press \uD83D\uDD0E Find a saved prescription to pull it back by date and reprint it."
         : "Could not save: " + ((res && res.error) || "the sheet did not answer."));
     }).catch(() => { setSaving(false); setSaveMsg("Could not save: the sheet did not answer."); });
   };
@@ -7948,28 +7965,37 @@ function CghsPrescription({ pat, lines, plan }) {
   // The search. Dates default to the last month, which is the answer
   // nearly every time; the patient on screen is the default UHID, and
   // clearing it searches every patient.
+  //
+  // It runs as soon as it is opened. A date range nobody can see is a
+  // date range nobody has -- the clinic looked for one, found a button
+  // reading "Saved Prescriptions", and reported that there was no way to
+  // search by date. So the button says what it opens, and what it opens
+  // is already answered.
   const [findOpen, setFindOpen] = React.useState(false);
   const [findUhid, setFindUhid] = React.useState("");
   const [findFrom, setFindFrom] = React.useState("");
   const [findTo, setFindTo] = React.useState("");
   const [found, setFound] = React.useState(null);
   const [finding, setFinding] = React.useState(false);
-  const openFind = () => {
-    const now = new Date();
-    const back = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    setFindUhid(pat && pat.uhid ? pat.uhid : "");
-    setFindFrom(toISODate(back)); setFindTo(toISODate(now));
-    setFound(null); setFindOpen(true);
-  };
-  const doFind = () => {
+  const runFind = (u, f, t) => {
     setFinding(true);
-    api("listCghsPrescriptions", { uhid: findUhid, from: findFrom, to: findTo })
+    api("listCghsPrescriptions", { uhid: u, from: f, to: t })
       .then(res => {
         setFinding(false);
         setFound((res && res.success && res.prescriptions) || []);
       })
       .catch(() => { setFinding(false); setFound([]); });
   };
+  const openFind = () => {
+    const now = new Date();
+    const back = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const u = pat && pat.uhid ? pat.uhid : "";
+    const f = toISODate(back), t = toISODate(now);
+    setFindUhid(u); setFindFrom(f); setFindTo(t);
+    setFound(null); setFindOpen(true);
+    runFind(u, f, t);
+  };
+  const doFind = () => runFind(findUhid, findFrom, findTo);
   // Reprinted through the same builder as the live sheet, so the two
   // cannot drift. A row saved by an older page that cannot be read back is
   // said so rather than printing a blank sheet.
@@ -8002,7 +8028,7 @@ function CghsPrescription({ pat, lines, plan }) {
       React.createElement("button", { onClick: () => (findOpen ? setFindOpen(false) : openFind()),
         style:{ padding:"9px 18px", fontSize:14, fontWeight:700, border:`1px solid ${BORDER}`,
           borderRadius:7, cursor:"pointer", background:"#fff", color:"#444444" } },
-        findOpen ? "Close" : "\uD83D\uDD0E Saved Prescriptions")),
+        findOpen ? "Close" : "\uD83D\uDD0E Find a saved prescription \u00b7 by date")),
     saveMsg ? note(saveMsg) : null,
     findOpen ? React.createElement(CghsRxSearch, {
       uhid: findUhid, setUhid: setFindUhid, from: findFrom, setFrom: setFindFrom,
@@ -8413,11 +8439,13 @@ function EndorsementView({ showApproved, showPick, picked, onPick, onPickAll,
     React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8, overflow:"hidden" } },
       React.createElement("table", { style:{ width:"100%", borderCollapse:"collapse" } },
         React.createElement("thead", null, React.createElement("tr", { style:{ background:BGS } },
-          // Which lines this print is for. The request that goes to the
-          // Wellness Centre is about what is being asked for NOW; a plan
-          // carries every treatment the patient has ever had, and printing
-          // all of it put finished work on a request for endorsement.
-          showPick ? React.createElement("th", { style:{ padding:"8px 8px", width:66, textAlign:"center" } },
+          // Which lines this run of work is for. The request that goes to
+          // the Wellness Centre is about what is being asked for NOW; a
+          // plan carries every treatment the patient has ever had, and
+          // printing all of it put finished work on a request for
+          // endorsement. The prescription and the bill that follow are
+          // about the same run, so they are drawn from these ticks too.
+          showPick ? React.createElement("th", { style:{ padding:"8px 8px", width:72, textAlign:"center" } },
             React.createElement("label", { style:{ display:"inline-flex", alignItems:"center", gap:5,
               fontSize:12.5, fontWeight:700, color:"#444444", cursor: pickable.length ? "pointer" : "default" },
               title: "Tick every line that is not already billed" },
@@ -8425,7 +8453,7 @@ function EndorsementView({ showApproved, showPick, picked, onPick, onPickAll,
                 checked: pickable.length > 0 && pickedCount === pickable.length,
                 disabled: !pickable.length,
                 onChange: e => onPickAll && onPickAll(e.target.checked),
-                style:{ width:15, height:15, cursor:"pointer", accentColor:T } }), "Print")) : null,
+                style:{ width:15, height:15, cursor:"pointer", accentColor:T } }), "Include")) : null,
           showApproved ? head("Endorsed", { align:"center" }) : null,
           head("Code"), head("Treatment Advised"), head("Tooth Number"),
           head("Units", { align:"center" }), head("Rate", { align:"right" }),
@@ -8451,16 +8479,16 @@ function EndorsementView({ showApproved, showPick, picked, onPick, onPickAll,
                                   : active === x.at ? "#eaf4fb"
                                   : (showApproved && x.r.endApproved) ? "#f0fdf6" : "transparent",
                         color: billed ? "#5a5a5a" : "inherit" } },
-                // Billed lines are not on a request for endorsement: they
-                // were endorsed long ago and the work is done and claimed.
-                showPick ? React.createElement("td", { style:{ ...cell, width:66, textAlign:"center" } },
+                // Billed lines are on none of the three: they were endorsed
+                // long ago and the work is done and the money claimed.
+                showPick ? React.createElement("td", { style:{ ...cell, width:72, textAlign:"center" } },
                   billed
                     ? React.createElement("span", { style:{ fontSize:12, fontWeight:700, color:"#5a5a5a" } }, "\u2014")
                     : React.createElement("input", { type:"checkbox",
                         checked: isPicked(x),
                         onChange: e => { e.stopPropagation(); onPick && onPick(x.at, e.target.checked); },
                         onClick: e => e.stopPropagation(),
-                        title: "Print this line on the endorsement",
+                        title: "Keep this line on the request, the prescription and the bill",
                         style:{ width:16, height:16, cursor:"pointer", accentColor:T } })) : null,
                 // Typed, with the rate card as suggestions. A dropdown of an
                 // empty card is a dead end; a box with a datalist is the
@@ -13727,11 +13755,37 @@ function kbTeethInLine(line) {
     if (found.indexOf(t) < 0) found.push(t);
   };
   (s.match(/#\s*[0-9A-Ea-e]{1,2}/g) || []).forEach(m => add(m.replace(/[#\s]/g, "")));
-  // "wrt 46, 47 occlusally" -- to the end of the clause, so the next
-  // sentence's numbers do not come along.
+  // "wrt 46, 47 occlusally" -- the teeth are the RUN of tooth numbers
+  // written straight after wrt, and the run ends at the first word that is
+  // not part of a list of teeth.
+  //
+  // Reading the whole clause instead filed a torque as a tooth. "Implant
+  // placed wrt 15 at 35 Ncm" put 35 on the sheet beside 15, and 35 is a
+  // lower left second premolar nobody had touched -- a wrong tooth on a
+  // clinical record, which is worse than no tooth at all.
+  const run = (clause) => {
+    const out = [];
+    let rest = String(clause === undefined || clause === null ? "" : clause);
+    for (;;) {
+      // What holds a list of teeth together: separators, "and"/"to", an
+      // aside in brackets, and the few words the templates put between
+      // "wrt" and the number -- "wrt implant 15", "wrt tooth 36".
+      const skip = rest.match(/^(?:[\s,;/&+#\-\u2013\u2014]|\b(?:and|to|the|implants?|tooth|teeth|region|sites?)\b|\([^)]*\)|\[[^\]]*\])+/i);
+      if (skip) rest = rest.slice(skip[0].length);
+      const tok = rest.match(/^[0-9A-Ea-e]{1,2}\b/);
+      if (!tok) break;
+      const after = rest.slice(tok[0].length);
+      // A number carrying a unit is a measurement, not a tooth: "35 Ncm"
+      // is a torque and "11 mm" is a length.
+      if (/^\s*(?:Ncm|N|mm|cm|ISQ|%|mg|ml|cc|min|sec|units?|degrees?)\b/i.test(after)) break;
+      out.push(tok[0]);
+      rest = after;
+    }
+    return out;
+  };
   const re = /\bw\.?\s?r\.?\s?t\.?\b([^.;:]*)/gi;
   let m;
-  while ((m = re.exec(s))) (m[1].match(/[0-9A-Ea-e]{1,2}/g) || []).forEach(add);
+  while ((m = re.exec(s))) run(m[1]).forEach(add);
   return found;
 }
 
