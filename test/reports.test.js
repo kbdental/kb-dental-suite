@@ -33,7 +33,13 @@ const CODE = [
 
 const sandbox = { Math, String, Number, Object, Array, JSON, console, isNaN, parseInt };
 vm.createContext(sandbox);
-vm.runInContext(CODE + '\n;globalThis.__c = computeReports;' +
+// The missed-appointment rule comes out of the app, not restated here.
+const APPT_HELPERS = (() => {
+  const a = html.indexOf('const APPT_MISSED = "Missed";');
+  const b = html.indexOf('\nfunction apptStatusLabel(st) {');
+  return html.slice(a, html.indexOf('\n}', b) + 2) + '\n';
+})();
+vm.runInContext(APPT_HELPERS + CODE + '\n;globalThis.__c = computeReports;' +
                 '\n;globalThis.__months = monthsBetween;' +
                 '\n;globalThis.__classify = classifyService;', sandbox);
 

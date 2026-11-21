@@ -68,8 +68,8 @@ preserve local changes and use a fast-forward update; never reset it to match th
 Stay off `main`. Repository migration attributes preserve checksum-sensitive SQL
 bytes on Windows and Linux. Do not reformat or normalize applied migration files.
 
-The branch includes application source and static screens, migration files through
-0038, import/capture code, fictional test fixtures, analytics setup scripts and
+The branch includes application source and static screens, numbered migrations,
+import/capture code, fictional test fixtures, analytics setup scripts and
 operating notes. `node_modules`, generated builds, databases and private runtimes
 are not deployment artifacts in Git. Reinstall/build them on the destination.
 The abandoned `sheets-bridge.mjs` is historical tooling; do not use it as this server.
@@ -125,12 +125,15 @@ Create destination administration credentials separately.
    role passwords consistently in PostgreSQL, `runtime-state.json` and `app.env`.
    Restore document paths/checksums and restrict private-directory access to the
    service/operator accounts. POSIX file modes alone do not set Windows ACLs.
-5. Compare all 38 `schema_migrations` names/checksums with the repository bytes.
+5. Compare the numbered `schema_migrations` names/checksums with the repository bytes.
    A fresh current dump should already contain them. Do not run `db:bootstrap`,
    `db:seed`, `rehearse --apply-copy`, `restore-test-copy`, or `provision-runtime`
    against the restored installation: those create/reset demo state or credentials.
    An actual pending migration needs a backup and the selected profile's owner;
    `npm run db:migrate` otherwise uses the unrelated default owner environment.
+   For 0039 on an existing dedicated profile, grant its application role `SELECT`
+   and `INSERT` on `cghs_prescriptions` after applying the migration. Verify forced
+   row security and the absence of `UPDATE` and `DELETE` grants for that role.
 6. Start from `api/` with `node --import tsx scripts/launch-sync/server.mjs` and
    inspect private service logs without exposing rows or secrets. The current
    entry point binds loopback 8350 with secure cookies; put an HTTPS reverse proxy

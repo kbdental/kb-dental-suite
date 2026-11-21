@@ -1,3 +1,8 @@
 # Migration checksums cover the original bytes, including line endings.
 # Preserve applied SQL exactly on Windows and Linux; never renormalize these files.
 api/migrations/*.sql -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+# Source-driven frontend and Apps Script tests extract functions by LF boundaries.
+/*.html text eol=lf
+apps-script/out/Code.gs text eol=lf
+trial/index.html text eol=lf

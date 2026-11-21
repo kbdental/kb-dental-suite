@@ -47,11 +47,21 @@ eq('under the seven sections the page was built around',
    ['Extra-Oral Check', 'Intra-Oral Check', 'Gum Assessment', 'Wasting Disease',
     'Parafunctional Habits', 'Investigations Required', 'Post Radiograph Findings']);
 eq('six are answered Healthy-or-observation', SEED.filter(r => r[2] === 'healthy').length, 6);
-eq('twelve Present-with-a-note', SEED.filter(r => r[2] === 'present').length, 12);
+eq('three Present-with-a-note', SEED.filter(r => r[2] === 'present').length, 3);
+// Gum and wasting findings are always ABOUT teeth, so they are answered by
+// tapping the grid rather than typing an area into a box.
+eq('nine Present-on-a-tooth-grid', SEED.filter(r => r[2] === 'teeth').length, 9);
+eq('and the grid is on the findings that are about teeth',
+   SEED.filter(r => r[2] === 'teeth').map(r => r[3]).sort(),
+   ['abfraction', 'abrasion', 'attrition', 'bleedingProbing', 'erosion', 'furcation',
+    'gumRecession', 'mobility', 'parafunctional']);
 eq('nine are a tick and nothing else', SEED.filter(r => r[2] === 'check').length, 9);
 eq('and three a line of text', SEED.filter(r => r[2] === 'text').length, 3);
-eq('only those four shapes exist',
-   KINDS.map(k => k[0]).sort(), ['check', 'healthy', 'present', 'text']);
+eq('only those five shapes exist',
+   KINDS.map(k => k[0]).sort(), ['check', 'healthy', 'present', 'teeth', 'text']);
+// Master has to offer it, or a finding can never be put on the grid.
+ok('and the grid is one Master can choose',
+   KINDS.some(k => k[0] === 'teeth' && /tooth grid/i.test(k[1])), JSON.stringify(KINDS));
 // The keys are the ones saved care plans already use. A typo here loses a
 // column of answers on every plan in the sheet.
 ['jawJoints', 'lymphNodes', 'swelling', 'lipCompetency', 'facialAsymmetry', 'tongue',
@@ -64,12 +74,65 @@ const defaults = cut('const emptyCP2 = {', '\n};');
 // object per finding, a tick lives under inv, and a line of text is a plain
 // string. All three must already be there, or the answer has nowhere to go.
 SEED.forEach(r => {
+  // A tooth-grid answer is a present answer with a better box, so it is
+  // stored in the same slot and a plan saved before the grid still reads.
   const pat = r[2] === 'healthy' ? '\\b' + r[3] + ':\\s*hp\\(\\)'
-            : r[2] === 'present' ? '\\b' + r[3] + ':\\s*pp\\(\\)'
+            : (r[2] === 'present' || r[2] === 'teeth') ? '\\b' + r[3] + ':\\s*pp\\(\\)'
             : r[2] === 'check'   ? '\\b' + r[3] + ':\\s*false'
             :                      '\\b' + r[3] + ':\\s*""';
   ok('the care plan has a slot for ' + r[3], new RegExp(pat).test(defaults), '');
 });
+
+// ── a clinic whose list predates the three new sections ──────────
+// Investigations Required, Parafunctional Habits and Post Radiograph
+// Findings were written into the page until they joined this list. A
+// clinic that had already pressed "Load the clinic's findings" has a
+// stored list from before that, and the stored list wins over the seed --
+// so all three blocks vanished from the examination and from its printed
+// page, headings still printing above empty space, and nothing said why.
+//
+// A section the stored list has no row for at all is filled from the
+// page's own list. Per SECTION, not per finding: a finding the clinic
+// deleted stays deleted.
+{
+  const ctx3 = { String, Object, Array, console };
+  vm.createContext(ctx3);
+  vm.runInContext(cut('const CLINICAL_EXAM_SEED = [', 'const CLINICAL_NOTE_TEMPLATE_SEED')
+    + cut('const CP_EXAM_SECTIONS = [', '\nconst emptyCP2')
+    + cut('function examWithBuiltInSections(', 'function useExaminationList()')
+    + '\nthis.fill = examWithBuiltInSections; this.SECTIONS = CP_EXAM_SECTIONS;', ctx3);
+
+  const SEVENTEEN = SEED.slice(0, 17).map(r => ({ section:r[0], finding:r[1], kind:r[2], key:r[3] }));
+  eq('the list a clinic loaded before this release has four sections',
+     SEVENTEEN.map(r => r.section).filter((v, i, a) => a.indexOf(v) === i).length, 4);
+
+  const filled = ctx3.fill(SEVENTEEN);
+  const sectionsIn = (l) => l.map(r => r.section).filter((v, i, a) => a.indexOf(v) === i);
+  eq('the three sections it has never seen are drawn from the page',
+     sectionsIn(filled), ctx3.SECTIONS);
+  eq('and every finding under them is there',
+     filled.filter(r => r.section === 'Investigations Required').length, 9);
+  eq('the parafunctional one too',
+     filled.filter(r => r.section === 'Parafunctional Habits').length, 1);
+  eq('and the three post-radiograph lines',
+     filled.filter(r => r.section === 'Post Radiograph Findings').length, 3);
+  eq('nothing the clinic already had is touched',
+     filled.slice(0, 17).map(r => r.key), SEVENTEEN.map(r => r.key));
+
+  // A finding deleted inside a section the clinic HAS is not resurrected:
+  // the fallback is per section, so a section with one row left alone.
+  const trimmed = SEVENTEEN.filter(r => r.key !== 'palate')
+    .concat([{ section:'Investigations Required', finding:'OPG', kind:'check', key:'opg' }]);
+  const f2 = ctx3.fill(trimmed);
+  ok('a finding deleted from a section the clinic has stays deleted',
+     !f2.some(r => r.key === 'palate'), '');
+  eq('and a section the clinic has keeps only what it put there',
+     f2.filter(r => r.section === 'Investigations Required').map(r => r.key), ['opg']);
+
+  // An empty list is the empty state, not thirty rows nobody asked for.
+  eq('an empty list is left empty, so Master still offers to load them',
+     ctx3.fill([]).length, 0);
+}
 
 // ── a new finding gets a key of its own, and a rename never moves it ───
 eq('a new finding is keyed from its name', keyOf('Mouth Breathing', []), 'mouthBreathing');
@@ -81,6 +144,12 @@ const editor = cut('function ClinicalExaminationEditor(', '// ── Master → 
 ok('a rename carries the old key over, so old answers are relabelled not lost',
    /key: txt\(r\.key\) \|\| clinicalExamKey/.test(editor), '');
 ok('and says so where it is done', /must not orphan the\s*\/\/ *answers/.test(editor), '');
+// It said "seventeen findings across four sections" for a release that
+// shipped thirty across seven. Counted, not written out in words.
+ok('the empty state counts the seed rather than naming a number',
+   /seedRows\.length \+ " findings across "/.test(editor), '');
+ok('and its button does too', /"Load the clinic\'s " \+ seedRows\.length \+ " findings"/.test(editor), '');
+ok('with the sections counted too', /seedSections\.length \+ " sections\. "/.test(editor), '');
 
 // ── the backend keeps it ────────────────────────────────────────────────
 ok('the backend offers the list', /case "getClinicalExaminationList":/.test(gs), '');
@@ -138,10 +207,25 @@ eq('bad JSON is refused rather than thrown', back.save({ findings: '{nope' }).su
 // ── and the Care Plan draws from it, screen and paper ──────────────────
 const carePlan = cut('function CarePlan(', '\nfunction KbClin');
 ok('the care plan reads the master list', /const examList = useExaminationList\(\);/.test(carePlan), '');
+ok('through the fill, so a section it has never seen still draws',
+   /examWithBuiltInSections\(master\)/.test(html), '');
+// Master must show the same list, or it offers seventeen findings while
+// the examination draws thirty -- and saving there would write the
+// seventeen back.
+ok('and Master is given the same list', /rows: examWithBuiltInSections\(examFindings\)/.test(html), '');
 ok('and falls back to the list the page was built with when there is none',
    /CLINICAL_EXAM_SEED\.map\(r => \(\{ section:r\[0\]/.test(html), '');
 ok('each row is drawn by its shape',
-   /const Row = healthy \? HRow : PRow;/.test(carePlan), '');
+   /const Row = healthy \? HRow : \(clinicalExamIsToothGrid\(r\) \? ToothPRow : PRow\);/.test(carePlan), '');
+// The clinic's stored list has these nine as plain present rows, saved
+// before the grid existed. Waiting for a re-load would mean throwing away
+// every finding edited since, so they are charted by key as well.
+ok('a stored present row that is about teeth gets the grid anyway',
+   /const CLINICAL_TOOTH_KEYS = \["bleedingProbing"/.test(html), '');
+ok('but only a present one -- a tick or a line of text stays what it was made',
+   /if \(kind !== "present"\) return false;/.test(html), '');
+ok('and a grid row is still listed under Present where a screen splits by kind',
+   /kind === "present" \? \(k === "present" \|\| k === "teeth"\) : k === kind/.test(carePlan), '');
 ok('a finding with no answer yet does not crash the plan',
    /p2\[k\] \|\| \(healthy \? hp\(\) : pp\(\)\)/.test(carePlan), '');
 // The two new shapes are drawn, not ignored: a tick reads and writes

@@ -41,34 +41,33 @@ ok("12px is the smallest text in the app",
 ok("and plenty of it reached 14",
    count(/fontSize:\s*14(?![0-9.])/g) > 150);
 
-// --- the printed documents, with one deliberate exception ------------------
-// Consent forms, the registration printout and the rest keep their sizes:
-// those are page layouts, and growing the type pushes a form onto an extra
-// sheet, which is worse than small print on paper held at reading distance.
+// --- the printed documents ------------------------------------------------
+// This rule used to pin the counts of 8.5pt, 10pt and 11pt and say the
+// printing had to stay small, because "growing the type pushes a form onto
+// an extra sheet, which is worse than small print on paper held at reading
+// distance".
 //
-// The clinical work-done sheet is the exception. The clinic asked for it
-// directly — "the font size should be readable (it is too small and a lot of
-// page is empty)" — so its own stylesheet was enlarged and nothing else was.
-// The counts moved by exactly the two rules that changed in it.
+// The clinic disagreed -- "everywhere the print font is very small
+// difficult to read" -- and the reasoning was testable rather than true.
+// Every printed size was raised, and the room came out of the whitespace:
+// the field gaps, the grid gaps, the signature box and the page margins.
+// Measured before and after, page by page, against the A4 box: the care
+// plan's first page went 253mm -> 279mm on the type alone, which IS the
+// extra sheet the old rule feared, and 255mm once the spacing was tightened
+// -- bigger type, same four pages.
 //
-// 8.5pt went 29 -> 31 when the CGHS endorsement was added, then 31 -> 30
-// when that sheet lost its beneficiary signature: it prints on the
-// prescription pad now, and only the doctor signs it. 10pt went 44 -> 45
-// with the pad sheet's own table cells. A count that moves for any other
-// reason is a sheet whose type was changed by accident.
-// 30 -> 31 and 45 -> 46 with the CGHS prescription: its signature line and
-// its table cells are set at the same sizes as every other sheet's, which is
-// the point of pinning this.
-// Moved again with the CGHS bill, which has two signature captions at 8.5pt
-// and a table at 10pt -- the same sizes every other sheet uses, which is the
-// point of pinning this. A count that moves for any other reason is a sheet
-// whose type was changed by accident.
-// 33 -> 34 with the prescription's detail line: the clinical note under each
-// endorsed treatment is set at the same 8.5pt as every other sheet's small
-// print, which is the point of pinning this.
-ok("the other printed documents keep their 8.5pt", count(/font-size:8\.5pt/g) === 34);
-ok("and their 10pt", count(/font-size:10pt/g) === 47);
-ok("and their 11pt", count(/font-size:11pt/g) === 14);
+// So what is pinned now is the floor, not the count. Nothing printed may be
+// set below 9.5pt, which is what "difficult to read" meant.
+const ptSizes = [...src.matchAll(/font-size:([0-9.]+)pt/g)].map(m => Number(m[1]));
+ok("there is printed type to check", ptSizes.length > 300);
+const tooSmall = [...new Set(ptSizes.filter(n => n < 9.5))].sort((a, b) => a - b);
+ok("nothing is printed below 9.5pt any more", tooSmall.length === 0,
+   "still set in " + JSON.stringify(tooSmall) + "pt");
+// And the body of a document is comfortably above the floor, not on it.
+ok("the shared page style sets its body at 12pt",
+   /html,body\{font-family:'Segoe UI',Arial,sans-serif;font-size:12pt/.test(src));
+ok("its field labels, the smallest thing on a page, reach 9.5pt",
+   /\.lbl\{font-size:9\.5pt/.test(src));
 
 const clcss = src.slice(src.indexOf("const CL_PCSS = `"), src.indexOf("`;", src.indexOf("const CL_PCSS = `")));
 ok("the clinical sheet's body type is readable", /font-size:12pt;color:#111/.test(clcss));

@@ -1,5 +1,25 @@
 # Handover for the next tool (31 Oct 2026)
 
+## Viveyk clinical workflow update — 21 November 2026
+
+Integrated `51db327` on `saas/multi-clinic`. This includes tooth-grid findings,
+form-backed note templates, multi-treatment and multi-tooth visit layouts,
+prescription demographics and printing, CGHS billed-line handling, and missed
+appointment presentation. Preserve native organization and clinic access behavior.
+The upstream Sheets and standalone Node setup guide points this branch's operators
+to the Fastify runbooks instead.
+
+The native CGHS prescription saves and date searches use `/api/v1/cghs-prescriptions`
+with clinical permissions, clinic context, forced row security, and append-only
+runtime grants. Migration 0039 was backed up and applied to the marked `launch-sync`
+verification database. The server is running on loopback port 8350 and passed all
+16 read-only verification checks, including authorized and anonymous access.
+Browser checks covered the native examination tooth grid. All 38 frontend suites
+changed upstream passed after the integration fixes and targeted reruns. Save,
+validation and cross-clinic denial passed on synthetic PostgreSQL data. No live
+prescription was written during acceptance. Existing Sheets prescriptions still
+need a reconciled backfill into the new table.
+
 ## VM replication handoff — 13 November 2026
 
 Latest user correction: populate the VM directly from Google and create new Umami

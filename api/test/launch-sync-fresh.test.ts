@@ -1,5 +1,5 @@
 // A new, fictional installation; never reads/copies an existing clinic database.
-import {readFileSync,existsSync,writeFileSync,mkdtempSync,rmSync} from 'node:fs';
+import {readFileSync,readdirSync,existsSync,writeFileSync,mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir,homedir} from 'node:os';
 import {join,resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -58,7 +58,8 @@ describe('fresh Google import installation',()=>{
    expect(Number((await client.query('SELECT count(*) n FROM clinics')).rows[0].n)).toBe(1);
    expect(Number((await client.query('SELECT count(*) n FROM org_clinical_units')).rows[0].n)).toBe(1);
    expect(Number((await client.query('SELECT count(*) n FROM app_users')).rows[0].n)).toBe(4);
-   expect(Number((await client.query('SELECT count(*) n FROM schema_migrations')).rows[0].n)).toBe(38);
+   const expectedMigrations=readdirSync(join(api,'migrations')).filter(name=>/^\d{4}_.+\.sql$/.test(name)).sort();
+   expect((await client.query('SELECT name FROM schema_migrations ORDER BY name')).rows.map(row=>row.name)).toEqual(expectedMigrations);
    expect((await client.query('SELECT bool_and(NOT rolsuper AND NOT rolbypassrls AND NOT rolcreatedb AND NOT rolcreaterole) ok FROM pg_roles WHERE rolname=ANY($1)',[[s.app,s.owner]])).rows[0].ok).toBe(true);
    expect(Number((await client.query('SELECT count(*) n FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN pg_roles r ON r.oid=p.proowner WHERE n.nspname=\'public\' AND p.prosecdef AND r.rolsuper')).rows[0].n)).toBe(0);
    expect((await client.query("SELECT relforcerowsecurity FROM pg_class WHERE oid='patients'::regclass")).rows[0].relforcerowsecurity).toBe(true);

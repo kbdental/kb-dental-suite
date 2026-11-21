@@ -21,6 +21,7 @@ import {asActor} from "./http/context.js";
 import {capabilities} from "./entitlements.js";
 import {archiveRoutes} from './routes/archives.js';
 import {usageRoutes} from './routes/usage.js';
+import { cghsPrescriptionRoutes } from "./routes/cghs-prescriptions.js";
 
 export interface AppOptions {
   db: Kysely<DB>;
@@ -89,6 +90,7 @@ export async function buildApp(opts: AppOptions & { logger?: boolean }) {
   await app.register(systemLogRoutes, { ...opts, prefix: "/api/v1/system-log" });
   await app.register(archiveRoutes, { ...opts, prefix: "/api/v1/archives" });
   await app.register(usageRoutes, { ...opts, prefix: "/api/v1/usage" });
+  await app.register(cghsPrescriptionRoutes, { ...opts, prefix: "/api/v1/cghs-prescriptions" });
   await app.register(legacyRoutes, opts);
   await app.register(pageRoutes, opts);
 

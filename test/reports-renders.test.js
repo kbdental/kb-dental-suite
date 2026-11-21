@@ -27,12 +27,19 @@ const REPORTS_SRC = html.slice(a, b);
 // what is under test is Reports, not the date formatter -- but every one of
 // them is named here, so a new dependency shows up as a crash rather than
 // as a silently blank screen.
+const APPT_HELPERS = (() => {
+  const a = html.indexOf('const APPT_MISSED = "Missed";');
+  const b = html.indexOf('\nfunction apptStatusLabel(st) {');
+  return html.slice(a, html.indexOf('\n}', b) + 2) + '\n';
+})();
 const DEPS = `
+  ${APPT_HELPERS}
   const { useState, useRef, useEffect } = React;
   const T = "#0078B4", TL = "#DCF4FB", BORDER = "#e5e5e0", BGS = "#f5f5f0";
   const inp = { padding: "8px", border: "1px solid #e5e5e0", borderRadius: 6, fontSize: 13 };
   function toISODate(d){ const p = n => String(n).padStart(2,"0");
     return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate()); }
+  function clinicISODate(){ return toISODate(new Date()); }
   function fmtDMY(x){ return String(x).slice(0,10).split("-").reverse().join("/"); }
   function reasonWithStep(t, s){ return s ? (t + " \\u00b7 " + s) : (t || "\\u2014"); }
   function ReportsPasswordChanger(){ return React.createElement("div", { id:"pwchanger" }, "change password"); }
@@ -111,8 +118,8 @@ async function render(browser, opts, errors) {
   // The page is not blank. This is the check that matters.
   ok('the page is not blank', out.text.trim().length > 200, out.text.length);
   for (const heading of ['1. Patients each month', '2 & 3. What the money comes from',
-                         '6. Most chosen treatments', '7. Where patients stop',
-                         '8. Booked, but did not turn up', '9. Revenue, expenses and profit',
+                         '6. Most chosen treatments', '7. Patient activity in the registration cohort',
+                         '8. Booked, but did not turn up', '9. Collections, expenses and cash surplus',
                          '9b. Treatment against consultation', 'Expenses by category']) {
     ok('it shows "' + heading + '"', out.text.includes(heading), out.text.slice(0, 200));
   }
@@ -123,9 +130,9 @@ async function render(browser, opts, errors) {
   const failed = await render(browser, { failing: true }, errors);
   eq('a failed read does not throw', failed.err, null);
   ok('it names what could not be read', /Could not read: receipts/.test(failed.text), failed.text.slice(0, 300));
-  ok('and says what to do about it', /shorter date range/.test(failed.text), failed.text.slice(0, 300));
+  ok('and says what to do about it', /Check your access and connection, then retry/.test(failed.text), failed.text.slice(0, 300));
   ok('no report is drawn from books that did not arrive',
-     !failed.text.includes('9. Revenue, expenses and profit'), failed.text.slice(0, 300));
+     !failed.text.includes('9. Collections, expenses and cash surplus'), failed.text.slice(0, 300));
 
   // ── a read that never answers must not hang the page for ever ──────────
   // The real ceiling is ninety seconds; this only proves the page keeps

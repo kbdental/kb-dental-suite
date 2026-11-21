@@ -1,19 +1,21 @@
-// "when prescription is fired for print only the concise template is needed
-//  but when putting the data in daily register or progress notes or
-//  procedure done sheet and everywhere we save i need the comprehensive one
-//  (same template as concise one used) to be stored"
+// "Now please remove the comprehensive clinical notes templates they are
+//  not required"
 //
-// Which length is wanted is not a decision to make twice at the chair. It
-// follows from what the text is FOR:
+// There were two lengths per template, split by purpose: the concise line
+// printed on the prescription pad, the comprehensive paragraph saved into
+// the daily register, the progress note and the procedure-done sheet. That
+// was asked for, built, and used -- and then keeping 156 pairs of notes in
+// step cost more than the second one earned, so the clinic asked for it to
+// go.
 //
-//   saved    the daily register, the progress note, the procedure-done
-//            sheet -- the full record, because it has to stand on its own
-//            years later, read by somebody else
-//   printed  the prescription -- the concise line, because a paragraph
-//            under every item on a pad is unreadable
+// One note per template now. It prints AND it is saved.
 //
-// And it must be the SAME template either way: the clinician picks the
-// procedure once, and the two lengths are two faces of that one pick.
+// What this file guards is the part that is easy to get wrong: removing a
+// field from an editor must not remove it from the sheet. The Type 2
+// column is still read, still written back on every save, and still
+// carried untouched through the row editor -- so the writing is all there
+// and the decision can be undone. A save that dropped it would be
+// irreversible, and silently so.
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -40,8 +42,9 @@ const LIB = [
   { category: 'Periodontics', template: 'Flap Surgery',
     type1: 'Flap raised wrt {tooth}.',
     type2: 'Flap raised wrt {tooth} under {anaesthesia}, sutured, review in 7 days.' },
-  // A template nobody has written the long form of yet.
-  { category: 'RCT', template: 'Working Length', type1: 'WL recorded wrt {tooth}.', type2: '' },
+  // A template whose concise line nobody has written, with only the long
+  // form in the sheet.
+  { category: 'RCT', template: 'Working Length', type1: '', type2: 'WL recorded wrt {tooth} at {length}mm.' },
   // And one with neither, which must not reach a dropdown at all.
   { category: 'RCT', template: 'Empty', type1: '', type2: '' }
 ];
@@ -90,68 +93,105 @@ const ctx = {
   CLINICAL_NOTE_SEED: [], Date, String, JSON, Math
 };
 vm.createContext(ctx);
-vm.runInContext(src + '\nthis.saveLib = saveClinicalNoteTemplateLib; this.getTpl = getClinicalNoteTemplates;', ctx);
+vm.runInContext(src + '\nthis.saveLib = saveClinicalNoteTemplateLib;'
+  + '\nthis.readLib = getClinicalNoteTemplatesV3_;'
+  + '\nthis.getTpl = getClinicalNoteTemplates;', ctx);
 ctx.saveLib({ rows: JSON.stringify(LIB) });
 const out = ctx.getTpl().templates;
 
-// One pick, not two. Offering both lengths in the dropdown made the
-// clinician choose twice for one procedure.
-eq('one entry per template, not one per length', out.length, 3);
+// One pick per procedure, as before -- the clinician never chose a length,
+// and now there is none to choose.
+eq('one entry per template', out.length, 3);
 eq('named for the procedure, with no length in the name',
    out.map(t => t.situation), ['Access Opening', 'Flap Surgery', 'Working Length']);
-ok('a template with neither length written is not offered',
+ok('a template with nothing written is not offered',
    !out.some(t => t.situation === 'Empty'), JSON.stringify(out.map(t => t.situation)));
 
-// `text` is what the eighteen forms insert, and therefore what is SAVED.
-eq('what the forms insert -- and so what is stored -- is the full record',
-   out[0].text,
-   'Access opening done wrt {tooth} under {anaesthesia}, irrigated with {irrigants}.');
-eq('and it is never the concise one where the full one exists',
-   out.filter(t => t.comprehensive.trim() && t.text === t.concise && t.concise !== t.comprehensive), []);
-eq('both lengths ride along for whoever needs the other',
-   [out[1].concise, out[1].comprehensive],
-   ['Flap raised wrt {tooth}.', 'Flap raised wrt {tooth} under {anaesthesia}, sutured, review in 7 days.']);
-eq('the department rides along too, because the forms filter on it',
+// ── one note, and it is the concise one ─────────────────────────────────
+// `text` is what the eighteen work-done forms insert, and therefore what
+// is SAVED into the register, the progress note and the procedure-done
+// sheet. It is now the short line.
+eq('what the forms insert -- and so what is stored -- is the concise note',
+   out[0].text, 'Access opening done wrt {tooth}.');
+eq('and the prescription is handed the very same text',
+   out.map(t => t.concise), out.map(t => t.text));
+eq('no second length is offered under any name',
+   out.filter(t => 'comprehensive' in t || 'type2' in t), []);
+eq('the department rides along, because the forms filter on it',
    out.map(t => t.category), ['RCT', 'Periodontics', 'RCT']);
 
-// A template with no long form must still insert something.
-eq('with no comprehensive written, the concise one is stored rather than nothing',
-   [out[2].text, out[2].comprehensive], ['WL recorded wrt {tooth}.', 'WL recorded wrt {tooth}.']);
+// A template with only the long form written must still insert something.
+eq('with no concise line written, the long one is used rather than nothing',
+   [out[2].text, out[2].concise],
+   ['WL recorded wrt {tooth} at {length}mm.', 'WL recorded wrt {tooth} at {length}mm.']);
 
-// ── the printed prescription takes the other one ────────────────────────
-ok('the prescription asks for the concise length',
-   /return cghsFillTokens\(t\.concise \|\| t\.text, \{/.test(html));
-ok('and says why, where somebody might change it back',
-   /The CONCISE length, deliberately/.test(html));
-
-// Run, so the two are not merely declared different.
+// ── the column survives, so this is reversible ──────────────────────────
+// The editor stopped showing Type 2. If that had also stopped it being
+// written, the first save after the change would have blanked 156
+// paragraphs with no way back.
+eq('the comprehensive column is still read off the sheet unchanged',
+   ctx.readLib().map(r => r.type2),
+   [LIB[0].type2, LIB[1].type2, LIB[2].type2, '']);
+ok('and the save still writes it, so a round trip does not lose it',
+   /r\.type1 \|\| "", r\.type2 \|\| ""/.test(gs), 'saveClinicalNoteTemplateLib');
+eq('the heading is still there, so the column keeps its place',
+   /"Type 2 \(Comprehensive\)"/.test(gs), true);
 {
+  // Round trip twice: save what was read back, and nothing moves.
+  const again = ctx.readLib();
+  ctx.saveLib({ rows: JSON.stringify(again) });
+  eq('saving what the editor loaded leaves every paragraph where it was',
+     ctx.readLib().map(r => r.type2), again.map(r => r.type2));
+}
+// The editor edits a COPY of the whole row, which is what carries a field
+// it no longer shows. Spread it field by field and Type 2 would fall out.
+ok('the row editor opens on a copy of the whole row',
+   /const startEdit = \(at\) => \{ setEditAt\(at\); setDraft\(\{ \.\.\.all\[at\] \}\); \};/.test(html));
+ok('and no box in the editor writes to it any more',
+   !/type2: e\.target\.value/.test(html));
+
+// ── the dropdown ────────────────────────────────────────────────────────
+{
+  const fnOf = (name) => {
+    const a = html.indexOf('function ' + name + '(');
+    return html.slice(a, html.indexOf('\n}', a) + 2) + '\n';
+  };
   const pctx = { String, Array, Object };
   vm.createContext(pctx);
-  vm.runInContext(html.slice(html.indexOf('const CGHS_TPL_STOP = ['),
-                             html.indexOf('function CghsPrescription('))
-    + '\nthis.pick = cghsTemplateFor; this.fill = cghsFillTokens;', pctx);
+  vm.runInContext('const CGHS_TPL_STOP = '
+      + /const CGHS_TPL_STOP = (\[[\s\S]*?\]);/.exec(html)[1] + ';\n'
+    + fnOf('cghsFillTokens') + fnOf('cghsTemplateFor')
+    + fnOf('clinicalTemplateRefs') + fnOf('clinicalNoteOptions')
+    + '\nthis.pick = cghsTemplateFor; this.fill = cghsFillTokens;'
+    + '\nthis.opts = clinicalNoteOptions;', pctx);
   const hit = pctx.pick('Flap Surgery- Per Tooth', out);
   eq('the rate-card name finds the one template', (hit || {}).situation, 'Flap Surgery');
   eq('the prescription prints the concise line',
      pctx.fill(hit.concise, { tooth: '16, 26' }), 'Flap raised wrt 16, 26.');
-  eq('while the record keeps the full one',
-     pctx.fill(hit.text, { tooth: '16, 26', anaesthesia: '2% lignocaine' }),
-     'Flap raised wrt 16, 26 under 2% lignocaine, sutured, review in 7 days.');
-  // The same template either way: the clinician picked a procedure once.
-  ok('both come from one pick', hit.concise !== hit.comprehensive
-     && pctx.pick('Flap Surgery- Per Tooth', out) === hit);
+  eq('and the record keeps that same line, not a paragraph',
+     pctx.fill(hit.text, { tooth: '16, 26' }), 'Flap raised wrt 16, 26.');
+
+  // What the chair actually sees: one entry per template the plan names.
+  const plan = [{ plan: 'CGHS', treatment: 'Flap Surgery- Per Tooth',
+                  templates: 'Flap Surgery' }];
+  const labels = pctx.opts('Flap Surgery- Per Tooth', out, plan, 'CGHS', { tooth: '16' })
+    .map(o => o.label);
+  eq('one entry, named for the template, with no length to choose between',
+     labels, ['Flap Surgery']);
+  // Nothing BUILDS such a label any more. The page still knows how to
+  // strip one off a name saved under the old scheme, and that lives in a
+  // comment and a regex, which is why the comments come out first.
+  const code = html.split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n');
+  ok('nothing in the page builds a label naming a length',
+     !/"[^"]*Type [12] \((Concise|Comprehensive)\)/.test(code),
+     (code.match(/"[^"]*Type [12] \((Concise|Comprehensive)\)/) || [])[0]);
 }
 
 // ── and the forms are fed that list unchanged ───────────────────────────
-// Whatever the dropdown inserts is what the daily register's Work Done
-// column, the progress note and the procedure-done sheet all read back.
 ok('the work-done forms are fed the same list, filtered by department',
    /const filtered = form && form\.templateCategory[\s\S]{0,400}clinicalTemplates\.filter\(t => t\.category === form\.templateCategory\)/.test(html));
 ok('and it is the templates the backend derived, not a second copy',
    /api\("getClinicalNoteTemplates"\)\.then\(res => \{ if \(res\.success && res\.templates\) setClinicalTemplates\(res\.templates\); \}\);/.test(html));
-// The daily register reads what the form saved, so nothing extra is needed
-// there -- but if that ever stops being true this is where to look.
 ok('the register still reads the form\'s own notes field',
    /workDone:\s+\["remarks", "notes", "clinicalNotes"/.test(html));
 

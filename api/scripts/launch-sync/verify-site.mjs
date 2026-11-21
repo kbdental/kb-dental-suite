@@ -14,11 +14,16 @@ try{
  check('Native database frontend without verification banner',rootResponse.ok&&page.includes('KB_SCRIPT_URL_OVERRIDE')&&!page.includes('Verification copy'));
  const anonymous=await fetch(base+'/exec?action=getAllPatients',{signal:AbortSignal.timeout(45000)});const denied=await anonymous.json();
  check('Anonymous patient access rejected',denied.success===false&&denied.authRequired===true&&!denied.patients);
+ const anonymousPrescriptions=await fetch(base+'/api/v1/cghs-prescriptions',{signal:AbortSignal.timeout(45000)});
+ check('Anonymous CGHS prescription search rejected',anonymousPrescriptions.status===401);
  const login=await request('staffLogin',{clinic:'kb-review',username:'admin',password:state.userPasswords.admin});
  check('Independent staff login issues a session',login.body.success&&login.body.token&&login.response.headers.get('set-cookie'));
  const cookie=login.response.headers.get('set-cookie').split(';')[0];headers={Cookie:cookie};
  const me=(await request('whoAmI')).body;check('Session resumes',me.success&&me.clinicId&&me.clinicRevision!==undefined);
  headers['X-KB-Clinic']=me.clinicId;headers['X-KB-Clinic-Revision']=String(me.clinicRevision);
+ const prescriptions=await fetch(base+'/api/v1/cghs-prescriptions?limit=1',{headers,signal:AbortSignal.timeout(45000)});
+ const prescriptionResult=await prescriptions.json();
+ check('CGHS prescription search available to authorized clinical staff',prescriptions.ok&&prescriptionResult.success&&Array.isArray(prescriptionResult.prescriptions));
  const connection=await copyConnection();db=connection.db;await db.query('BEGIN READ ONLY');
  const org=(await db.query('SELECT id FROM org_identity')).rows[0].id;
  await db.query("SELECT set_config('app.clinic_id',$1,true),set_config('app.organization_id',$2,true)",[me.clinicId,org]);

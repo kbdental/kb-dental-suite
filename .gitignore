@@ -4,3 +4,8 @@ migration/data/
 
 # Synthetic organization demo credentials/config/documents (local only).
 api/.organization-demo-runtime/
+
+# Transient files the browser-driven tests write beside themselves and
+# delete again. A full run is nine minutes long, so a hook or a glance at
+# git status during one would otherwise see files that are already gone.
+test/.tmp-*.html

@@ -2,7 +2,8 @@
   "name": "kb-dental-suite",
   "private": true,
   "scripts": {
-    "test": "node test/run-all.js"
+    "test": "node test/run-all.js",
+    "build:trial": "node tools/build-trial.js"
   },
   "devDependencies": {
     "playwright": "^1.56.0",

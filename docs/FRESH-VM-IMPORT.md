@@ -66,7 +66,7 @@ both default to KB Dental. These are metadata, not automatic DNS/proxy setup.
 
 The plan has no database/credential/file writes. The apply command creates:
 
-- A uniquely named database with a private identity marker and all 38 migrations.
+- A uniquely named database with a private identity marker and every numbered migration on the checked-out branch.
   The `kb_launch_sync_test_...` name is retained to satisfy existing safety guards;
   it does not refer to the shared `kb_pms_test` database.
 - One organization and one clinic (login code `kb-review`), four newly generated

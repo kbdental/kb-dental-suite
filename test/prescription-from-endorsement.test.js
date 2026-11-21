@@ -24,9 +24,18 @@ const RX = html.slice(html.indexOf('function CghsPrescription({ pat, lines, plan
                       html.indexOf('function CghsBill('));
 ok('the prescription stage was found', RX.length > 400, RX.length);
 ok('the date is the clinic’s to set', /onChange: e => setDate\(e\.target\.value\)/.test(RX));
+// The sheet itself is built by buildCghsRxHTML now, so that a prescription
+// saved months ago reprints through the very same function as the live
+// one. These two live there; what the component owes is handing it the
+// date that was set and the pad it prints on.
+const RXP = html.slice(html.indexOf('function buildCghsRxHTML(rx, pad) {'),
+                       html.indexOf('function CghsPrescription({ pat, lines, plan }) {'));
+ok('the printer was found', RXP.length > 400, RXP.length);
 ok('and the sheet prints the date that was set, not today',
-   /const when = fmtDMY\(date\) \|\| TODAY;/.test(RX));
-ok('it prints on the pad', /cghsPadCss\(pad\)/.test(RX));
+   /const when = fmtDMY\(date\) \|\| TODAY;/.test(RXP));
+ok('which is the date the screen hands it', /\n    date: date,/.test(RX));
+ok('it prints on the pad', /cghsPadCss\(pad\)/.test(RXP));
+ok('and the screen hands it that too', /buildCghsRxHTML\(payload\(\), pad\)/.test(RX));
 ok('and draws no letterhead over the pad’s own',
    RX.indexOf('C. A. R. E. S.') < 0 && !/pH\(window\.LOGO_B64/.test(RX));
 // It is no longer bolted onto the medicines form. That form's box prints

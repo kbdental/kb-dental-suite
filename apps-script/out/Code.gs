@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-12";
+var BACKEND_BUILD = "2026-11-20";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -1437,7 +1437,7 @@ function saveRegistration(p) {
     // What the staff need to know before this patient sits down. Written the
     // same way as conditions and allergies, so it reads back the same way.
     "Safety Flags": safeJSON(p.safetyFlags),
-    "What is your chief complaint?|Complaint": p.complaint,
+    "What is your chief complaint?|Chief Complaint|Complaint": p.complaint,
     "Are you in Pain?": p.painLevel ? "Yes" : "",
     "What is your level of pain on a scale of 0-10?|Pain Level": p.painLevel,
     "Registration Status": p.regStatus || "",
@@ -1577,6 +1577,50 @@ function mobileMatches_(row, mobile) {
   return (!!onFile && entered === onFile) || (!!wa && entered === wa);
 }
 
+// ── READ-ONLY. Which column is each field actually coming from? ────
+// Registration fields are resolved by NAME against whatever the sheet's
+// header row says, with several spellings accepted per field. That is what
+// lets one app serve a book set up years ago and one created last week --
+// and it is also why a field can quietly resolve to the wrong column, or
+// to none, with nothing on any screen to show it.
+//
+// Run this from the editor when a field that was typed at the desk does
+// not appear where it should. It writes nothing.
+function reportRegistrationColumns() {
+  // Every book a lookup actually searches, not just this one: a patient
+  // registered in the panel book and looked up from the main app is a
+  // different way for the same field to come back empty.
+  var fields = [
+    ["Chief complaint", ["What is your chief complaint?", "Chief Complaint", "Complaint"]],
+    ["Full name",       ["Full Name", "Name"]],
+    ["UHID",            ["UHID", "Registration ID"]],
+    ["Mobile",          ["Mobile No.", "Mobile"]],
+    ["Date of birth",   ["Date of Birth", "DOB"]],
+    ["Patient Type",    ["Patient Type"]],
+    ["Conditions",      ["Have you ever suffered/suffering from any of the following?", "Conditions"]],
+    ["Allergies",       ["Are you allergic to any of the following?", "Allergies"]],
+    ["Medicines",       ["Medicines you are taking currently:", "Medicines"]]
+  ];
+  regSheets_().forEach(function (sh) {
+    var headers = sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0];
+    Logger.log('%s \u2014 "%s", %s columns:',
+      sh.getParent().getName(), sh.getName(), headers.length);
+    Logger.log("   " + headers.join(" | "));
+    Logger.log("");
+    fields.forEach(function (f) {
+      var col = findRegColumn_(headers, f[1]);
+      Logger.log(col < 0
+        ? "  NOT FOUND  " + f[0] + "  \u2014 no column matches " + f[1].join(" / ")
+        : "  column " + (col + 1) + "  " + f[0] + "  \u2190  " + headers[col]);
+    });
+    Logger.log("");
+  });
+  Logger.log("A field reading NOT FOUND is never saved and never read back.");
+  Logger.log("A field pointing at a column you did not expect is being");
+  Logger.log("written there instead -- rename that column, or the real one.");
+  return { success: true };
+}
+
 function patientLookup(p) {
   var row = regRow_(p.uhid);
   // Identical answer whether the UHID is wrong or the mobile is wrong, so this
@@ -1603,7 +1647,14 @@ function patientLookup(p) {
     conditions:        regGet_(row, ["Have you ever suffered/suffering from any of the following?", "Conditions"]),
     medicines:         regGet_(row, ["Medicines you are taking currently:", "Medicines"]),
     allergies:         regGet_(row, ["Are you allergic to any of the following?", "Allergies"]),
-    complaint:         regGet_(row, ["What is your chief complaint?", "Complaint"])
+    // "Chief Complaint" named explicitly, not left to the loose pass.
+    // findRegColumn_ tries every candidate as an exact header first and only
+    // then falls back to "a header that CONTAINS this word" -- and on that
+    // fallback a column called "Complaint Duration" is as good a match for
+    // "Complaint" as the real one, whichever comes first in the sheet. A
+    // complaint typed at the desk then never reached the iPad, and nothing
+    // anywhere said why.
+    complaint:         regGet_(row, ["What is your chief complaint?", "Chief Complaint", "Complaint"])
   }};
 }
 
@@ -1631,7 +1682,7 @@ function patientCompleteRegistration(p) {
     "Medicines you are taking currently:|Medicines": p.medicines,
     "Are you allergic to any of the following?|Allergies": p.allergies,
     "How did you know about this clinic?": p.howKnown,
-    "What is your chief complaint?|Complaint": p.complaint,
+    "What is your chief complaint?|Chief Complaint|Complaint": p.complaint,
     "Are you in Pain?": p.painLevel ? "Yes" : "",
     "What is your level of pain on a scale of 0-10?|Pain Level": p.painLevel,
     "Habits [Do you Smoke Beedi/Cigarette?]": habitsStr.indexOf("Smoking") >= 0 ? "Yes" : "",
@@ -1838,7 +1889,7 @@ function getPatient(p) {
         allergies:         regList_(get("Allergies", "Are you allergic to any of the following?")),
         safetyFlags:       regList_(get("Safety Flags")),
         habits:            get("Habits"),
-        complaint:         get("Complaint", "What is your chief complaint?"),
+        complaint:         get("Complaint", "Chief Complaint", "What is your chief complaint?"),
         painLevel:         get("Pain Level", "What is your level of pain on a scale of 0-10?"),
         // The panel a patient is on, and the card it is claimed against.
         // These were written by the registration and then never handed back:
@@ -2589,25 +2640,41 @@ function listClinicalSheetRecords(p) {
   var names = [clinicalSheetTabName_(sheetType)];
   if (names[0] !== CLINICAL_SHEETS_SHARED_TAB) names.push(CLINICAL_SHEETS_SHARED_TAB);
 
+  // Opened read-only, and remembered even when absent, so a tab that does
+  // not exist is not created and not asked for twice.
   var sheets = {};
   var openTab = function (name) {
-    if (!sheets[name]) sheets[name] = getClinicalSheet(name);
+    if (!Object.prototype.hasOwnProperty.call(sheets, name))
+      sheets[name] = getClinicalSheetIfExists_(name);
     return sheets[name];
   };
 
   var keys = [], seen = {};
   for (var n = 0; n < names.length; n++) {
     var sh = openTab(names[n]);
+    if (!sh) continue;
     var last = sh.getLastRow();
     if (last < 2) continue;
     var vals = sh.getRange(2, 1, last - 1, 3).getValues();
+    // Within one tab the LAST row for a UHID is the record, because that
+    // is the one findClinicalRow_ finds and every save rewrites. Taking
+    // the first instead would hand back a superseded course of treatment
+    // and the backfill would write it over rows the live record had
+    // already written correctly.
+    var local = {}, order = [];
     for (var i = 0; i < vals.length; i++) {
       var uhid = String(vals[i][0]).trim().toUpperCase();
       if (!uhid) continue;
       if (String(vals[i][2]).trim() !== sheetType) continue;
-      if (seen[uhid]) continue;
-      seen[uhid] = true;
-      keys.push({ tab: names[n], row: i + 2, uhid: uhid });
+      if (!Object.prototype.hasOwnProperty.call(local, uhid)) order.push(uhid);
+      local[uhid] = i + 2;
+    }
+    // Across tabs the FIRST tab wins: the form's own tab is read before the
+    // shared one, and a record still in the shared tab is the older copy.
+    for (var u = 0; u < order.length; u++) {
+      if (seen[order[u]]) continue;
+      seen[order[u]] = true;
+      keys.push({ tab: names[n], row: local[order[u]], uhid: order[u] });
     }
   }
   // A stable order, so paging through cannot skip a record or hand one back
@@ -2616,7 +2683,9 @@ function listClinicalSheetRecords(p) {
 
   var records = [];
   for (var k = offset; k < keys.length && records.length < limit; k++) {
-    var row = openTab(keys[k].tab).getRange(keys[k].row, 1, 1, 5).getValues()[0];
+    var src = openTab(keys[k].tab);
+    if (!src) continue;
+    var row = src.getRange(keys[k].row, 1, 1, 5).getValues()[0];
     records.push({
       uhid: keys[k].uhid,
       name: String(row[1] || ""),
@@ -2633,6 +2702,113 @@ function listClinicalSheetRecords(p) {
     next: done < keys.length ? done : null,
     records: records
   };
+}
+
+// ════════════════════════════════════════════════
+// THE TRIAL COPY
+// ════════════════════════════════════════════════
+//
+// Showing the app to somebody should not mean showing them the clinic's
+// patients. This empties a COPY of the book: every patient, appointment,
+// clinical record, document and rupee goes, and the master lists stay, so
+// what is handed over is the app itself with the clinic's own setup in it
+// and nobody's records.
+//
+// The lists are kept BY NAME and everything else is cleared. That way
+// round on purpose: a tab this function has never heard of is far more
+// likely to be a record of something than a list of options, and the one
+// mistake that cannot be undone here is leaving a patient in.
+var TRIAL_KEEP_TABS = [
+  // Who the clinic is and how it works
+  "Clinic Profile", "Doctor Details", "Employees", "Chairs", "Panels",
+  "Clinic Timings", "Working Days", "Appointment Reasons", "Procedure Library",
+  // What Registration offers
+  "Referral Sources", "Patient Types", "Occupations", "Safety Flags",
+  "Document Categories",
+  // What the clinic writes with
+  "Clinical Note Templates", "Clinical Templates (Type 1 & 2)",
+  "Clinical Note Plan", "Clinical Departments", "Clinical Examination",
+  "Medicine Instructions", "Medicine Notes", "Implant Brands",
+  // The prescription pad's lists
+  "Medicines Master", "Medicine Dosages", "Medicine Frequencies",
+  "Medicine Durations",
+  // The rate cards. Prices, not takings: what a treatment costs is part of
+  // the setup, what was taken for it is not.
+  "Treatments Master", "Payment Modes", "Expense Categories", "Panel Rates"
+];
+// Deliberately NOT kept, though it is setup rather than a record:
+// "Signatures" holds the doctors' actual signature images, and a signature
+// is not a thing to hand to somebody trying the software out. The trial
+// draws its signature line empty, as a blank form does.
+//
+// "Doctor Details" IS kept, because every form asks who treated the
+// patient and a trial with nobody in that box shows nothing. It carries
+// the doctors' phone and email with it -- if that is more than you want to
+// hand over, take it off the list above and the trial will simply have an
+// empty doctor list to fill in.
+
+// A tab whose header row is the clinic's own column layout: emptied of
+// rows but kept, so the trial writes into the same shape the clinic has.
+// Anything else is cleared outright.
+function trialClearTab_(sh) {
+  var last = sh.getLastRow();
+  if (last < 1) return 0;
+  var header = sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0];
+  var hasHeader = String(header.join("")).trim() !== "";
+  var rows = hasHeader ? last - 1 : last;
+  if (rows <= 0) return 0;
+  sh.deleteRows(hasHeader ? 2 : 1, rows);
+  return rows;
+}
+
+// Run this from the Apps Script editor of the COPY, never the clinic's own
+// book. It refuses on both of the clinic's books, by ID, so a copy that was
+// never made cannot be emptied by accident.
+function emptyThisCopyForTrial() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var id = ss.getId();
+  if (id === MAIN_PMS_SHEET_ID || id === PANEL_PMS_SHEET_ID) {
+    Logger.log("REFUSED. This is the clinic's own book (%s), not a copy of it.", ss.getName());
+    Logger.log("Make a copy first: File > Make a copy, then run this in the copy.");
+    return { success: false, error: "this is the clinic's own book" };
+  }
+  // The finance file too: a copy keeps its money in itself, but a Script
+  // Property can point it somewhere else, and that somewhere else may be
+  // the clinic's. Emptying is only ever done to this file.
+  var finance = getFinanceSheetId();
+  if (finance !== id) {
+    Logger.log("REFUSED. This book's finance file is another spreadsheet (%s).", finance);
+    Logger.log("Clear the FINANCE_SHEET_ID script property so the copy keeps its money in itself, then run this again.");
+    return { success: false, error: "the finance file is not this one" };
+  }
+
+  var keep = {};
+  TRIAL_KEEP_TABS.forEach(function (n) { keep[n] = true; });
+
+  var kept = [], cleared = [], emptyAlready = [];
+  ss.getSheets().forEach(function (sh) {
+    var name = sh.getName();
+    if (keep[name]) { kept.push(name + " (" + Math.max(0, sh.getLastRow() - 1) + ")"); return; }
+    var n = trialClearTab_(sh);
+    if (n > 0) cleared.push(name + " (" + n + ")");
+    else emptyAlready.push(name);
+  });
+
+  Logger.log("Emptied \"%s\" for trial use.", ss.getName());
+  Logger.log("");
+  Logger.log("CLEARED %s tab(s), with the row counts that went:", cleared.length);
+  cleared.forEach(function (n) { Logger.log("   " + n); });
+  Logger.log("");
+  Logger.log("KEPT %s master list(s), with what is in them:", kept.length);
+  kept.forEach(function (n) { Logger.log("   " + n); });
+  if (emptyAlready.length) {
+    Logger.log("");
+    Logger.log("Already empty: " + emptyAlready.join(", "));
+  }
+  Logger.log("");
+  Logger.log("Now: Deploy > New deployment > Web app, and paste the /exec URL");
+  Logger.log("into trial/config.js in the repository.");
+  return { success: true, cleared: cleared.length, kept: kept.length };
 }
 
 // ── One-off, safe to re-run ──────────────────────────────────────────────
@@ -2899,7 +3075,7 @@ function getFollowUps() {
       for (var m = 1; m < apptData.length; m++) {
         var mrow = apptData[m];
         var mstatus = String(mrow[aCol("Status")] || "");
-        if (mstatus !== "Cancelled" && mstatus !== "No Show") continue;
+        if (mstatus !== "Cancelled" && mstatus !== "No Show" && mstatus !== "Missed") continue;
         var muhid = String(mrow[aCol("UHID")] || "").trim();
         if (!muhid) continue;
         var mdate = formatDateISO(mrow[aCol("Date")]);
@@ -3311,7 +3487,7 @@ function apptStepOf_(status) {
   for (var i = 0; i < APPT_STEPS.length; i++) {
     if (APPT_STEPS[i].status === status) return i;
   }
-  return -1;   // Cancelled, No Show: not on the line at all
+  return -1;   // Cancelled, Missed, No Show: not on the line at all
 }
 
 function updateAppointmentStatus(p) {
@@ -6001,10 +6177,12 @@ function saveChairsList(p) {
 
 // ── Three things, kept apart ────────────────────────────────────────────
 //
-//   the TEMPLATES   156 of them, one per procedure, each written in two
-//                   lengths -- Type 1 (Concise) for a routine visit, Type 2
-//                   (Comprehensive) for a record somebody else, or a panel,
-//                   may read back
+//   the TEMPLATES   156 of them, one per procedure, one note each. There
+//                   were two lengths for a while; the clinic found the
+//                   longer one was not needed, so the concise note serves
+//                   the pad and the record alike. The second column is
+//                   still read and still written back, untouched, so not a
+//                   word written into it was lost
 //
 //   the PLAN        277 treatments that can go on a plan -- 156 on the
 //                   clinic's own and 121 on the CGHS rate card -- each
@@ -6033,9 +6211,6 @@ var CLINICAL_PLAN_HEADERS = ["Plan", "Plan Treatment", "Category", "Templates", 
                              // The treatment as a patient reads it. A plan is
                              // handed to the patient, so this one is theirs.
                              "Hindi"];
-
-var TYPE1_SUFFIX = " \u00b7 Type 1 (Concise)";
-var TYPE2_SUFFIX = " \u00b7 Type 2 (Comprehensive)";
 
 function getClinicalNoteTemplatesV3_() {
   var sh = getSheet(CLINICAL_TPL_LIB_SHEET);
@@ -6201,35 +6376,38 @@ function saveClinicalNotePlan(p) {
 
 // One record per template, not one per length.
 //
-// Which length is wanted is not the clinician's decision to make twice at
-// the chair -- it follows from what the text is FOR:
+// ONE length, where there were two. The split was by purpose: the concise
+// line printed on the pad, the comprehensive paragraph was saved into the
+// register, the progress note and the procedure-done sheet. Keeping the
+// two in step across 156 procedures cost more than the second one earned,
+// and the clinic asked for it to go. The concise note is now what prints
+// AND what is saved.
 //
-//   saved   the daily register, the progress note, the procedure-done
-//           sheet: the full record, because this is the one that has to
-//           stand on its own years later, read by somebody else
-//   printed the prescription: the concise line, because a paragraph under
-//           every item on a pad is unreadable
+// The comprehensive column is still read off the sheet above and still
+// written back on every save, so everything written into it is where it
+// was left and this is reversible. It simply no longer reaches anything
+// that inserts text.
 //
-// So `text` -- the field the eighteen work-done forms insert, and
-// therefore the field that gets SAVED -- is the comprehensive one. Both
-// lengths ride along beside it, so the prescription can take the concise
-// one without a second lookup. Nothing in those forms, base64 blobs every
-// one, had to change for this either.
+// Nothing in the eighteen work-done forms, base64 blobs every one, had to
+// change: they insert `text`, and `text` is now the concise note.
 //
-// Type 2 missing falls back to Type 1 rather than offering a blank: a
-// dropdown entry that inserts nothing is worse than a short note.
+// A template with only the long form written -- there are a few -- hands
+// that over rather than offering a blank, because a dropdown entry that
+// inserts nothing is worse than a long note.
 function clinicalTemplatesFlat_() {
   var out = [];
   getClinicalNoteTemplatesV3_().forEach(function (r) {
     var concise = String(r.type1 || "");
     var full = String(r.type2 || "");
     if (!concise.trim() && !full.trim()) return;
+    var note = concise.trim() ? concise : full;
     out.push({
       situation: r.template,
-      text: full.trim() ? full : concise,
+      text: note,
       category: r.category,
-      concise: concise.trim() ? concise : full,
-      comprehensive: full.trim() ? full : concise,
+      // Still sent under its own name, because the prescription asks for
+      // `concise` and a page cached in an open tab will go on asking.
+      concise: note,
       // Carried so the Hindi toggle can hand the form the Hindi note
       // instead. Empty where nobody has written one, and the toggle then
       // leaves that template in English rather than blanking it.
@@ -6688,6 +6866,16 @@ function getClinicalSheetId() {
 // Kept for setupClinicalRecordTabs, which opens the clinical file by this name.
 var CLINICAL_SHEET_ID = getClinicalSheetId();
 
+// The same file, WITHOUT creating the tab: returns null when it is not
+// there. getClinicalSheet inserts a missing tab, which is right for a save
+// and wrong for a read -- a read that creates five empty, header-less tabs
+// in the clinic's spreadsheet is a read that changed something, and a
+// header-less tab is exactly what appendClinicalRecordRows then refuses to
+// write into.
+function getClinicalSheetIfExists_(tabName) {
+  return SpreadsheetApp.openById(getClinicalSheetId()).getSheetByName(tabName);
+}
+
 function getClinicalSheet(tabName) {
   var ss = SpreadsheetApp.openById(getClinicalSheetId());
   var sh = ss.getSheetByName(tabName);
@@ -7075,6 +7263,84 @@ function savePrescription(p) {
       "Prescribing Doctor": p.doctor || ""
     }
   });
+}
+
+// ── Saved CGHS prescriptions ───────────────────────────────────────────
+//
+// "In CGHS prescription there is no option to save what all we have
+//  entered need a save button and also need a search button with date
+//  option so that later if required we can get it and if required take a
+//  print out"
+//
+// A prescription was printed once and existed nowhere else. The panel
+// queries a bill three months on, the patient loses the sheet, a course
+// runs over three visits and the last one needs the first one's wording --
+// and every time it had to be rebuilt from the endorsement by hand, if it
+// could be rebuilt at all.
+//
+// Seven of the eight columns are there to be READ: the clinic opens this
+// tab and scans it. The last one is the document itself as JSON, because
+// reprinting has to give back the sheet that was signed, not an
+// approximation reassembled out of columns.
+var CGHS_RX_SHEET = "CGHS Prescriptions";
+var CGHS_RX_HEADERS = ["Saved At", "Date", "UHID", "Name of Patient",
+                       "Treatments", "Tooth Numbers", "Sittings", "Document"];
+
+function saveCghsPrescription(p) {
+  var uhid = String(p.uhid || "").trim();
+  if (!uhid) return { success: false, error: "A patient is needed before a prescription can be saved." };
+  var doc = String(p.document || "").trim();
+  if (!doc) return { success: false, error: "There is nothing on the prescription to save." };
+  var sh = getClinicalSheet(CGHS_RX_SHEET);
+  if (sh.getLastRow() === 0) sh.appendRow(CGHS_RX_HEADERS);
+  sh.appendRow([new Date().toISOString(), String(p.date || ""), uhid.toUpperCase(),
+                String(p.patientName || ""), String(p.treatments || ""),
+                String(p.teeth || ""), String(p.sittings || ""), doc]);
+  return { success: true };
+}
+
+// Read-only: a search must never bring the tab into being. A clinic that
+// has saved nothing gets an empty list and no new tab in its spreadsheet.
+function listCghsPrescriptions(p) {
+  var sh = getClinicalSheetIfExists_(CGHS_RX_SHEET);
+  if (!sh) return { success: true, prescriptions: [] };
+  var last = sh.getLastRow();
+  if (last < 2) return { success: true, prescriptions: [] };
+
+  var uhid = String((p && p.uhid) || "").trim().toUpperCase();
+  // Both ends are inclusive, because "1st to the 30th" means the 30th.
+  var from = String((p && p.from) || "").trim();
+  var to   = String((p && p.to) || "").trim();
+  var limit = parseInt((p && p.limit), 10) || 50;
+  if (limit < 1) limit = 1;
+  if (limit > 200) limit = 200;
+
+  var vals = sh.getRange(2, 1, last - 1, CGHS_RX_HEADERS.length).getValues();
+  var out = [];
+  // Newest first: the one wanted again is nearly always the last one made.
+  for (var i = vals.length - 1; i >= 0 && out.length < limit; i--) {
+    var r = vals[i];
+    // The Date column is written as "2026-11-14" and Sheets stores that as a
+    // DATE, not as text -- so it reads back as a Date object and
+    // String(it).slice(0,10) is "Mon Nov 14". Compared against "2026-11-14"
+    // that is greater than every `to` a search can carry, so every row was
+    // filtered out and a clinic with a tab full of prescriptions was told
+    // there was nothing in the range. Normalised the way every other date
+    // in this file is.
+    var when = formatDateISO(r[1]);
+    if (uhid && String(r[2] || "").trim().toUpperCase() !== uhid) continue;
+    // A row with no date of its own cannot be ruled in by a date search,
+    // but must still be found by UHID alone.
+    if (from && (!when || when < from)) continue;
+    if (to && (!when || when > to)) continue;
+    out.push({
+      savedAt: String(r[0] || ""), date: when, uhid: String(r[2] || ""),
+      patientName: String(r[3] || ""), treatments: String(r[4] || ""),
+      teeth: String(r[5] || ""), sittings: String(r[6] || ""),
+      document: String(r[7] || "")
+    });
+  }
+  return { success: true, prescriptions: out };
 }
 
 function saveScaling(p) {
