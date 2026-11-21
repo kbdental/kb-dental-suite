@@ -240,7 +240,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-20";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-21";
+const KB_APP_BUILD = "2026-11-21a";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -13606,6 +13606,33 @@ function kbBulletCell(text, splitOn) {
     + '</ul>';
 }
 
+// The filter over a patient's record: a date range and a tooth. Its own
+// component because it is a control, not part of any one sheet, and the
+// sheet below it is long enough without this inlined into it.
+function KbRecordFilter({ from, setFrom, to, setTo, tooth, setTooth, on, onClear, shown, total }) {
+  const lbl = (c) => React.createElement("div", { style:{ fontSize:11, fontWeight:700,
+    color:"#444444", textTransform:"uppercase", letterSpacing:".04em", marginBottom:3 } }, c);
+  return React.createElement("div", { style:{ display:"flex", gap:10, alignItems:"flex-end",
+    flexWrap:"wrap", background:BGS, border:`1px solid ${BORDER}`, borderRadius:8,
+    padding:"10px 12px", marginBottom:12 } },
+    React.createElement("div", null, lbl("From"),
+      React.createElement("input", { type:"date", value: from,
+        onChange: e => setFrom(e.target.value), style:{ ...inp, width:150, padding:"5px 8px" } })),
+    React.createElement("div", null, lbl("To"),
+      React.createElement("input", { type:"date", value: to,
+        onChange: e => setTo(e.target.value), style:{ ...inp, width:150, padding:"5px 8px" } })),
+    React.createElement("div", null, lbl("Tooth"),
+      React.createElement("input", { value: tooth, placeholder:"e.g. 36", maxLength:3,
+        onChange: e => setTooth(e.target.value),
+        style:{ ...inp, width:84, padding:"5px 8px", textAlign:"center", fontWeight:700 } })),
+    on ? React.createElement("button", { onClick: onClear,
+      style:{ padding:"6px 14px", fontSize:12.5, fontWeight:700, border:`1px solid ${BORDER}`,
+        borderRadius:6, cursor:"pointer", background:"#fff", color:"#444444" } }, "Clear") : null,
+    React.createElement("div", { style:{ fontSize:11.5, color:"#5a5a5a", maxWidth:300, lineHeight:1.45 } },
+      on ? shown + " of " + total + " lines. Printing prints these."
+         : "Find a visit without the file: a date range, a tooth, or both."));
+}
+
 // Several things done in one sitting, on the screen rather than on paper.
 // kbBulletCell's counterpart: the same rule, the same look, because the
 // screen and the sheet are read as the same list. One line stays a line --
@@ -14072,6 +14099,41 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
   const [preview, setPreview] = useState(false);
   const [previewHTML, setPreviewHTML] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  // ── Finding a visit without the file in front of you ────────────────
+  //
+  // "if some one does not bring there file and the treatment done is not
+  //  entered we can do that by date search or tooth search"
+  //
+  // A patient turns up without their folder and says the root canal was
+  // "some time in May, on a lower back tooth". Eighty-four visits down a
+  // page is not a way to answer that. So: a date range and a tooth, over
+  // the rows AFTER they are split per tooth -- a visit that covered 37
+  // and 47 answers a search for 47 with the line about 47, not with the
+  // whole visit.
+  const [fFrom, setFFrom] = useState("");
+  const [fTo, setFTo] = useState("");
+  const [fTooth, setFTooth] = useState("");
+  const procedureRows = React.useMemo(() => {
+    const all = kbSplitVisitRows(entries, ["clinicalNotes", "workDone"]);
+    const from = String(fFrom || "").trim();
+    const to = String(fTo || "").trim();
+    // "36" must not match "36, 37" by accident of being inside it, nor
+    // miss it: the cell is a list, so it is read as one.
+    const want = String(fTooth || "").trim().toUpperCase();
+    if (!from && !to && !want) return all;
+    return all.filter(r => {
+      const d = String((r && r.date) || "").slice(0, 10);
+      if (from && (!d || d < from)) return false;
+      if (to && (!d || d > to)) return false;
+      if (!want) return true;
+      const teeth = String((r && r.toothNo) || "").toUpperCase()
+        .split(/[^0-9A-Z]+/).filter(Boolean);
+      return teeth.indexOf(want) >= 0;
+    });
+  }, [entries, fFrom, fTo, fTooth]);
+  const filterOn = !!(String(fFrom).trim() || String(fTo).trim() || String(fTooth).trim());
+  const clearFilter = () => { setFFrom(""); setFTo(""); setFTooth(""); };
+
   // The doctors' signatures, for the progress notes -- which goes out as a
   // PDF, where an empty ruled box would never be signed by anybody.
   const [sigs, setSigs] = useState({});
@@ -14164,13 +14226,13 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
   };
 
   const doPrint = (which) => {
-    const h = which === "progress" ? buildProgressNotesHTML(pat, progressRows, sigs) : buildProcedureDoneHTML(pat, entries);
+    const h = which === "progress" ? buildProgressNotesHTML(pat, progressRows, sigs) : buildProcedureDoneHTML(pat, procedureRows);
     const w = window.open("", "_blank");
     w.document.write(h); w.document.close();
     setTimeout(() => w.print(), 600);
   };
   const doPreview = (which) => {
-    setPreviewHTML(which === "progress" ? buildProgressNotesHTML(pat, progressRows, sigs) : buildProcedureDoneHTML(pat, entries));
+    setPreviewHTML(which === "progress" ? buildProgressNotesHTML(pat, progressRows, sigs) : buildProcedureDoneHTML(pat, procedureRows));
     setPreview(true);
   };
 
@@ -14184,7 +14246,7 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
     const mobile = String(pat.mobile || pat.whatsapp || "").replace(/\D/g, "").slice(-10);
     if (!mobile) { alert("This patient has no mobile number saved, so the PDF can't be sent on WhatsApp. You can still use Print."); return; }
     setPdfBusy(true);
-    const html = which === "progress" ? buildProgressNotesHTML(pat, progressRows, sigs) : buildProcedureDoneHTML(pat, entries);
+    const html = which === "progress" ? buildProgressNotesHTML(pat, progressRows, sigs) : buildProcedureDoneHTML(pat, procedureRows);
     const docName = which === "progress" ? "Treatment Progress Notes" : "Procedure Done";
     const res = await apiPost("createDocumentPDF", {
       uhid: pat.uhid, patientName: pat.name || "", html, docName, category: "Progress Notes"
@@ -14218,9 +14280,16 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
 
   // ── Procedure Done View ───────────────────────────────
   const ProcedureView = () => React.createElement("div", null,
+    React.createElement(KbRecordFilter, {
+      from: fFrom, setFrom: setFFrom, to: fTo, setTo: setFTo,
+      tooth: fTooth, setTooth: setFTooth, on: filterOn, onClear: clearFilter,
+      shown: procedureRows.length, total: kbSplitVisitRows(entries, ["clinicalNotes", "workDone"]).length
+    }),
     React.createElement("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, flexWrap:"wrap", gap:8 } },
       React.createElement("div", { style:{ fontSize:13, color:"#2e2e2e" } },
-        entries.length + " visit" + (entries.length !== 1 ? "s" : "") + " recorded"
+        filterOn
+          ? procedureRows.length + " of " + kbSplitVisitRows(entries, ["clinicalNotes", "workDone"]).length + " shown"
+          : entries.length + " visit" + (entries.length !== 1 ? "s" : "") + " recorded"
       ),
       React.createElement("div", { style:{ display:"flex", gap:8 } },
         React.createElement("button", {
@@ -14233,9 +14302,11 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
         }, "🖨 Print")
       )
     ),
-    entries.length === 0
+    procedureRows.length === 0
       ? React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:"28px", textAlign:"center", color:"#5a5a5a", fontSize:14, border:`1px dashed ${BORDER}` } },
-          "No entries yet. Add procedures via the Daily Register page."
+          filterOn
+            ? "Nothing on this patient matches that. Widen the dates, or clear the tooth."
+            : "No entries yet. Add procedures via the Daily Register page."
         )
       // The tooth used to be tucked under the doctor's name in small grey
       // type, because the table had four columns and none of them was for
@@ -14246,7 +14317,7 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
           React.createElement("div", { style:{ display:"grid", gridTemplateColumns:"40px 90px 64px 1fr 140px", background:T, color:"#fff", padding:"7px 10px", fontSize:12, fontWeight:700, gap:8 } },
             ["S.No.", "Date", "Tooth", "Procedure / Work Done", "Doctor"].map((h,i) => React.createElement("div", { key:i }, h))
           ),
-          kbSplitVisitRows(entries, ["clinicalNotes", "workDone"]).map((e, i) => {
+          procedureRows.map((e, i) => {
             const d = e.date ? fmtDMY(e.date) : "—";
             return React.createElement("div", {
               key:i,
@@ -33600,9 +33671,15 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
         type: "KB_PATIENT",
         name: pat.name || pat["Full Name"] || "",
         uhid: pat.uhid || "",
-        age: pat.age || "",
-        gender: pat.gender || "",
-        doctor: getDoctors()[0] || ""
+        // A loaded patient carries a DATE OF BIRTH, never an age. `age`
+        // is not a field on it and never was, so this was an empty string
+        // on every form opened from here.
+        age: calcAge(pat.dob || pat.DOB || pat["DOB"]) || "",
+        gender: pat.gender || pat.Gender || ""
+        // No doctor. Who signs comes on KB_DOCTORS, which knows who the
+        // patient is being seen by today; the first name of the master
+        // list sent here is read by that code as a choice already made
+        // and kept over the treating doctor.
       }, "*");
     }
   };
