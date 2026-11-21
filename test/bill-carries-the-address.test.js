@@ -48,14 +48,19 @@ ok('neither is handed the raw selection any more',
 // This is the part with a way to go wrong: a blank from the register
 // wiping a name the search screen already had.
 {
-  const src = html.slice(html.indexOf('  const pat = React.useMemo(() => {'),
-                         html.indexOf('  if (!globalPat || !globalPat.uhid) {'));
+  // It lives in useFullPatient now, which all three screens that need a
+  // whole patient go through -- the two prescription pads as well, which
+  // is how the age and the gender finally reach the printed sheet.
+  const src = html.slice(html.indexOf('function useFullPatient(globalPat) {'),
+                         html.indexOf('function usePadMargins()'));
   ok('the merge was found', src.length > 100, src.length);
-  const ctx = { String, Object, React: { useMemo: (f) => f() } };
+  let answer = null;
+  const ctx = { String, Object, api: () => ({ then: () => ({ catch: () => {} }) }),
+    React: { useMemo: (f) => f(), useState: (v) => [answer, () => {}],
+             useEffect: () => {} } };
   vm.createContext(ctx);
-  // Each call gets its own scope, or the second redeclares `pat`.
-  const make = vm.runInContext('(function (globalPat, full) {\n' + src + '\nreturn pat; })', ctx);
-  const run = (globalPat, full) => make(globalPat, full);
+  const make = vm.runInContext('(function(){ ' + src + '\nreturn useFullPatient; })()', ctx);
+  const run = (globalPat, full) => { answer = full; return make(globalPat); };
 
   eq('with nothing from the register the selection stands',
      run({ uhid: 'AL1010', name: 'Santosh' }, null), { uhid: 'AL1010', name: 'Santosh' });

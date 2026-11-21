@@ -35,7 +35,13 @@ const eq = (name, got, want) => checks.push({ name, ok: JSON.stringify(got) === 
 const RX = html.slice(html.indexOf('function Prescription({ globalPat }) {'),
                       html.indexOf('// ── Finance —'));
 ok('the age is worked out from the date of birth the patient actually has',
-   /age: calcAge\(globalPat\.dob \|\| globalPat\.DOB\) \|\| ""/.test(RX));
+   /age: calcAge\(src\.dob \|\| src\.DOB \|\| src\["Date of Birth"\]\) \|\| src\.age \|\| ""/.test(RX));
+// ...off the record the register answered with, not off whatever the
+// screen that opened the patient happened to keep. See
+// the-pad-asks-the-register.test.js -- this is where two fixes stopped.
+ok('and that record is the register\'s, topped up',
+   /const fullPat = useFullPatient\(globalPat\);/.test(RX)
+   && /const src = fullPat \|\| globalPat;/.test(RX));
 ok('and the patient push no longer names a doctor at all',
    !/doctor: getDoctors\(\)\[0\]/.test(RX), (RX.match(/doctor:.*/) || [])[0]);
 ok('the pad follows the patient, not just the first one it opened on',
