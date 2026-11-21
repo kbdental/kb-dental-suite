@@ -71,7 +71,7 @@ function dictionary(row,spec) {
 }
 
 export function project(books, captureTime) {
-  const records=[], rejections={}, warnings={}, identityEvidence=new Map();
+  const records=[], rejections={}, warnings={}, issues=[], identityEvidence=new Map(), seenCghsPrescriptions=new Set();
   const reject = (table,reason) => { const key=table+':'+reason; rejections[key]=(rejections[key]??0)+1; };
   const warn = reason => { warnings[reason]=(warnings[reason]??0)+1; };
   const addEvidence = (uhid,name,source) => {
@@ -135,6 +135,28 @@ export function project(books, captureTime) {
   for(const book of books)for(const tab of book.tabs)for(const row of tableRows(tab)) {
     const uhid=idOf(row.get(clinicalAliases));
     const name=get(row,'Full Name','Patient Name','Name of Patient','Name','Patient');
+    if(tab.title==='CGHS Prescriptions'&&['clinical','main','empanelled'].includes(book.role)) {
+      const table='cghs_prescriptions';
+      try {
+        const document=json(raw(row,'Document'));
+        const prescription_date=date(raw(row,'Date')),source_saved_at=instant(raw(row,'Saved At'));
+        if(!uhid||!prescription_date||!source_saved_at)throw new Error('missing_identity_or_date');
+        if(idOf(document?.pat?.uhid)!==uhid||document?.date!==prescription_date)throw new Error('document_identity_or_date_mismatch');
+        if(typeof document.pat.name!=='string'||typeof document.pat.dob!=='string'||!Array.isArray(document.rows)||!document.rows.length||
+           document.rows.some(line=>!line||typeof line.name!=='string'||!line.name.trim()||typeof line.code!=='string'||
+             typeof line.tooth!=='string'||!Number.isFinite(line.qty)||line.qty<=0||!Array.isArray(line.sits)||
+             line.sits.some(sit=>!sit||typeof sit.text!=='string'||typeof sit.date!=='string'||(sit.date&&date(sit.date)!==sit.date))))
+          throw new Error('invalid_document_shape');
+        const fingerprint=digest([uhid,source_saved_at,document]);
+        if(seenCghsPrescriptions.has(fingerprint)){warn('duplicate_cghs_prescription');continue;}
+        seenCghsPrescriptions.add(fingerprint);
+        records.push(entry(book,tab,row,table,{uhid,prescription_date,source_saved_at,document},row.row));
+      }catch(error){
+        reject(table,error.message);
+        issues.push({table,reason:error.message,source:{role:book.role,book:book.id,tab:tab.id,row:row.row}});
+      }
+      continue;
+    }
     if(book.role==='clinical'||['Daily Register','Appointments','Treatment Cases','Care Plans','Treatment Plans'].includes(tab.title))
       addEvidence(uhid,name,{book,tab,row});
     try {
@@ -202,7 +224,7 @@ export function project(books, captureTime) {
   records.push(...operations.records);
   for(const [key,count]of Object.entries(operations.rejections))rejections[key]=(rejections[key]??0)+count;
   for(const [key,count]of Object.entries(operations.warnings))warnings[key]=(warnings[key]??0)+count;
-  return {records,rejections,warnings,issues:operations.issues};
+  return {records,rejections,warnings,issues:[...issues,...operations.issues]};
 }
 
 export function clock(value) {

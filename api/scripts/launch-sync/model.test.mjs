@@ -4,6 +4,19 @@ import {project,date,instant,clock,cents} from './model.mjs';
 const book=(role,tabs)=>({id:'fictional-'+role,role,timeZone:'Asia/Kolkata',tabs:tabs.map((t,i)=>({id:i,...t,rawRows:t.rawRows??t.rows}))});
 const capture='2026-11-07T00:00:00Z';
 
+test('imports historical CGHS prescription payloads and holds malformed or mismatched rows',()=>{
+ const document={date:'2026-10-30',pat:{uhid:'TEST-A',name:'Example Patient',dob:''},rows:[{code:'EX',name:'Examination',tooth:'16',qty:1,sits:[{date:'2026-10-30',text:'Review'}]}]};
+ const headers=['Saved At','Date','UHID','Name of Patient','Treatments','Tooth Numbers','Sittings','Document'];
+ const row=['2026-10-30T12:30:00Z','2026-10-30','TEST-A','Example Patient','Examination','16','1',JSON.stringify(document)];
+ const p=project([book('clinical',[{title:'CGHS Prescriptions',rows:[headers,row,row,[...row.slice(0,7),'{'],[...row.slice(0,2),'TEST-B',...row.slice(3)]]}])],capture);
+ const records=p.records.filter(r=>r.table==='cghs_prescriptions');
+ assert.equal(records.length,1);
+ assert.deepEqual(records[0].data,{uhid:'TEST-A',prescription_date:'2026-10-30',source_saved_at:'2026-10-30T12:30:00.000Z',document});
+ assert.equal(p.warnings.duplicate_cghs_prescription,1);
+ assert.equal(p.issues.filter(issue=>issue.table==='cghs_prescriptions').length,2);
+ assert.equal(p.records.some(r=>r.table==='clinical_records'),false);
+});
+
 test('date/clock conversion preserves Sheets calendar dates and clinic-local instants',()=>{
  assert.equal(date(46333.75),'2026-11-07');
  assert.equal(instant(46333.5),'2026-11-07T06:30:00.000Z');

@@ -27,6 +27,15 @@ try{
  const connection=await copyConnection();db=connection.db;await db.query('BEGIN READ ONLY');
  const org=(await db.query('SELECT id FROM org_identity')).rows[0].id;
  await db.query("SELECT set_config('app.clinic_id',$1,true),set_config('app.organization_id',$2,true)",[me.clinicId,org]);
+ const historicalRx=(await db.query(`SELECT id,uhid,prescription_date::text AS day,document
+   FROM cghs_prescriptions WHERE source_saved_at IS NOT NULL
+   ORDER BY prescription_date DESC,source_saved_at DESC,id DESC LIMIT 1`)).rows[0];
+ if(historicalRx){
+  const query=new URLSearchParams({uhid:historicalRx.uhid,from:historicalRx.day,to:historicalRx.day,limit:'200'});
+  const historicalResponse=await fetch(base+'/api/v1/cghs-prescriptions?'+query,{headers,signal:AbortSignal.timeout(45000)});
+  const result=(await historicalResponse.json()).prescriptions?.find(row=>row.id===historicalRx.id);
+  check('Historical CGHS search matches the imported source document',historicalResponse.ok&&result?.imported&&hash(JSON.parse(result.document))===hash(historicalRx.document));
+ }else skipped.push('Historical CGHS prescription: no rows in this source snapshot');
  const patients=(await request('getAllPatients')).body;
  const count=Number((await db.query('SELECT count(*) AS n FROM patients WHERE deleted_at IS NULL')).rows[0].n);
  check('Patient directory matches converted database',patients.success&&patients.patients?.length===count);

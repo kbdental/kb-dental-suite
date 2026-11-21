@@ -901,7 +901,7 @@ function doPost(e) {
 //
 // The app reads this from ping and says so when it is behind. Bump it
 // whenever this file changes in a way the app depends on.
-var BACKEND_BUILD = "2026-11-20";
+var BACKEND_BUILD = "2026-11-21";
 
 var SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // Always session-protected, even while the global rollout flag is off.
@@ -1107,6 +1107,12 @@ function route(p) {
       case "getTreatmentPlan":  return getTreatmentPlan(p);
       case "saveCghsBill":      return saveCghsBill(p);
       case "getCghsBills":      return getCghsBills(p);
+      // Written and never wired up. The two functions were added at the
+      // bottom of this file and no case was added here, so the clinic was
+      // told to redeploy again and again over a build that could not have
+      // worked however many times it was deployed.
+      case "saveCghsPrescription":  return saveCghsPrescription(p);
+      case "listCghsPrescriptions": return listCghsPrescriptions(p);
       case "saveTreatmentPlan": return saveTreatmentPlan(p);
 
       // ── Treatment Progress (read-only — pulls from Daily Register) ──

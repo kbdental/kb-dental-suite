@@ -1,5 +1,27 @@
 # Handover for the next tool (31 Oct 2026)
 
+## CGHS filing, source refresh and server upgrade — 21 November 2026
+
+Viveyk's published routing fix (`627a0c6`, also in `ea61af0` and Main PR 243)
+connects both CGHS prescription actions in Apps Script. The native branch uses
+its own routes. A new five-workbook capture (17:54 IST) and guarded refresh ran
+on the local verification copy after a private rollback backup. Readable receipt
+and expense sums reconcile. 17 conflicts, four missing source records, and 12
+unreadable expense amounts were held. The capture had no `CGHS Prescriptions`
+tab, so the new importer added zero CGHS prescriptions; general prescriptions
+remain a separate source. The expired worker was not restarted.
+
+Migration 0040 retains an already signed PDF byte-for-byte under its prescription,
+with a SHA-256 fingerprint, clinical access, clinic isolation and append-only
+application rights. In CGHS search, staff can file a signed PDF and download that
+original on subsequent visits. Existing source-only rows are labeled separately.
+See `FRESH-VM-IMPORT.md` for backup and upgrade steps and how to retain PDFs across
+machines. Visit links and search design are in `PATIENT-CRM-DIRECTION.md`; the
+visit restructure remains a separate phase.
+
+Publish this work directly to `kbdental/kb-dental-suite` on `saas/multi-clinic`.
+The earlier mirrored-publish instruction below is superseded for this release.
+
 ## Viveyk clinical workflow update — 21 November 2026
 
 Integrated `51db327` on `saas/multi-clinic`. This includes tooth-grid findings,

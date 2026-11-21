@@ -108,6 +108,17 @@ and expenses start on 1 April 2024. Unreadable amounts and ambiguous records are
 held rather than guessed. Check `readyForVerification`, aggregate counts,
 financial reconciliation, rejection categories and source issues privately.
 
+`CGHS Prescriptions` is imported separately from general prescriptions and
+CGHS bills. The importer preserves the saved document and original timestamp,
+requires matching UHID and date, and reports rejected source rows privately.
+It collapses exact duplicate source copies and keeps filed prescription content
+stable when an older source row is edited. The Sheets document contains
+prescription data. Historical signed PDF originals can be filed separately in
+the native screen. New PDF uploads are stored inside PostgreSQL and covered by
+database backups. A Google-only installation will need a private database backup
+or a verified transfer of originals to retain PDFs previously filed in another
+native installation.
+
 The initial fresh import may omit a rollback dump only after confirming this
 marked installation has no business records. A clone-based initial import still
 requires its backup. Normal refreshes use the existing three-way comparison:
@@ -139,6 +150,13 @@ its database and checks anonymous/sign-out rejection. It creates/ends login
 sessions but does not write clinical records. Missing populated plan/register
 examples are reported as skipped, not invented, and review counts come from
 the selected snapshot rather than the old laptop's fixed counts.
+
+For an already initialized verification server, take a private rollback backup,
+then run `node --import tsx scripts/launch-sync/migrate-runtime.mjs` before
+restarting from the updated code. It uses the marked copy's existing owner and
+grants the restricted app role read/insert access to the prescription tables.
+A normal `import.mjs --apply` runs the same migration step. Fresh setup already
+applies current migrations and grants, with no separate upgrade command needed.
 
 For a public VM URL, first verify the destination and store it in the VM runtime's
 private `public-url.txt`, then pass that exact URL to the verifier. Never send

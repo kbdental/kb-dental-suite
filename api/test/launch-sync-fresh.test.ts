@@ -92,7 +92,11 @@ describe('fresh Google import installation',()=>{
     {title:'Daily Register',rows:[['Timestamp','UHID','Full Name','Work Done'],['2026-11-13','FICTIONAL-VM-1','Fictional VM Patient','Fictional observation']]},
     {title:'Appointments',rows:[['ID','Date','Time','UHID','Patient Name','Status'],['fixture-1','2026-11-13','10:00','FICTIONAL-VM-1','Fictional VM Patient','Scheduled']]}
    ]),
-   book('clinical',[{title:'RCT',rows:[['Timestamp','UHID','Patient Name','Doctor'],['2026-11-13','FICTIONAL-VM-1','Fictional VM Patient','Fictional Doctor']]}]),
+   book('clinical',[
+    {title:'RCT',rows:[['Timestamp','UHID','Patient Name','Doctor'],['2026-11-13','FICTIONAL-VM-1','Fictional VM Patient','Fictional Doctor']]},
+    {title:'CGHS Prescriptions',rows:[['Saved At','Date','UHID','Document'],
+      ['2026-11-13T12:00:00Z','2026-11-13','FICTIONAL-VM-1',JSON.stringify({date:'2026-11-13',pat:{uhid:'FICTIONAL-VM-1',name:'Fictional VM Patient',dob:''},rows:[{code:'R1',name:'Examination',tooth:'16',qty:1,sits:[]}]})]]}
+   ]),
    book('finance',[{title:'Patient Fee Receipt',rows:[['Timestamp','UHID',"Patient's Name",'Payment Mode','Amount'],['2026-11-13','FICTIONAL-VM-1','Fictional VM Patient','Cash',1250]]}]),
    book('empanelled',[{title:'Registrations',rows:[['Timestamp','UHID','Full Name']]}]),
    book('historical-registration',[{title:'Registration Form',rows:[['Timestamp','UHID','Full Name']]}])
@@ -113,8 +117,10 @@ describe('fresh Google import installation',()=>{
   }finally{await client.end();}
   const report=JSON.parse(run('import.mjs',['--apply']));
   expect(report.readyForVerification).toBe(true);expect(report.actual.patients).toBe(1);expect(report.financialCents.receipts).toMatchObject({actual:125000,matched:true});
+  expect(report.actual.cghs_prescriptions).toBe(1);
   expect(state().importReady).toBe(true);
   const again=JSON.parse(run('import.mjs',['--apply']));expect(again.actual.patients).toBe(1);expect(again.actual.receipts).toBe(1);
+  expect(again.rows.cghs_prescriptions).toEqual({inserted:0,updated:0,unchanged:1});
   const db=createDb(targetUrl(s.app,s.appPassword,s.database),2),app=await buildApp({db,cookieSecure:false});
   try{
    expect((await app.inject({url:'/exec?action=getAllPatients'})).json().authRequired).toBe(true);
@@ -128,6 +134,8 @@ describe('fresh Google import installation',()=>{
    expect(patients.patients[0].uhid).toBe('FICTIONAL-VM-1');
    const clinics=(await app.inject({method:'POST',url:'/exec',headers,payload:{action:'getWorkingClinics'}})).json();
    expect(clinics.clinics).toHaveLength(1);
+   const imported=await app.inject({url:'/api/v1/cghs-prescriptions?from=2026-11-13&to=2026-11-13',headers});
+   expect(imported.json().prescriptions).toMatchObject([{imported:true,hasSignedPdf:false,savedAt:'2026-11-13T12:00:00.000Z'}]);
   }finally{await app.close();await db.destroy();}
  },90000);
  it('starts the real server and verifies a fresh snapshot without old hard-coded flags or plan rows',async()=>{

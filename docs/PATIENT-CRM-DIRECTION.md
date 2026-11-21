@@ -55,6 +55,35 @@ Organization isolation, explicit clinic/clinical permissions, assigned forms,
 controlled overrides and the familiar clinical workflows remain requirements.
 Shared identity must not expose restricted histories or finance across staff scopes.
 
+## Visit linking and record search design
+
+1. Add a stable visit ID at the clinic, pointing to the patient's shared
+   organization identity. Store the visit's actual treating clinician, clinic,
+   encounter time, status and audit trail. Keep an optional link to the booking
+   so walk-ins and visits with a changed clinician remain representable.
+2. Link performed procedures, tooth/surface, case stage, notes, forms,
+   prescriptions and documents to the visit. Link receipts when the payment was
+   collected for that encounter and keep independent payments under the patient.
+   Use separate treatment and material rows for code, item, quantity, unit and
+   lot where recorded. Keep original source references and signed files intact.
+3. Reuse the appointment check-in, Daily Register and clinical form entry points.
+   Carry the selected visit into the forms as staff move between screens. Show
+   the patient, visit date, clinic and treating doctor before a save. Keep writes
+   transactional and retry-safe so two tabs cannot silently create the same visit.
+4. Reconcile historical links in a preview. Auto-link explicit source IDs and
+   uniquely evidenced matches. A shared date or patient ID alone is insufficient
+   when there were multiple treatments or visits. Hold ambiguous rows for review
+   and continue to show unlinked records with their original dates and provenance.
+5. First ship patient history grouped by visit, with filters for date range,
+   clinic, treating doctor, procedure, tooth, and document type. Index the shared
+   patient ID and clinic/date/doc fields for these reads. Then expose doctor and
+   material views over the same records, with clinic and permission checks on
+   search results and drill-downs.
+
+Validate with same-day return visits, walk-ins, substituted treating doctors,
+unlinked historical notes, patient-level receipts, and denied cross-clinic access.
+Keep old search available while the new visit links are reconciled.
+
 ## Current handoff boundary
 
 The committed organization demo already proves isolated organization runtimes,

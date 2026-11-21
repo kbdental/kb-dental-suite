@@ -9,9 +9,10 @@ import {project} from './model.mjs';
 import {sourceIdentities} from './compare.mjs';
 import {hash,businessData,identity,decision} from './engine.mjs';
 import {privateJson,postgresBinary} from './private-files.mjs';
+import {applyRuntimeMigrations} from './migrate-runtime.mjs';
 
 const order=['panels','doctors','chairs','staff','treatments','medicines','implant_brands','appointment_reasons','pick_lists','panel_rates','procedure_library','holidays','clinic_settings',
- 'patients','patient_registrations','clinical_records','clinical_sheets','care_plans','treatment_plans','treatment_cases','daily_register','appointments','receipts','expenses','cghs_bills','crm_records','crm_lead_inbox','pending_registrations'];
+ 'patients','patient_registrations','clinical_records','clinical_sheets','care_plans','treatment_plans','treatment_cases','daily_register','appointments','receipts','expenses','cghs_bills','cghs_prescriptions','crm_records','crm_lead_inbox','pending_registrations'];
 const replace=['patient_registrations','clinical_records','clinical_sheets','care_plans','treatment_plans','treatment_cases','daily_register','appointments','receipts','expenses','cghs_bills','crm_records','crm_lead_inbox','pending_registrations','panel_rates','procedure_library','pick_lists','holidays'];
 const natural={patients:['uhid'],panels:['name'],doctors:['name'],chairs:['name'],staff:['name'],treatments:['name'],medicines:['name'],implant_brands:['name'],appointment_reasons:['name'],
  clinical_sheets:['uhid','sheet_type'],care_plans:['uhid'],treatment_plans:['uhid'],treatment_cases:['case_ref'],cghs_bills:['bill_no'],pick_lists:['list_name','value'],clinic_settings:['key'],holidays:['holiday_date']};
@@ -26,9 +27,7 @@ export async function main(args=process.argv.slice(2)) {
   const acquired=(await db.query('SELECT pg_try_advisory_lock(73459341) AS acquired')).rows[0].acquired;
   if(!acquired)throw new Error('Another launch import is running');
   phase='migration';
-  const {migrate}=await import('../../src/migrator.ts');
-  const url=new URL('postgresql://localhost/'+state.database);url.hostname=config.host;url.port=String(config.port);url.username=config.user;url.password=config.password;
-  await migrate(url.href,()=>{},{applyGrants:false});
+  await applyRuntimeMigrations({db,state,config});
   await db.query(`CREATE TABLE IF NOT EXISTS launch_sync.links (
    id uuid PRIMARY KEY,target_table text NOT NULL,target_id uuid NOT NULL,source_key text NOT NULL,
    identity_hash text NOT NULL,source_hash text NOT NULL,target_hash text NOT NULL,baseline_data jsonb NOT NULL,
@@ -49,7 +48,7 @@ export async function main(args=process.argv.slice(2)) {
    await db.query('BEGIN READ ONLY');
    try{
     await db.query("SELECT set_config('app.clinic_id',$1,true),set_config('app.organization_id',$2,true)",[clinic,org]);
-    for(const table of [...new Set([...replace,'patients','patient_documents','org_patients','org_documents'])])
+    for(const table of [...new Set([...replace,'patients','patient_documents','cghs_prescriptions','cghs_prescription_pdfs','org_patients','org_documents'])])
      if((await db.query(`SELECT 1 FROM ${quote(table)} LIMIT 1`)).rowCount)throw new Error('Fresh first import requires an empty installation');
     await db.query('COMMIT');
    }catch(error){await db.query('ROLLBACK');throw error;}
@@ -93,7 +92,7 @@ export async function main(args=process.argv.slice(2)) {
     // No source link is inferred. Excluded copy-only patients stay in the rollback
     // backup; source documents or native organization care block silent exclusion.
     const canonical=(await db.query('SELECT organization_patient_id AS id FROM org_clinical_patient_links WHERE clinic_id=$1 AND patient_id=$2',[clinic,p.id])).rows[0]?.id;
-    const docs=Number((await db.query('SELECT count(*) AS n FROM patient_documents WHERE patient_id=$1',[p.id])).rows[0].n);
+    const docs=Number((await db.query('SELECT (SELECT count(*) FROM patient_documents WHERE patient_id=$1) + (SELECT count(*) FROM cghs_prescriptions WHERE patient_id=$1) AS n',[p.id])).rows[0].n);
     let native=0;if(canonical)for(const t of ['org_notes','org_appointments','org_receipts','org_submissions','org_documents'])native+=Number((await db.query(`SELECT count(*) AS n FROM ${quote(t)} WHERE patient_id=$1`,[canonical])).rows[0].n);
     if(docs||native){report.warnings.sourceAbsentIdentityWithIndependentCare=(report.warnings.sourceAbsentIdentityWithIndependentCare??0)+1;continue;}
     await db.query('DELETE FROM org_clinical_patient_links WHERE patient_id=$1',[p.id]);
@@ -141,6 +140,7 @@ export async function main(args=process.argv.slice(2)) {
     if(data.doctor_name!==undefined)data.doctor_id=await foreign('doctors',data.doctor_name);
     if(table==='appointments')data.chair_id=null; // recorded chair_name is preserved; historical overlaps are not rewritten.
     if(table!=='patients'&&columns.get(table).has('patient_id'))data.patient_id=patients.get(uhid)??null;
+    if(table==='cghs_prescriptions'&&!data.patient_id)throw Object.assign(new Error('unresolved_identity'),{code:'unresolved_identity'});
     if(table==='patient_registrations'){delete data.uhid;if(!data.patient_id)throw Object.assign(new Error('unresolved_identity'),{code:'unresolved_identity'});}
     const sameHash=by(link=>link.target_table===table&&link.source_hash===sourceHash);
     let link=sameHash.find(link=>link.source_key===record.key)??sameHash[0];
@@ -173,6 +173,7 @@ export async function main(args=process.argv.slice(2)) {
     const keys=Object.keys(data).filter(key=>columns.get(table).has(key));
     let currentData=slice(current,link?Object.keys(link.baseline_data):keys),targetHash=currentData?hash(businessData({table,data:currentData})):'';
     let outcome=link?decision({sourceChanged:sourceHash!==link.source_hash,targetChanged:targetHash!==hash(businessData({table,data:link.baseline_data})),targetExists:!!current}):'insert_or_adopt';
+    if(table==='cghs_prescriptions'&&outcome==='update')outcome='conflict';
     if(link&&outcome==='update'){
       current=await rowPayload(table,targetId,true);
       currentData=slice(current,Object.keys(link.baseline_data));targetHash=currentData?hash(businessData({table,data:currentData})):'';
@@ -186,7 +187,7 @@ export async function main(args=process.argv.slice(2)) {
     }
     if(outcome==='conflict'){
       await db.query(`INSERT INTO launch_sync.conflicts(id,link_id,kind,source_hash,target_hash,source_proposal)
-       VALUES($1,$2,'both_sides_changed',$3,$4,$5) ON CONFLICT DO NOTHING`,[randomUUID(),link.id,sourceHash,targetHash,JSON.stringify({table,data,source:record.source})]);
+       VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,[randomUUID(),link.id,table==='cghs_prescriptions'?'prescription_revision_requires_review':'both_sides_changed',sourceHash,targetHash,JSON.stringify({table,data,source:record.source})]);
       await db.query('UPDATE launch_sync.links SET last_capture=$2,source_key=$3,missing_source=false WHERE id=$1',[link.id,run.id,record.key]);
       claimed.add(link.id);report.conflicts++;await db.query('RELEASE SAVEPOINT source_record');continue;
     }
@@ -226,13 +227,13 @@ export async function main(args=process.argv.slice(2)) {
    report.financialCents[table]={expected,actual,matched:expected===actual};
   }
   report.applicationTablesUpdated=true;report.scheduleEnabled=false;
-  report.sourceIssueCount=projection.issues.length;
+  const issueRows=(await db.query('SELECT target_table,reason,source_ref FROM launch_sync.issues WHERE capture_id=$1',[run.id])).rows;
+  report.sourceIssueCount=issueRows.length;
   report.readyForVerification=report.conflicts===0&&report.missingSource===0&&Object.values(report.financialCents).every(x=>x.matched);
   report.productionAccepted=false;
   await db.query('INSERT INTO launch_sync.import_runs(id,capture_id,report) VALUES($1,$2,$3)',[randomUUID(),run.id,JSON.stringify(report)]);
   await db.query('COMMIT');
   writeFileSync(join(root,'import-summary.json'),JSON.stringify(report,null,2),{mode:0o600});
-  const issueRows=(await db.query('SELECT target_table,reason,source_ref FROM launch_sync.issues WHERE capture_id=$1',[run.id])).rows;
   writeFileSync(join(root,'source-issues.json'),JSON.stringify(issueRows,null,2),{mode:0o600});
   if(state.installMode==='fresh'&&report.readyForVerification&&report.actual.patients>0){
    const file=join(root,'runtime-state.json'),runtime=JSON.parse(readFileSync(file,'utf8'));

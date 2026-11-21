@@ -14,6 +14,8 @@ if(!state.complete||url.pathname!=='/'+state.database||!/^kb_launch_sync_test_[0
 const db=createDb(config.DATABASE_URL,8);
 const marker=(await sql`SELECT shobj_description(oid,'pg_database') AS marker FROM pg_database WHERE datname=current_database()`.execute(db)).rows[0].marker;
 if(marker!==state.marker)throw Error('Runtime marker mismatch');
+const cghsReady=(await sql`SELECT to_regclass('public.cghs_prescription_pdfs') IS NOT NULL AS ready`.execute(db)).rows[0].ready;
+if(!cghsReady)throw Error('Apply the marked runtime migrations before starting the updated server');
 const app=await buildApp({db,cookieSecure:true,publicDemo:true,logger:false});
 const report=()=>JSON.parse(readFileSync(join(root,'import-summary.json'),'utf8'));
 app.get('/api/v1/launch-sync/status',async req=>asActor(db,req,'roles:manage',async(_tx,actor)=>{
@@ -41,7 +43,7 @@ add(output,'p','Finance begins 1 April 2024. Readable source amounts reconcile: 
 add(output,'p','Conflicts held for review: '+data.conflicts+'. Source entries needing review: '+data.sourceIssueCount+'.');
 if(data.worker){add(output,'p','Automatic refresh: '+(data.worker.running?'running':'stopped')+'. Last successful refresh: '+when(data.worker.lastSuccessAt));
 add(output,'p','Next attempt: '+when(data.worker.nextAttemptAt)+'. Verification window ends: '+when(data.worker.expiresAt));if(data.worker.lastError)add(output,'p','The latest refresh failed. The previous imported dataset is preserved; the worker will retry.');}
-const labels={patients:'Patient identities, including flagged historical identities',patient_registrations:'Registration histories',clinical_records:'Clinical forms',clinical_sheets:'Clinical charts',care_plans:'Care plans',treatment_cases:'Treatment cases',daily_register:'Register entries',appointments:'Appointments',receipts:'Receipts',expenses:'Expenses',cghs_bills:'CGHS bills'};
+const labels={patients:'Patient identities, including flagged historical identities',patient_registrations:'Registration histories',clinical_records:'Clinical forms',clinical_sheets:'Clinical charts',care_plans:'Care plans',treatment_cases:'Treatment cases',daily_register:'Register entries',appointments:'Appointments',receipts:'Receipts',expenses:'Expenses',cghs_bills:'CGHS bills',cghs_prescriptions:'CGHS prescriptions'};
 for(const[key,label]of Object.entries(labels)){const row=add(document.getElementById('counts'),'tr','');add(row,'td',label);add(row,'td',String(data.counts[key]??0));}
 const issueResponse=await fetch('/api/v1/launch-sync/issues',{headers});const result=await issueResponse.json();if(!issueResponse.ok)throw Error('Could not load source review links.');
 for(const issue of result.issues??[]){const item=add(document.getElementById('issues'),'li',issue.target_table==='expenses'?'Expense amount needs correction: ':'Source entry needs review: ');const ref=issue.source_ref;

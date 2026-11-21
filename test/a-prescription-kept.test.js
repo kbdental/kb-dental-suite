@@ -262,8 +262,15 @@ ok('and to the patient on screen',
 
 // The page must ask for the backend that has these two calls.
 ok('the page asks for a backend new enough to answer',
-   /const KB_BACKEND_BUILD_REQUIRED = "2026-11-20"/.test(html));
-ok('and the backend says it is', /var BACKEND_BUILD = "2026-11-20"/.test(gs));
+   /const KB_BACKEND_BUILD_REQUIRED = "2026-11-21"/.test(html));
+ok('and the backend says it is', /var BACKEND_BUILD = "2026-11-21"/.test(gs));
+// Both calls were written, neither was wired into the dispatcher, so the
+// clinic was told to redeploy over a build that could never have worked.
+// See every-action-has-a-route.test.js.
+ok('the save is an action the backend will actually answer',
+   /case "saveCghsPrescription":\s+return saveCghsPrescription\(p\);/.test(gs));
+ok('and so is the search',
+   /case "listCghsPrescriptions":\s+return listCghsPrescriptions\(p\);/.test(gs));
 
 console.log('  ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

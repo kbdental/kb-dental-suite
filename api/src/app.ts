@@ -61,7 +61,8 @@ export async function buildApp(opts: AppOptions & { logger?: boolean }) {
   app.addHook("onRequest", async (req, reply) => {
     const hasBody = Number(req.headers["content-length"] ?? 0) > 0 || req.headers["transfer-encoding"] !== undefined;
     const type = String(req.headers["content-type"] ?? "");
-    const ok = type.startsWith("application/json") || (req.url.startsWith("/exec") && type.startsWith("text/plain"));
+    const signedPdfUpload = req.method === "POST" && req.routeOptions.url === "/api/v1/cghs-prescriptions/:id/signed-pdf" && type === "application/pdf";
+    const ok = type.startsWith("application/json") || signedPdfUpload || (req.url.startsWith("/exec") && type.startsWith("text/plain"));
     if (hasBody && !ok) {
       return reply.status(415).send({ error: { code: "json_only", message: "Send JSON" } });
     }

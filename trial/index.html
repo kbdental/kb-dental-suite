@@ -248,7 +248,7 @@ const KB_BACKEND_IS_APPS_SCRIPT = /script\.google\.com/.test(SCRIPT_URL);
 // nicer is the boy who cried wolf, and it sat across a working screen for an
 // afternoon. This goes up again the next time the app genuinely cannot work
 // without a new Code.gs.
-const KB_BACKEND_BUILD_REQUIRED = "2026-11-20";
+const KB_BACKEND_BUILD_REQUIRED = "2026-11-21";
 // WHICH APP THIS IS.
 //
 // There was no way to tell. The sidebar said which BACKEND was answering
@@ -268,7 +268,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-20";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-21d";
+const KB_APP_BUILD = "2026-11-21e";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -7686,7 +7686,7 @@ function clinicalNoteOptions(treatment, templates, plan, which, vals) {
 // ── Saved prescriptions, found again ──────────────────────────────────
 // Its own component because it is a screen of its own: a search, a list
 // and a print, with nothing to do with the prescription being written.
-function CghsRxSearch({ uhid, setUhid, from, setFrom, to, setTo, found, finding, onSearch, onPrint }) {
+function CghsRxSearch({ uhid, setUhid, from, setFrom, to, setTo, found, finding, onSearch, onPrint, onFilePdf, onGetPdf, pdfBusy }) {
   const lbl = (c) => React.createElement("div", { style:{ fontSize:12, fontWeight:700,
     color:"#444444", textTransform:"uppercase", letterSpacing:".04em", marginBottom:3 } }, c);
   return React.createElement("div", { style:{ border:`1px solid ${BORDER}`, borderRadius:9,
@@ -7713,8 +7713,8 @@ function CghsRxSearch({ uhid, setUhid, from, setFrom, to, setTo, found, finding,
         ? React.createElement("div", null,
             React.createElement("div", { style:{ fontSize:12.5, color:"#5a5a5a", marginBottom:6 } },
               found.length + (found.length === 1 ? " prescription" : " prescriptions") + ", newest first."),
-            found.map((r, i) => React.createElement("div", { key:i,
-              style:{ display:"flex", gap:12, alignItems:"center", background:"#fff",
+            found.map((r, i) => React.createElement("div", { key:r.id || i,
+              style:{ display:"flex", gap:12, alignItems:"center", flexWrap:"wrap", background:"#fff",
                 border:`1px solid ${BORDER}`, borderRadius:8, padding:"9px 12px", marginBottom:6 } },
               React.createElement("div", { style:{ minWidth:92, fontSize:13, fontWeight:700, color:T } },
                 fmtDMY(r.date) || "—"),
@@ -7725,11 +7725,18 @@ function CghsRxSearch({ uhid, setUhid, from, setFrom, to, setTo, found, finding,
                 lineHeight:1.45 } },
                 React.createElement("div", null, r.treatments || "—"),
                 r.teeth ? React.createElement("div", { style:{ fontSize:12, color:"#5a5a5a" } },
-                  "Tooth " + r.teeth) : null),
-              React.createElement("button", { onClick: () => onPrint(r),
+                  "Tooth " + r.teeth) : null,
+                r.id && React.createElement("div", { style:{ fontSize:12, color:"#5a5a5a" } },
+                  r.hasSignedPdf ? "Signed PDF filed" : r.imported ? "From Sheets · signed PDF not on file" : "Signed PDF not on file")),
+              React.createElement("button", { onClick: () => r.hasSignedPdf ? onGetPdf(r) : onPrint(r), disabled:!!r.id&&pdfBusy===r.id,
                 style:{ padding:"7px 15px", fontSize:13, fontWeight:700, border:`1px solid ${T}`,
                   borderRadius:7, cursor:"pointer", background:"#fff", color:T } },
-                "🖨 Print"))))
+                r.hasSignedPdf ? "Download signed PDF" : r.id ? "Print unsigned copy" : "🖨 Print"),
+              r.id && !r.hasSignedPdf && React.createElement("button", {
+                type:"button", disabled:!!pdfBusy, onClick:()=>onFilePdf(r),
+                style:{ padding:"7px 15px", fontSize:13, fontWeight:700, border:`1px solid ${T}`,
+                  borderRadius:7, cursor:"pointer", background:"#fff", color:T }
+              }, pdfBusy===r.id ? "Filing…" : "File signed PDF"))))
         : React.createElement("div", { style:{ fontSize:13, color:"#5a5a5a" } },
             "Nothing saved in that range. Widen the dates, or clear the UHID to look across every patient.")));
 }
@@ -8010,6 +8017,7 @@ function CghsPrescription({ pat, lines, plan }) {
   const [found, setFound] = React.useState(null);
   const [finding, setFinding] = React.useState(false);
   const [findError, setFindError] = React.useState("");
+  const [pdfBusy, setPdfBusy] = React.useState("");
   const findVersion = React.useRef(0);
   const runFind = (u, f, t) => {
     const version = ++findVersion.current;
@@ -8051,6 +8059,41 @@ function CghsPrescription({ pat, lines, plan }) {
     if (!rx || !rx.rows) { setSaveMsg("That saved prescription could not be read back."); return; }
     cghsPrint(buildCghsRxHTML(rx, pad));
   };
+  const fileSignedPdf = (r) => {
+    const picker = document.createElement("input");
+    picker.type = "file";
+    picker.accept = "application/pdf,.pdf";
+    picker.onchange = async () => {
+      const file = picker.files?.[0];
+      if (!file) return;
+      if (file.size > 8 * 1024 * 1024) { setFindError("Choose a PDF up to 8 MB."); return; }
+      if (!window.confirm(`File the signed PDF for ${r.patientName} (${r.uhid}), dated ${fmtDMY(r.date)}? The filed original cannot be replaced.`)) return;
+      setFindError("");
+      setPdfBusy(r.id);
+      try {
+        await nativePrescriptionRequest(`/${encodeURIComponent(r.id)}/signed-pdf`, {
+          method:"POST", headers:{ "Content-Type":"application/pdf" }, body:file
+        });
+        setFound(previous => previous?.map(item => item.id===r.id ? { ...item, hasSignedPdf:true } : item) ?? previous);
+        setSaveMsg("Signed PDF filed. Download this original to reprint it.");
+      } catch (error) { setFindError(error.message || "The signed PDF could not be filed."); }
+      finally { setPdfBusy(""); }
+    };
+    picker.click();
+  };
+  const downloadSignedPdf = async (r) => {
+    setFindError("");
+    try {
+      const response = await fetch(`/api/v1/cghs-prescriptions/${encodeURIComponent(r.id)}/signed-pdf`);
+      if (!response.ok) throw new Error((await response.json()).error?.message || "Could not download the signed PDF.");
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = "CGHS-prescription-signed.pdf";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    } catch (error) { setFindError(error.message || "The signed PDF could not be downloaded."); }
+  };
 
   const note = (text) => React.createElement("div", { style:{ background:"#fffbeb",
     border:"1px solid #fde68a", borderRadius:8, padding:"10px 13px", fontSize:13,
@@ -8080,7 +8123,7 @@ function CghsPrescription({ pat, lines, plan }) {
     findOpen ? React.createElement(CghsRxSearch, {
       uhid: findUhid, setUhid: setFindUhid, from: findFrom, setFrom: setFindFrom,
       to: findTo, setTo: setFindTo, found: found, finding: finding,
-      onSearch: doFind, onPrint: printSaved
+      onSearch: doFind, onPrint: printSaved, onFilePdf:fileSignedPdf, onGetPdf:downloadSignedPdf, pdfBusy
     }) : null,
     tplMsg ? note(tplMsg) : null,
 
@@ -11051,7 +11094,7 @@ function Dashboard({
   const [whoami, setWhoami] = useState(null);
   const [overview,setOverview] = useState(null), [overviewError,setOverviewError] = useState("");
   useEffect(() => {
-    api("whoAmI").then(res => { if (res && res.success) setWhoami(res); });
+    if(window.KB_SCRIPT_URL_OVERRIDE) api("whoAmI").then(res => { if (res && res.success) setWhoami(res); });
   }, []);
   useEffect(() => {
     if(window.KB_SCRIPT_URL_OVERRIDE) api("getClinicOverview").then(res=>{

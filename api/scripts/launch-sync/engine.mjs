@@ -26,6 +26,7 @@ export function identity(record) {
  if(['care_plans','treatment_plans'].includes(t))return hash([t,d.uhid]);
  if(t==='treatment_cases')return hash([t,d.case_ref]);
  if(t==='cghs_bills')return hash([t,d.bill_no]);
+ if(t==='cghs_prescriptions')return hash([t,d.uhid,d.source_saved_at,d.prescription_date]);
  if(t==='pick_lists')return hash([t,d.list_name,d.data?.situation??d.value,d.data?.category??'']);
  if(t==='clinic_settings')return hash([t,d.key]);
  if(t==='crm_records')return hash([t,record.source.role,d.collection,d.data.id??record.key]);
