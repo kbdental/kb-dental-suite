@@ -240,7 +240,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-20";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-21c";
+const KB_APP_BUILD = "2026-11-21d";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -7337,7 +7337,6 @@ function CghsRecords({ globalPat }) {
   // beneficiary's ADDRESS, which only the registration holds, so the record
   // is topped up here -- once per patient, for all three stages -- rather
   // than depending on which screen the patient was opened from.
-  const [full, setFull] = React.useState(null);
   // Plan CGHS, so the prescription can offer what that plan says a
   // treatment is made of rather than guessing from the treatment's name.
   const [notePlan, setNotePlan] = React.useState([]);
@@ -7348,27 +7347,9 @@ function CghsRecords({ globalPat }) {
     }).catch(() => {});
     return () => { dropped = true; };
   }, []);
-  React.useEffect(() => {
-    setFull(null);
-    const uhid = globalPat && globalPat.uhid;
-    if (!uhid) return;
-    let dropped = false;
-    api("getPatient", { uhid }).then(res => {
-      if (!dropped && res && res.success && res.patient) setFull(res.patient);
-    }).catch(() => {});
-    return () => { dropped = true; };
-  }, [globalPat && globalPat.uhid]);
-  // The register wins wherever it actually holds something, and nowhere else:
-  // a blank from it must not wipe a name the search screen already had.
-  const pat = React.useMemo(() => {
-    if (!full) return globalPat;
-    const out = { ...globalPat };
-    Object.keys(full).forEach(k => {
-      const v = full[k];
-      if (v !== undefined && v !== null && String(v).trim() !== "") out[k] = v;
-    });
-    return out;
-  }, [full, globalPat]);
+  // Topped up from the register, which is the only place that reliably
+  // has the beneficiary's address, date of birth and gender.
+  const pat = useFullPatient(globalPat);
 
   if (!globalPat || !globalPat.uhid) {
     return React.createElement("div", { style:{ background:"#fff", border:`1px solid ${BORDER}`,
@@ -7498,6 +7479,47 @@ function cghsPrint(html) {
   setTimeout(() => w.print(), 600);
 }
 // The pad's measurements, read once per screen that prints on it.
+// ── A patient record thin enough to be useless ────────────────────────
+// `globalPat` is whatever the screen that opened the patient had to hand,
+// and the screens do not agree. Patient Search fills in a date of birth
+// and a gender. Two of the clinical screens build one with a DOB and no
+// gender at all. The day sheet's "no record saved" warning hands over a
+// UHID and a name and nothing else. Every one of them is a perfectly
+// valid patient as far as the rest of the app is concerned.
+//
+// So a pad that reads the age and the gender straight off it fills them
+// in for a patient opened one way and leaves them blank for the SAME
+// patient opened another. That is why "the age and gender are not coming
+// automatically in prescription" outlived two fixes to what gets sent:
+// what was sent was read off a record that never held them.
+//
+// The registration always holds them. This tops the record up from it,
+// once per patient, and lets the register win wherever it actually holds
+// something -- a blank from it must not wipe a name the screen already
+// had. Until it answers, the thin record is used, so nothing waits.
+function useFullPatient(globalPat) {
+  const uhid = globalPat && globalPat.uhid;
+  const [full, setFull] = React.useState(null);
+  React.useEffect(() => {
+    setFull(null);
+    if (!uhid) return;
+    let dropped = false;
+    api("getPatient", { uhid }).then(res => {
+      if (!dropped && res && res.success && res.patient) setFull(res.patient);
+    }).catch(() => {});
+    return () => { dropped = true; };
+  }, [uhid]);
+  return React.useMemo(() => {
+    if (!globalPat || !full) return globalPat;
+    const out = { ...globalPat };
+    Object.keys(full).forEach(k => {
+      const v = full[k];
+      if (v !== undefined && v !== null && String(v).trim() !== "") out[k] = v;
+    });
+    return out;
+  }, [full, globalPat]);
+}
+
 function usePadMargins() {
   const [m, setM] = React.useState(null);
   React.useEffect(() => {
@@ -33699,6 +33721,10 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
   const iframeRef = React.useRef(null);
   const [clinicalTemplates, setClinicalTemplates] = React.useState([]);
   const [hindiOut, setHindiOut] = useHindiOut();
+  // Every form opened from here prints an age and a gender, and the record
+  // this screen is handed does not always carry either. Topped up from the
+  // register, so a form filled the same way twice says the same thing.
+  const fullPat = useFullPatient(globalPat);
   // KB_DOCTORS is filled by whichever screen asked for the master list. This
   // one never did, so a dentist who opened Records and went straight into a
   // form got the single name typed into that form's own markup -- the same
@@ -33717,6 +33743,15 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
   React.useEffect(() => {
     if (activeForm) sendTemplatesToForm();
   }, [clinicalTemplates, activeForm, hindiOut]);
+  // The register answers a moment after the form opens, which is after its
+  // onLoad has been and gone. Without this the age and the gender arrive
+  // and the open form is never told.
+  React.useEffect(() => {
+    if (activeForm && fullPat && fullPat.uhid) sendPatientToForm(fullPat);
+  }, [activeForm,
+      fullPat ? String(fullPat.uhid || "") : "",
+      fullPat ? String(fullPat.dob || fullPat.DOB || fullPat.age || "") : "",
+      fullPat ? String(fullPat.gender || fullPat.Gender || "") : ""]);
 
   const FORMS = [
     { id:"rct",         label:"🦷 RCT",               subtitle:"Root Canal Work Done",         getUrl: getRCTFormUrl,       sheetType:"RCT", templateCategory:"RCT", color:"#7C3AED" },
@@ -33768,16 +33803,19 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
   };
 
   const sendPatientToForm = (pat) => {
-    if (iframeRef.current && iframeRef.current.contentWindow && pat) {
+    // The topped-up record wherever it is about this same patient: the one
+    // handed in may be a UHID and a name, which is all some screens keep.
+    const src = (pat && fullPat && fullPat.uhid === pat.uhid) ? fullPat : pat;
+    if (iframeRef.current && iframeRef.current.contentWindow && src) {
       iframeRef.current.contentWindow.postMessage({
         type: "KB_PATIENT",
-        name: pat.name || pat["Full Name"] || "",
-        uhid: pat.uhid || "",
+        name: src.name || src["Full Name"] || "",
+        uhid: src.uhid || "",
         // A loaded patient carries a DATE OF BIRTH, never an age. `age`
         // is not a field on it and never was, so this was an empty string
         // on every form opened from here.
-        age: calcAge(pat.dob || pat.DOB || pat["DOB"]) || "",
-        gender: pat.gender || pat.Gender || ""
+        age: calcAge(src.dob || src.DOB || src["DOB"] || src["Date of Birth"]) || src.age || "",
+        gender: src.gender || src.Gender || ""
         // No doctor. Who signs comes on KB_DOCTORS, which knows who the
         // patient is being seen by today; the first name of the master
         // list sent here is read by that code as a choice already made
@@ -34433,6 +34471,10 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
 // ════════════════════════════════════════════════════════
 function Prescription({ globalPat }) {
   const iframeRef = React.useRef(null);
+  // The pad prints an age and a gender, and the record it is handed does
+  // not always carry either. Topped up from the register before anything
+  // is sent, so the pad does not depend on which screen opened the patient.
+  const fullPat = useFullPatient(globalPat);
   const [todaysProcedures, setTodaysProcedures] = React.useState([]);
   const [medicines, setMedicines] = React.useState([]);
   const [medLists, setMedLists] = React.useState({ dosages: [], frequencies: [], durations: [], instructions: [], medNotes: [], instructionsLib: [], medNotesLib: [] });
@@ -34498,16 +34540,19 @@ function Prescription({ globalPat }) {
   }, [globalPat && globalPat.uhid]);
 
   const sendPatientToForm = () => {
-    if (iframeRef.current && iframeRef.current.contentWindow && globalPat) {
+    const src = fullPat || globalPat;
+    if (iframeRef.current && iframeRef.current.contentWindow && src) {
       iframeRef.current.contentWindow.postMessage({
         type: "KB_PATIENT",
-        name: globalPat.name || "",
-        uhid: globalPat.uhid || "",
+        name: src.name || src["Full Name"] || "",
+        uhid: src.uhid || "",
         // A loaded patient carries a DATE OF BIRTH, never an age -- there
         // is no `age` on it and never was, so this was an empty string on
-        // every prescription ever printed and the pad said nothing.
-        age: calcAge(globalPat.dob || globalPat.DOB) || "",
-        gender: globalPat.gender || ""
+        // every prescription ever printed and the pad said nothing. The
+        // register is read first, because half the screens that open a
+        // patient do not put a date of birth on the record at all.
+        age: calcAge(src.dob || src.DOB || src["Date of Birth"]) || src.age || "",
+        gender: src.gender || src.Gender || ""
         // No doctor. Who is signing comes on KB_DOCTORS, which knows who
         // the patient is being seen by today; sending the first name of
         // the master list here had that code read it as a choice already
@@ -34601,11 +34646,17 @@ function Prescription({ globalPat }) {
   // the iframe does not reload for that -- onLoad fired once, for whoever
   // was on screen then. Without this the next patient is prescribed for
   // under the last one's name.
+  // Keyed on what is actually being sent, not just on who it is about.
+  // The register answers a moment after the pad opens, and keyed on the
+  // UHID alone this never fired again -- the age and gender arrived and
+  // the pad was never told.
   React.useEffect(() => {
     if (!globalPat || !globalPat.uhid) return;
     sendPatientToForm();
     sendDoctorsToForm(globalPat.uhid);
-  }, [globalPat && globalPat.uhid]);
+  }, [globalPat && globalPat.uhid,
+      fullPat ? String(fullPat.dob || fullPat.DOB || fullPat.age || "") : "",
+      fullPat ? String(fullPat.gender || fullPat.Gender || "") : ""]);
   React.useEffect(() => { sendTodaysProceduresToForm(); }, [todaysProcedures]);
   React.useEffect(() => { sendMedicinesToForm(); }, [medicines]);
   React.useEffect(() => { sendMedListsToForm(); }, [medLists, hindiOut]);
