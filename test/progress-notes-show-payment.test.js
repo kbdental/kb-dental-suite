@@ -106,10 +106,12 @@ ok("the notes are built from the entries with their payments",
 ok("the total is of those rows, not the bare entries",
    /const totalAmt = progressRows\.reduce/.test(HTML));
 ok("the table on screen shows them", /progressRows\.map\(\(e, i\) => \{/.test(HTML));
+// The signatures ride along now: the sheet goes out as a PDF and draws
+// the doctor's own in -- see signed-not-left-to-be-signed.test.js.
 ok("and the printed notes too",
-   (HTML.match(/buildProgressNotesHTML\(pat, progressRows\)/g) || []).length === 3);
+   (HTML.match(/buildProgressNotesHTML\(pat, progressRows, sigs\)/g) || []).length === 3);
 ok("the WhatsApp PDF is one of those three",
-   /const html = which === "progress" \? buildProgressNotesHTML\(pat, progressRows\)/.test(HTML));
+   /const html = which === "progress" \? buildProgressNotesHTML\(pat, progressRows, sigs\)/.test(HTML));
 // The Procedure Done sheet is a list of work, not of money, and is unchanged.
 ok("the procedure sheet still gets the plain entries",
    /buildProcedureDoneHTML\(pat, entries\)/.test(HTML));

@@ -240,7 +240,7 @@ const KB_BACKEND_BUILD_REQUIRED = "2026-11-20";
 // browser" -- which it cannot do if it says the same thing either way.
 // GitHub Pages caches index.html hard, so a plain refresh serves the old
 // file and looks exactly like a change that was never made.
-const KB_APP_BUILD = "2026-11-20f";
+const KB_APP_BUILD = "2026-11-21b";
 
 // Three answers, not two. A build string is a plain date, so comparing
 // them as text compares them as dates.
@@ -8784,11 +8784,51 @@ function timeOptions(slots, current) {
   if (now && list.indexOf(now) < 0) list.push(now);
   return list.sort();
 }
-const STATUS_COL = { Scheduled:"#0078B4", "Checked In":"#059669", "In Chair":"#D97706", Completed:"#6B7280", Cancelled:"#e24b4a", "No Show":"#9ca3af" };
+const STATUS_COL = { Scheduled:"#0078B4", "Checked In":"#059669", "In Chair":"#D97706", Completed:"#6B7280", Cancelled:"#e24b4a", Missed:"#9ca3af", "No Show":"#9ca3af" };
+// ── An appointment nobody came to ──────────────────────────────────────
+//
+// "When a patient does not come on his appointment at the end of the day
+//  it should be recorded as Missed appointment and it should not kept
+//  open in the records. and neither it should be recorded as cancel by
+//  patient it should be missed appointment"
+//
+// It was neither. Not coming was recorded through the CANCEL dialog, as
+// status "Cancelled" with "No Show" as the reason -- so the clinic's own
+// records could not tell a patient who rang to cancel from one who simply
+// did not arrive, which is the difference that matters for recall. And a
+// day nobody closed off left every booking sitting at "Scheduled" for
+// good: months later the day sheet still reads as though they are coming.
+//
+// A missed appointment is its own status now, and a booking still
+// Scheduled on a day that has passed IS one -- derived, so the whole
+// history closes itself the moment this loads, with nothing to migrate
+// and nobody to remember to press anything.
+const APPT_MISSED = "Missed";
+const APPT_MISSED_LABEL = "Missed appointment";
+// "No Show" is what rows written before this say. Read, never written.
+function apptIsMissed(a) {
+  const st = String((a && a.status) || "").trim();
+  return st === APPT_MISSED || st === "No Show";
+}
+// What the row actually is, as against what the sheet last had written on
+// it. A date in the past with nobody having so much as checked them in.
+function apptStatusOf(a, today) {
+  const st = String((a && a.status) || "").trim();
+  if (st !== "Scheduled") return st;
+  const d = String((a && a.date) || "").slice(0, 10);
+  const t = String(today || toISODate(new Date())).slice(0, 10);
+  return (d && d < t) ? APPT_MISSED : st;
+}
+function apptStatusLabel(st) {
+  return (st === APPT_MISSED || st === "No Show") ? APPT_MISSED_LABEL : st;
+}
 const DOCTOR_COL = ["#0078B4", "#7C3AED", "#059669", "#D97706", "#DB2777"];
 const WEEK_DAY_LBL = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
-const CANCEL_REASONS = ["Cancelled by Patient","Cancelled by Doctor","Cancelled by Clinic","No Show"];
+// "No Show" is gone from here on purpose: not turning up is not a
+// cancellation, and filing it as one lost the distinction the clinic needs
+// when it decides who to call back.
+const CANCEL_REASONS = ["Cancelled by Patient","Cancelled by Doctor","Cancelled by Clinic"];
 // What the day sheet and the popup show: the reason, and the step when there
 // is one.
 function reasonWithStep(type, subType) {
@@ -8797,6 +8837,13 @@ function reasonWithStep(type, subType) {
 }
 // Which action button to show for the current status, and what the next status becomes
 const APPT_NEXT_ACTION = { Scheduled:{ label:"Check In", next:"Checked In" }, "Checked In":{ label:"Engage", next:"In Chair" }, "In Chair":{ label:"Check Out", next:"Completed" } };
+// What to offer on a row, which is not the same as what the sheet says: a
+// booking left Scheduled on a day gone by reads as missed, and offering
+// "Check In" on it would put a patient in a chair they left weeks ago.
+function apptNextAction(a) {
+  const st = apptStatusOf(a);
+  return (st === APPT_MISSED) ? null : APPT_NEXT_ACTION[st];
+}
 // And the way back. Check In is one click and the patient may simply not
 // turn up; until now that could not be undone, so the appointment stayed
 // checked in and the time stayed on the day sheet for good. Stepping back
@@ -8856,7 +8903,7 @@ function findOrphanAppointmentForPhone(appointments, mobile, todayISO) {
   const candidates = (appointments || []).filter(a =>
     !String(a.uhid || "").trim() &&
     last10(a.mobile) === digits &&
-    a.status !== "Cancelled"
+    a.status !== "Cancelled" && !apptIsMissed(a)
   );
   if (!candidates.length) return null;
   candidates.sort((a, b) =>
@@ -9105,7 +9152,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
 
   const loadTodaySidebar = async () => {
     const res = await api("getAppointments", { date: todayISO });
-    if (res && res.success && res.appointments) setTodayAppts(res.appointments.filter(a=>a.status!=="Cancelled"));
+    if (res && res.success && res.appointments) setTodayAppts(res.appointments.filter(a=>a.status!=="Cancelled" && !apptIsMissed(a)));
     else { setTodayAppts([]); loadFailed(res, "today's appointments"); }
   };
 
@@ -9152,7 +9199,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
     const esc = s => String(s === undefined || s === null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     const cell = v => esc(v) || "—";
-    const rows = appts.filter(a=>a.status!=="Cancelled").sort((a,b)=>(a.time||"").localeCompare(b.time||""))
+    const rows = appts.filter(a=>a.status!=="Cancelled" && !apptIsMissed(a)).sort((a,b)=>(a.time||"").localeCompare(b.time||""))
       // The reason AND the step of it, exactly as the day sheet and the
       // appointment popup show them. "RCT" alone does not tell the surgery
       // what to lay out; "RCT · Obturation" does.
@@ -9466,7 +9513,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
   const byDoctor = (list) => doctorFilter==="All Doctors" ? list : list.filter(a=>a.doctor===doctorFilter);
 
   const sortedAppts = byDoctor([...appts].sort((a,b) => (a.time||"").localeCompare(b.time||"")));
-  const activeAppts = sortedAppts.filter(a => a.status !== "Cancelled");
+  const activeAppts = sortedAppts.filter(a => a.status !== "Cancelled" && !apptIsMissed(a));
   // The rows the day grid draws: the whole day, breaks and all, PLUS any
   // time something is already booked at that the day has no slot for —
   // a lunch break put over an existing appointment, or a booking made
@@ -9499,7 +9546,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
   const renderPopup = () => {
     if (!selectedAppt) return null;
     const a = selectedAppt;
-    const action = APPT_NEXT_ACTION[a.status];
+    const action = apptNextAction(a);
     return React.createElement("div", {
       style:{ position:"fixed", inset:0, background:"rgba(0,0,0,.35)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center" },
       onClick: ()=>{ setSelectedAppt(null); setPopupMode("view"); }
@@ -9538,7 +9585,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
                 "Cancel")
             ),
             React.createElement("div", { style:{ fontSize:12.5, color:"#444444" } },
-              "Status: ", React.createElement("span", { style:{ fontWeight:700, color:STATUS_COL[a.status]||"#888" } }, a.status||"Scheduled")),
+              "Status: ", (() => { const st = apptStatusOf(a); return React.createElement("span", { style:{ fontWeight:700, color:STATUS_COL[st]||"#888" } }, apptStatusLabel(st)||"Scheduled"); })()),
             React.createElement("div", { style:{ fontSize:12.5, color:"#444444", marginTop:4 } },
               "For: ", React.createElement("span", { style:{ fontWeight:700 } }, reasonWithStep(a.type, a.subType))),
             a.checkinTime && React.createElement("div", { style:{ fontSize:12, color:"#444444", marginTop:4 } }, "Checked in: "+hhmm(a.checkinTime)),
@@ -9816,14 +9863,15 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
               },
                 cellAppts.length===0 && !blocked && React.createElement("div", { style:{ height:32, borderRadius:5, border:`1px dashed ${BORDER}` } }),
                 cellAppts.map((a,ci) => {
-                  const sc = STATUS_COL[a.status] || "#888";
+                  const ast = apptStatusOf(a);
+                  const sc = STATUS_COL[ast] || "#888";
                   return React.createElement("div", { key:ci, onClick:()=>{ setSelectedAppt(a); setPopupMode("view"); },
                     title: hoverDetails ? `${a.patientName} · ${a.uhid} · ${a.type} · ${a.doctor}` : undefined,
                     style:{ background:dc+"18", border:`1px solid ${dc}55`, borderLeft:`3px solid ${dc}`, borderRadius:5, padding:"4px 7px", marginBottom:3, cursor:"pointer" }
                   },
                     React.createElement("div", { style:{ fontSize:12.5, fontWeight:700, color:"#222" } }, a.patientName||"—"),
                     React.createElement("div", { style:{ fontSize:9.5, color:"#383838", marginBottom:3 } }, (a.type||"—") + " · " + (a.doctor||"—")),
-                    React.createElement("span", { style:{ fontSize:9.5, fontWeight:700, padding:"2px 6px", borderRadius:4, background:sc+"22", color:sc } }, a.status||"Scheduled")
+                    React.createElement("span", { style:{ fontSize:9.5, fontWeight:700, padding:"2px 6px", borderRadius:4, background:sc+"22", color:sc } }, apptStatusLabel(ast)||"Scheduled")
                   );
                 })
               );
@@ -9845,7 +9893,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
           GRID_SLOTS.map(slot => React.createElement("div", { key:slot, style:{ display:"grid", gridTemplateColumns:`64px repeat(7, 1fr)`, borderTop:`1px solid ${BORDER}` } },
             React.createElement("div", { style:{ padding:"6px", fontSize:10.5, fontWeight:700, color:"#3d3d3d", background:BGS, display:"flex", alignItems:"center" } }, slot),
             weekDates.map(d => {
-              const cellAppts = byDoctor(rangeAppts).filter(a => a.date===d && a.time===slot && a.status!=="Cancelled");
+              const cellAppts = byDoctor(rangeAppts).filter(a => a.date===d && a.time===slot && a.status!=="Cancelled" && !apptIsMissed(a));
               return React.createElement("div", { key:d,
                 style:{ padding:3, borderLeft:`1px solid ${BORDER}`, minHeight:34, cursor: cellAppts.length?"pointer":"pointer" },
                 onClick: cellAppts.length ? ()=>{ setSelDate(d); setSelectedAppt(cellAppts[0]); setPopupMode("view"); } : ()=>{ setSelDate(d); openQuickAdd(slot, chairs[0]); }
@@ -9863,7 +9911,7 @@ function Appointments({ globalPat, setGlobalPat, setPage }) {
         viewMode==="month" && !rangeLoading && (() => {
           const d0 = new Date(selDate+"T00:00:00");
           const cells = monthMatrix(d0.getFullYear(), d0.getMonth());
-          const activeRange = byDoctor(rangeAppts).filter(a=>a.status!=="Cancelled");
+          const activeRange = byDoctor(rangeAppts).filter(a=>a.status!=="Cancelled" && !apptIsMissed(a));
           return React.createElement("div", { style:{ border:`1px solid ${BORDER}`, borderRadius:8, overflow:"hidden", marginBottom:16, background:"#fff" } },
             React.createElement("div", { style:{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", background:T, color:"#fff" } },
               ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>React.createElement("div",{key:d,style:{padding:"7px",fontSize:12,fontWeight:700,textAlign:"center"}},d))
@@ -10430,7 +10478,7 @@ function Daysheet({ globalPat, setGlobalPat, openPatientAt }) {
               )
             )),
             React.createElement("tbody", null, filtered.map((a,i) => {
-              const action = APPT_NEXT_ACTION[a.status];
+              const action = apptNextAction(a);
               const undo = APPT_UNDO_ACTION[a.status];
               return React.createElement("tr", { key:i, style:{ borderBottom:`1px solid ${BORDER}`, background:i%2===0?"#fff":BGS } },
                 React.createElement("td", { style:{ padding:"7px 10px" } }, i+1),
@@ -10467,7 +10515,7 @@ function Daysheet({ globalPat, setGlobalPat, openPatientAt }) {
                   React.createElement("div", { style:{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" } },
                     action ? React.createElement("button", { onClick:()=>updateStatus(a.id, action.next),
                       style:{ padding:"5px 12px", fontSize:12, border:"none", borderRadius:6, cursor:"pointer", background:"#059669", color:"#fff", fontWeight:600 } },
-                      action.label) : React.createElement("span", { style:{ fontSize:12, color:STATUS_COL[a.status]||"#888", fontWeight:700 } }, hhmm(a.checkinTime)||a.status),
+                      action.label) : React.createElement("span", { style:{ fontSize:12, color:STATUS_COL[apptStatusOf(a)]||"#888", fontWeight:700 } }, hhmm(a.checkinTime)||apptStatusLabel(apptStatusOf(a))),
                     // The way back, where there is one. A check-in pressed by
                     // mistake had to be undone from the Appointments screen
                     // before this, which is not where anybody notices it.
@@ -13606,6 +13654,33 @@ function kbBulletCell(text, splitOn) {
     + '</ul>';
 }
 
+// The filter over a patient's record: a date range and a tooth. Its own
+// component because it is a control, not part of any one sheet, and the
+// sheet below it is long enough without this inlined into it.
+function KbRecordFilter({ from, setFrom, to, setTo, tooth, setTooth, on, onClear, shown, total }) {
+  const lbl = (c) => React.createElement("div", { style:{ fontSize:12, fontWeight:700,
+    color:"#444444", textTransform:"uppercase", letterSpacing:".04em", marginBottom:3 } }, c);
+  return React.createElement("div", { style:{ display:"flex", gap:10, alignItems:"flex-end",
+    flexWrap:"wrap", background:BGS, border:`1px solid ${BORDER}`, borderRadius:8,
+    padding:"10px 12px", marginBottom:12 } },
+    React.createElement("div", null, lbl("From"),
+      React.createElement("input", { type:"date", value: from,
+        onChange: e => setFrom(e.target.value), style:{ ...inp, width:150, padding:"5px 8px" } })),
+    React.createElement("div", null, lbl("To"),
+      React.createElement("input", { type:"date", value: to,
+        onChange: e => setTo(e.target.value), style:{ ...inp, width:150, padding:"5px 8px" } })),
+    React.createElement("div", null, lbl("Tooth"),
+      React.createElement("input", { value: tooth, placeholder:"e.g. 36", maxLength:3,
+        onChange: e => setTooth(e.target.value),
+        style:{ ...inp, width:84, padding:"5px 8px", textAlign:"center", fontWeight:700 } })),
+    on ? React.createElement("button", { onClick: onClear,
+      style:{ padding:"6px 14px", fontSize:12.5, fontWeight:700, border:`1px solid ${BORDER}`,
+        borderRadius:6, cursor:"pointer", background:"#fff", color:"#444444" } }, "Clear") : null,
+    React.createElement("div", { style:{ fontSize:12, color:"#5a5a5a", maxWidth:320, lineHeight:1.45 } },
+      on ? shown + " of " + total + " lines. Printing prints these."
+         : "Find a visit without the file: a date range, a tooth, or both."));
+}
+
 // Several things done in one sitting, on the screen rather than on paper.
 // kbBulletCell's counterpart: the same rule, the same look, because the
 // screen and the sheet are read as the same list. One line stays a line --
@@ -13830,10 +13905,30 @@ function entriesWithPayments(entries, receipts) {
     .map(x => x.r);
 }
 
-function buildProgressNotesHTML(pat, entries) {
+// ── Signed, not left to be signed ──────────────────────────────────────
+// This sheet is not printed and handed over a desk: it goes out as a PDF,
+// so a ruled box for an ink signature is a box that stays empty for good.
+// The doctors' signatures are already drawn once and kept in Master; the
+// sheet draws the right one in.
+//
+// WHICH doctor. The sheet can span a year of visits by several of them,
+// and the Doctor column says who did each. The foot is the clinic signing
+// the document off, so it is the doctor of the most recent entry -- and
+// where others appear on the sheet, it says so rather than letting one
+// signature look like a claim on all of it.
+function kbProgressSigner(entries, sigs) {
+  const named = (entries || []).map(e => String((e && e.doctor) || "").trim()).filter(Boolean);
+  if (!named.length) return null;
+  const who = named[named.length - 1];
+  const others = named.filter((n, i) => n !== who && named.indexOf(n) === i).length;
+  return { doctor: who, dataUrl: (sigs || {})[who] || "", others: others };
+}
+
+function buildProgressNotesHTML(pat, entries, sigs) {
   const logo = window.LOGO_B64;
   const dateStr = fmtDMY(new Date());
   let totalAmt = 0;
+  const signer = kbProgressSigner(entries, sigs);
   const rows = kbSplitVisitRows(entries, ["clinicalNotes", "workDone"]).map((e, i) => {
     const d = e.date ? fmtDMY(e.date) : "—";
     const amt = e.amountReceived ? Number(e.amountReceived) : 0;
@@ -13842,23 +13937,35 @@ function buildProgressNotesHTML(pat, entries) {
       <td class="sno">${i+1}</td>
       <td class="dcol">${d}</td>
       <td style="width:52pt;text-align:center;font-weight:700">${e.toothNo || "—"}</td>
-      <td style="width:110pt;font-size:11pt">${e.treatmentRendered || "—"}</td>
+      <td style="width:104pt;font-size:11pt">${e.treatmentRendered || "—"}</td>
       <td style="font-size:11pt;line-height:1.45">${kbBulletCell(e.clinicalNotes)}</td>
-      <td style="width:62pt;font-size:10.5pt">${e.paymentMode || "—"}</td>
+      <td style="width:78pt;font-size:10.5pt">${cghsEsc(e.doctor) || "—"}</td>
+      <td style="width:58pt;font-size:10.5pt">${e.paymentMode || "—"}</td>
       <td class="amt" style="width:60pt">${amt ? "₹"+amt.toLocaleString("en-IN") : "—"}</td>
     </tr>`;
   }).join("");
-  const totalRow = `<tr class="totrow"><td colspan="6" style="text-align:right;padding-right:8pt">Total Amount Received</td><td class="amt">₹${totalAmt.toLocaleString("en-IN")}</td></tr>`;
+  const totalRow = `<tr class="totrow"><td colspan="7" style="text-align:right;padding-right:8pt">Total Amount Received</td><td class="amt">₹${totalAmt.toLocaleString("en-IN")}</td></tr>`;
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>${TP_PCSS}</style></head><body>
     <div class="hdr"><img class="logo" src="${logo}"/><div class="hdr-mid"><div class="cares">C. A. R. E. S.</div><div class="tagline">COMFORT. AWARENESS. RESPECT. EMPATHY. SAFETY</div><div class="sub">BLOCK R - 74 B, DILSHAD GARDEN, DELHI - 110095</div><div class="sub">Ph.: 011-22131942 &nbsp; Mob: 7866939786, 9319990912 &nbsp; kbdentaldelhi@gmail.com</div></div></div>
     <div class="dtitle">Treatment Progress Notes</div>
     <div class="patrow"><span class="pname">${pat.name || "—"}</span><span class="puhid">UHID: ${pat.uhid || "—"}</span><span class="pdate">${dateStr}</span></div>
     <table><thead><tr>
       <th class="sno">S.No.</th><th style="width:68pt">Date</th>
-      <th style="width:52pt;text-align:center">Tooth No.</th><th style="width:110pt">Treatment</th>
-      <th>Clinical Notes</th><th style="width:62pt">Payment</th><th style="width:60pt;text-align:right">Amount</th>
+      <th style="width:52pt;text-align:center">Tooth No.</th><th style="width:104pt">Treatment</th>
+      <th>Clinical Notes</th><th style="width:78pt">Doctor</th>
+      <th style="width:58pt">Payment</th><th style="width:60pt;text-align:right">Amount</th>
     </tr></thead>
     <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:#5a5a5a;padding:14pt">No entries recorded.</td></tr>`}${totalRow}</tbody></table>
+    ${signer ? `<div style="margin-top:16pt;padding-top:8pt;border-top:0.5pt solid #ccc;width:230pt">
+      <div class="lbl">Signature of the Doctor</div>
+      <div style="border:0.5pt solid #bbb;border-radius:3pt;height:40pt;background:#fff;margin:3pt 0;display:flex;align-items:center;justify-content:center;overflow:hidden">${
+        signer.dataUrl
+          ? `<img src="${signer.dataUrl}" style="max-height:38pt;max-width:224pt;object-fit:contain"/>`
+          : `<span style="font-size:9.5pt;color:#a12e2e;font-weight:700">No signature saved for this doctor &mdash; Master &rarr; Clinic &rarr; Doctors</span>`
+      }</div>
+      <div style="font-size:10pt;color:#2e2e2e">${cghsEsc(signer.doctor)} &nbsp;|&nbsp; Date: ${dateStr}</div>
+      ${signer.others ? `<div style="font-size:9.5pt;color:#5a5a5a;margin-top:2pt">Other doctors appear on this sheet; each entry names its own.</div>` : ""}
+    </div>` : ""}
     <div class="foot"><span>KBDC/FORMS/TPN-01</span><span>K.B. Dental Clinic &middot; kbdentaldelhi@gmail.com</span></div>
   </body></html>`;
 }
@@ -14040,6 +14147,49 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
   const [preview, setPreview] = useState(false);
   const [previewHTML, setPreviewHTML] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  // ── Finding a visit without the file in front of you ────────────────
+  //
+  // "if some one does not bring there file and the treatment done is not
+  //  entered we can do that by date search or tooth search"
+  //
+  // A patient turns up without their folder and says the root canal was
+  // "some time in May, on a lower back tooth". Eighty-four visits down a
+  // page is not a way to answer that. So: a date range and a tooth, over
+  // the rows AFTER they are split per tooth -- a visit that covered 37
+  // and 47 answers a search for 47 with the line about 47, not with the
+  // whole visit.
+  const [fFrom, setFFrom] = useState("");
+  const [fTo, setFTo] = useState("");
+  const [fTooth, setFTooth] = useState("");
+  const procedureRows = React.useMemo(() => {
+    const all = kbSplitVisitRows(entries, ["clinicalNotes", "workDone"]);
+    const from = String(fFrom || "").trim();
+    const to = String(fTo || "").trim();
+    // "36" must not match "36, 37" by accident of being inside it, nor
+    // miss it: the cell is a list, so it is read as one.
+    const want = String(fTooth || "").trim().toUpperCase();
+    if (!from && !to && !want) return all;
+    return all.filter(r => {
+      const d = String((r && r.date) || "").slice(0, 10);
+      if (from && (!d || d < from)) return false;
+      if (to && (!d || d > to)) return false;
+      if (!want) return true;
+      const teeth = String((r && r.toothNo) || "").toUpperCase()
+        .split(/[^0-9A-Z]+/).filter(Boolean);
+      return teeth.indexOf(want) >= 0;
+    });
+  }, [entries, fFrom, fTo, fTooth]);
+  const filterOn = !!(String(fFrom).trim() || String(fTo).trim() || String(fTooth).trim());
+  const clearFilter = () => { setFFrom(""); setFTo(""); setFTooth(""); };
+
+  // The doctors' signatures, for the progress notes -- which goes out as a
+  // PDF, where an empty ruled box would never be signed by anybody.
+  const [sigs, setSigs] = useState({});
+  useEffect(() => {
+    api("getSignatures").then(res => {
+      if (res && res.success && res.signatures) setSigs(res.signatures);
+    }).catch(() => {});
+  }, []);
   const doctors = useDoctors();
   const today = new Date().toISOString().split("T")[0];
 
@@ -14124,13 +14274,13 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
   };
 
   const doPrint = (which) => {
-    const h = which === "progress" ? buildProgressNotesHTML(pat, progressRows) : buildProcedureDoneHTML(pat, entries);
+    const h = which === "progress" ? buildProgressNotesHTML(pat, progressRows, sigs) : buildProcedureDoneHTML(pat, procedureRows);
     const w = window.open("", "_blank");
     w.document.write(h); w.document.close();
     setTimeout(() => w.print(), 600);
   };
   const doPreview = (which) => {
-    setPreviewHTML(which === "progress" ? buildProgressNotesHTML(pat, progressRows) : buildProcedureDoneHTML(pat, entries));
+    setPreviewHTML(which === "progress" ? buildProgressNotesHTML(pat, progressRows, sigs) : buildProcedureDoneHTML(pat, procedureRows));
     setPreview(true);
   };
 
@@ -14144,7 +14294,7 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
     const mobile = String(pat.mobile || pat.whatsapp || "").replace(/\D/g, "").slice(-10);
     if (!mobile) { alert("This patient has no mobile number saved, so the PDF can't be sent on WhatsApp. You can still use Print."); return; }
     setPdfBusy(true);
-    const html = which === "progress" ? buildProgressNotesHTML(pat, progressRows) : buildProcedureDoneHTML(pat, entries);
+    const html = which === "progress" ? buildProgressNotesHTML(pat, progressRows, sigs) : buildProcedureDoneHTML(pat, procedureRows);
     const docName = which === "progress" ? "Treatment Progress Notes" : "Procedure Done";
     const res = await apiPost("createDocumentPDF", {
       uhid: pat.uhid, patientName: pat.name || "", html, docName, category: "Progress Notes"
@@ -14178,9 +14328,16 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
 
   // ── Procedure Done View ───────────────────────────────
   const ProcedureView = () => React.createElement("div", null,
+    React.createElement(KbRecordFilter, {
+      from: fFrom, setFrom: setFFrom, to: fTo, setTo: setFTo,
+      tooth: fTooth, setTooth: setFTooth, on: filterOn, onClear: clearFilter,
+      shown: procedureRows.length, total: kbSplitVisitRows(entries, ["clinicalNotes", "workDone"]).length
+    }),
     React.createElement("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, flexWrap:"wrap", gap:8 } },
       React.createElement("div", { style:{ fontSize:13, color:"#2e2e2e" } },
-        entries.length + " visit" + (entries.length !== 1 ? "s" : "") + " recorded"
+        filterOn
+          ? procedureRows.length + " of " + kbSplitVisitRows(entries, ["clinicalNotes", "workDone"]).length + " shown"
+          : entries.length + " visit" + (entries.length !== 1 ? "s" : "") + " recorded"
       ),
       React.createElement("div", { style:{ display:"flex", gap:8 } },
         React.createElement("button", {
@@ -14193,9 +14350,11 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
         }, "🖨 Print")
       )
     ),
-    entries.length === 0
+    procedureRows.length === 0
       ? React.createElement("div", { style:{ background:BGS, borderRadius:8, padding:"28px", textAlign:"center", color:"#5a5a5a", fontSize:14, border:`1px dashed ${BORDER}` } },
-          "No entries yet. Add procedures via the Daily Register page."
+          filterOn
+            ? "Nothing on this patient matches that. Widen the dates, or clear the tooth."
+            : "No entries yet. Add procedures via the Daily Register page."
         )
       // The tooth used to be tucked under the doctor's name in small grey
       // type, because the table had four columns and none of them was for
@@ -14206,7 +14365,7 @@ function TreatmentProgress({ globalPat, setGlobalPat, initialTab }) {
           React.createElement("div", { style:{ display:"grid", gridTemplateColumns:"40px 90px 64px 1fr 140px", background:T, color:"#fff", padding:"7px 10px", fontSize:12, fontWeight:700, gap:8 } },
             ["S.No.", "Date", "Tooth", "Procedure / Work Done", "Doctor"].map((h,i) => React.createElement("div", { key:i }, h))
           ),
-          kbSplitVisitRows(entries, ["clinicalNotes", "workDone"]).map((e, i) => {
+          procedureRows.map((e, i) => {
             const d = e.date ? fmtDMY(e.date) : "—";
             return React.createElement("div", {
               key:i,
@@ -33560,9 +33719,15 @@ function ClinicalRecords({ globalPat, setGlobalPat }) {
         type: "KB_PATIENT",
         name: pat.name || pat["Full Name"] || "",
         uhid: pat.uhid || "",
-        age: pat.age || "",
-        gender: pat.gender || "",
-        doctor: getDoctors()[0] || ""
+        // A loaded patient carries a DATE OF BIRTH, never an age. `age`
+        // is not a field on it and never was, so this was an empty string
+        // on every form opened from here.
+        age: calcAge(pat.dob || pat.DOB || pat["DOB"]) || "",
+        gender: pat.gender || pat.Gender || ""
+        // No doctor. Who signs comes on KB_DOCTORS, which knows who the
+        // patient is being seen by today; the first name of the master
+        // list sent here is read by that code as a choice already made
+        // and kept over the treating doctor.
       }, "*");
     }
   };
@@ -36046,7 +36211,7 @@ function FollowUps({ onNavigate, embedded }) {
       data.missed.length===0 ? empty("No missed or cancelled appointments need a follow-up right now.") :
       data.missed.map((r,i) => React.createElement(FollowUpRow, { key:i,
         name:r.name, uhid:r.uhid, mobile:r.mobile,
-        detail: (r.status==="Cancelled"?"Cancelled":"No Show") + " — " + (r.type||"appointment") + " on " + fmtDMY(r.date+"T00:00:00"),
+        detail: (r.status==="Cancelled"?"Cancelled":APPT_MISSED_LABEL) + " — " + (r.type||"appointment") + " on " + fmtDMY(r.date+"T00:00:00"),
         waText: "Hi " + r.name + ", we noticed your appointment at " + ((window.CLINIC && window.CLINIC.name) || "K.B. Dental Clinic") + " didn't go through. Would you like to reschedule?",
         onBook: onNavigate ? () => onNavigate("appointments") : null
       }))
@@ -36646,7 +36811,7 @@ function computeReports(d, from, to) {
   const worstStep = funnel.slice(1).sort((a, b) => b.dropped - a.dropped)[0] || null;
 
   // ── did not turn up ─────────────────────────────────────────────────
-  const noShows = d.appts.filter(a => String(a.status) === "No Show");
+  const noShows = d.appts.filter(a => apptIsMissed(a));
   const cancelled = d.appts.filter(a => String(a.status) === "Cancelled");
   const kept = d.appts.filter(a => ["Completed", "In Chair", "Checked In"].includes(String(a.status))).length;
   const decided = noShows.length + kept;

@@ -18,7 +18,12 @@ if (from < 0 || to < 0) { console.error('could not locate findOrphanAppointmentF
 
 const ctx = {};
 vm.createContext(ctx);
-vm.runInContext(html.slice(from, to) + ';this.findOrphanAppointmentForPhone = findOrphanAppointmentForPhone;', ctx);
+const APPT_HELPERS = (() => {
+  const a = html.indexOf('const APPT_MISSED = "Missed";');
+  const b = html.indexOf('\nfunction apptStatusLabel(st) {');
+  return html.slice(a, html.indexOf('\n}', b) + 2) + '\n';
+})();
+vm.runInContext(APPT_HELPERS + html.slice(from, to) + ';this.findOrphanAppointmentForPhone = findOrphanAppointmentForPhone;', ctx);
 const { findOrphanAppointmentForPhone } = ctx;
 
 const checks = [];

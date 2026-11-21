@@ -27,7 +27,13 @@ const REPORTS_SRC = html.slice(a, b);
 // what is under test is Reports, not the date formatter -- but every one of
 // them is named here, so a new dependency shows up as a crash rather than
 // as a silently blank screen.
+const APPT_HELPERS = (() => {
+  const a = html.indexOf('const APPT_MISSED = "Missed";');
+  const b = html.indexOf('\nfunction apptStatusLabel(st) {');
+  return html.slice(a, html.indexOf('\n}', b) + 2) + '\n';
+})();
 const DEPS = `
+  ${APPT_HELPERS}
   const { useState, useRef, useEffect } = React;
   const T = "#0078B4", TL = "#DCF4FB", BORDER = "#e5e5e0", BGS = "#f5f5f0";
   const inp = { padding: "8px", border: "1px solid #e5e5e0", borderRadius: 6, fontSize: 13 };

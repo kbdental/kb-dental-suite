@@ -158,7 +158,7 @@ ok('and the Treatment Progress Notes split theirs',
   };
   vm.createContext(pctx);
   vm.runInContext(fnOf('cghsEsc') + fnOf('kbBulletCell') + fnOf('kbTeethInLine')
-    + fnOf('kbSplitVisitRows') + fnOf('buildProgressNotesHTML')
+    + fnOf('kbSplitVisitRows') + fnOf('kbProgressSigner') + fnOf('buildProgressNotesHTML')
     + '\nthis.build = buildProgressNotesHTML;', pctx);
   const out = pctx.build({ name: 'Altaf Ahmed Sikunder', uhid: 'AH0713' }, [VISIT]);
   // One S.No. cell per body row; the header and the total row have none.
