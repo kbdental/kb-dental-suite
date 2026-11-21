@@ -34,6 +34,14 @@ const BUILDER = html.slice(FROM, TO);
 const RW_FROM = html.indexOf('function reasonWithStep(type, subType) {');
 const RW_TO = html.indexOf('\n}', RW_FROM) + 2;
 const REASON_WITH_STEP = html.slice(RW_FROM, RW_TO);
+// The sheet drops a missed appointment, so it needs the rule that says
+// what one is. Cut out of index.html rather than restated, or the two
+// would drift and this would go on passing while the sheet was wrong.
+const APPT_HELPERS = (() => {
+  const a = html.indexOf('const APPT_MISSED = "Missed";');
+  const b = html.indexOf('\nfunction apptStatusLabel(st) {');
+  return html.slice(a, html.indexOf('\n}', b) + 2) + '\n';
+})();
 
 function buildWith(appts, selDate) {
   const sandbox = {
@@ -44,7 +52,7 @@ function buildWith(appts, selDate) {
     fmtDMY: iso => String(iso).slice(0, 10).split('-').reverse().join('/')
   };
   vm.createContext(sandbox);
-  vm.runInContext(REASON_WITH_STEP + '\n' + BUILDER + '\n;globalThis.__out = buildScheduleHTML();', sandbox);
+  vm.runInContext(APPT_HELPERS + REASON_WITH_STEP + '\n' + BUILDER + '\n;globalThis.__out = buildScheduleHTML();', sandbox);
   return sandbox.__out;
 }
 
